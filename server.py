@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
 # from flask import Flask, request, jsonify, Response, stream_with_context, redirect , url_for
 # from flask_cors import CORS
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from transformers import AutoTokenizer
 
 # Local file
@@ -182,7 +183,7 @@ def list_models():
     models_dir = config.get_path("models")
     
     if not os.path.exists(models_dir):
-        return jsonify({"error": f"The models directory {models_dir} is not found."}), 500
+        return JSONResponse({"error": f"The models directory {models_dir} is not found."}, status_code=500)
 
     direct_models = [f for f in os.listdir(models_dir) if f.endswith(".rkllm")]
 
@@ -203,27 +204,27 @@ def list_models():
                     model_dirs.append(subdir)
                     break
 
-    return jsonify({"models": model_dirs}), 200
+    return JSONResponse({"models": model_dirs}, status_code=200)
 
 # Delete a model
 @app.delete('/rm')
 def Rm_model():
     data = request.get_json(force=True)
     if "model" not in data:
-        return jsonify({"error": "Please specify a model."}), 400
+        return JSONResponse({"error": "Please specify a model."}, status_code=400)
 
     model_path = os.path.join(config.get_path("models"), data['model'])
     if not os.path.exists(model_path):
-        return jsonify({"error": f"The model: {data['model']} cannot be found."}), 404
+        return JSONResponse({"error": f"The model: {data['model']} cannot be found."}, status_code=404)
 
     os.remove(model_path)
 
-    return jsonify({"message": f"The model has been successfully deleted!"}), 200
+    return JSONResponse({"message": f"The model has been successfully deleted!"}, status_code=200)
 
 # route to pull a model
 @app.post('/pull')
-def pull_model():
-    @stream_with_context
+def pull_model(request: Request):
+    ## @stream_with_context
     def generate_progress():
         data = request.get_json(force=True)
         if "model" not in data:
@@ -287,9 +288,11 @@ def pull_model():
             yield f"Error: {str(e)}\n"
 
     # Use the appropriate content type for streaming responses
-    is_ollama_request = request.path.startswith('/api/')
+    ## is_ollama_request = request.path.startswith('/api/')
+    print(f"DEBUG request.url={request.url}")
+    is_ollama_request = request.url.startswith('/api/')
     content_type = 'application/x-ndjson' if is_ollama_request else 'text/plain'
-    return Response(generate_progress(), content_type=content_type)
+    return StreamingResponse(generate_progress(), content_type=content_type)
 
 # Route for loading a model into the NPU
 @app.post('/load_model')
@@ -298,11 +301,11 @@ def load_model_route():
 
     # Check if a model is currently loaded
     if modele_rkllm:
-        return jsonify({"error": "A model is already loaded. Please unload it first."}), 400
+        return JSONResponse({"error": "A model is already loaded. Please unload it first."}, status_code=400)
 
     data = request.get_json(force=True)
     if "model_name" not in data:
-        return jsonify({"error": "Please enter the name of the model to be loaded."}), 400
+        return JSONResponse({"error": "Please enter the name of the model to be loaded."}, status_code=400)
 
     model_name = data["model_name"]
 
@@ -315,10 +318,10 @@ def load_model_route():
         modele_rkllm, error = load_model(model_name)
 
     if error:
-        return jsonify({"error": error}), 400
+        return JSONResponse({"error": error}, status_code=400)
 
     current_model = model_name
-    return jsonify({"message": f"Model {model_name} loaded successfully."}), 200
+    return JSONResponse({"message": f"Model {model_name} loaded successfully."}, status_code=200)
 
 # Route to unload a model from the NPU
 @app.post('/unload_model')
@@ -326,11 +329,11 @@ def unload_model_route():
     global current_model, modele_rkllm
 
     if not modele_rkllm:
-        return jsonify({"error": "No models are currently loaded."}), 400
+        return JSONResponse({"error": "No models are currently loaded."}, status_code=400)
 
     unload_model()
     current_model = None
-    return jsonify({"message": "Model successfully unloaded!"}), 200
+    return JSONResponse({"message": "Model successfully unloaded!"}, status_code=200)
 
 # Route to retrieve the current model
 @app.get('/current_model')
@@ -338,9 +341,9 @@ def get_current_model():
     global current_model, modele_rkllm
 
     if current_model and modele_rkllm:
-        return jsonify({"model_name": current_model}), 200
+        return JSONResponse({"model_name": current_model}, status_code=200)
     else:
-        return jsonify({"error": "No models are currently loaded."}), 404
+        return JSONResponse({"error": "No models are currently loaded."}, status_code=404)
 
 # Route to make a request to the model
 @app.post('/generate')
@@ -348,7 +351,7 @@ def recevoir_message():
     global modele_rkllm
 
     if not modele_rkllm:
-        return jsonify({"error": "No models are currently loaded."}), 400
+        return JSONResponse({"error": "No models are currently loaded."}, status_code=400)
 
     # define modelfile path
     modelfile = os.path.join(modele_rkllm.model_dir, "Modelfile")
@@ -364,7 +367,7 @@ def list_ollama_models():
     models_dir = config.get_path("models")
     
     if not os.path.exists(models_dir):
-        return jsonify({"models": []}), 200
+        return JSONResponse({"models": []}, status_code=200)
 
     models = []
     for subdir in os.listdir(models_dir):
@@ -394,7 +397,7 @@ def list_ollama_models():
                     })
                     break
 
-    return jsonify({"models": models}), 200
+    return JSONResponse({"models": models}, status_code=200)
 
 @app.post('/api/show')
 def show_model_info():
@@ -410,13 +413,13 @@ def show_model_info():
         logger.debug(f"API show request data: {data}")
     
     if not model_name:
-        return jsonify({"error": "Missing model name"}), 400
+        return JSONResponse({"error": "Missing model name"}, status_code=400)
     
     model_dir = os.path.join(config.get_path("models"), model_name)
     model_rkllm = find_rkllm_model_name(model_dir)
 
     if not os.path.exists(model_dir):
-        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+        return JSONResponse({"error": f"Model '{model_name}' not found"}, status_code=404)
 
     # Read modelfile content if available
     modelfile_path = os.path.join(model_dir, "Modelfile")
@@ -466,7 +469,7 @@ def show_model_info():
             break
     
     if not model_file:
-        return jsonify({"error": f"Model file not found in '{model_name}' directory"}), 404
+        return JSONResponse({"error": f"Model file not found in '{model_name}' directory"}, status_code=404)
     
     file_path = os.path.join(model_dir, model_file)
     size = os.path.getsize(file_path)
@@ -780,7 +783,7 @@ def show_model_info():
             "likes": hf_metadata.get('likes', 0)
         }
     
-    return jsonify(response), 200
+    return JSONResponse(response, status_code=200)
 
 @app.post('/api/create')
 def create_model():
@@ -792,7 +795,7 @@ def create_model():
         logger.debug(f"API create request data: {data}")
 
     if not model_name:
-        return jsonify({"error": "Missing model name"}), 400
+        return JSONResponse({"error": "Missing model name"}, status_code=400)
     
     model_dir = os.path.join(config.get_path("models"), model_name)
     os.makedirs(model_dir, exist_ok=True)
@@ -806,14 +809,14 @@ def create_model():
     huggingface_path = next((line for line in modelfile_lines if line.startswith('HUGGINGFACE_PATH=')), None)
     
     if not from_line or not huggingface_path:
-        return jsonify({"error": "Invalid Modelfile: missing FROM or HUGGINGFACE_PATH"}), 400
+        return JSONResponse({"error": "Invalid Modelfile: missing FROM or HUGGINGFACE_PATH"}, status_code=400)
     
     # Extract values
     from_value = from_line.split('=')[1].strip('"\'')
     huggingface_path = huggingface_path.split('=')[1].strip('"\'')
     
     # For compatibility with existing implementation
-    return jsonify({"status": "success", "model": model_name}), 200
+    return JSONResponse({"status": "success", "model": model_name}, status_code=200)
 
 @app.post('/api/pull')
 def pull_model_ollama():
@@ -825,7 +828,7 @@ def pull_model_ollama():
         logger.debug(f"API pull request data: {data}")
 
     if not model:
-        return jsonify({"error": "Missing model name"}), 400
+        return JSONResponse({"error": "Missing model name"}, status_code=400)
 
     # Ollama API uses application/x-ndjson for streaming
     response_stream = pull_model()  # Call the existing function directly
@@ -841,16 +844,16 @@ def delete_model_ollama():
         logger.debug(f"API delete request data: {data}")
 
     if not model_name:
-        return jsonify({"error": "Missing model name"}), 400
+        return JSONResponse({"error": "Missing model name"}, status_code=400)
 
     if not model_name:
         if DEBUG_MODE:
             logger.error(f"Model '{model_name}' not found for deletion")
-        return jsonify({"error": f"Model '{model_name}' not found"}), 404
+        return JSONResponse({"error": f"Model '{model_name}' not found"}, status_code=404)
     
     model_path = os.path.join(config.get_path("models"), model_name)
     if not os.path.exists(model_path):
-        return jsonify({"error": f"Model directory for '{model_name}' not found"}), 404
+        return JSONResponse({"error": f"Model directory for '{model_name}' not found"}, status_code=404)
 
     # Check if model is currently loaded
     if current_model == model_name:
@@ -863,10 +866,10 @@ def delete_model_ollama():
             logger.debug(f"Deleting model directory: {model_path}")
         shutil.rmtree(model_path)
         
-        return jsonify({}), 200
+        return JSONResponse({}, status_code=200)
     except Exception as e:
         logger.error(f"Failed to delete model '{model_name}': {str(e)}")
-        return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
+        return JSONResponse({"error": f"Failed to delete model: {str(e)}"}, status_code=500)
 
 @app.post('/api/generate')
 def generate_ollama():
@@ -890,10 +893,10 @@ def generate_ollama():
             logger.debug(f"API generate request data: {data}")
 
         if not model_name:
-            return jsonify({"error": "Missing model name"}), 400
+            return JSONResponse({"error": "Missing model name"}, status_code400)
 
         if not prompt:
-            return jsonify({"error": "Missing prompt"}), 400
+            return JSONResponse({"error": "Missing prompt"}, status_code=400)
 
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
@@ -909,7 +912,7 @@ def generate_ollama():
                 unload_model()
             modele_instance, error = load_model(model_name, request_options=options)
             if error:
-                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+                return JSONResponse({"error": f"Failed to load model '{model_name}': {error}"}, status_code=500)
             modele_rkllm = modele_instance
             current_model = model_name
 
@@ -932,7 +935,7 @@ def generate_ollama():
     except Exception as e:
         if DEBUG_MODE:
             logger.exception(f"Error in generate_ollama: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return JSONResponse({"error": str(e)}, status_code=500)
     finally:
         # Only release if we acquired it
         if lock_acquired and variables.verrou.locked():
@@ -1020,7 +1023,7 @@ def chat_ollama():
             if error:
                 if DEBUG_MODE:
                     logger.error(f"Failed to load model {model_name}: {error}")
-                return jsonify({"error": f"Failed to load model '{model_name}': {error}"}), 500
+                return JSONResponse({"error": f"Failed to load model '{model_name}': {error}"}, status_code=500)
             modele_rkllm = modele_instance
             current_model = model_name
             if DEBUG_MODE:
@@ -1054,7 +1057,7 @@ def chat_ollama():
                 if error:
                     if DEBUG_MODE:
                         logger.error(f"Failed to reload model {model_name}: {error}")
-                    return jsonify({"error": f"Failed to reload model '{model_name}': {error}"}), 500
+                    return JSONResponse({"error": f"Failed to reload model '{model_name}': {error}"}, status_code=500)
                 modele_rkllm = modele_instance
                 current_model = model_name
                 if DEBUG_MODE:
@@ -1104,7 +1107,7 @@ def chat_ollama():
 
     except Exception as e:
         logger.exception("Error in chat_ollama")
-        return jsonify({"error": str(e)}), 500
+        return JSONResponse({"error": str(e)}, status_code=500)
     
     finally:
         # Only release if we acquired it
@@ -1125,39 +1128,39 @@ if DEBUG_MODE:
         issues = check_response_format(stream_data)
         
         if issues:
-            return jsonify({
+            return JSONResponse({
                 "status": "error",
                 "issues": issues,
                 "recommendation": "Check server_utils.py implementation of streaming"
-            }), 200
+            }, status_code=200)
         else:
-            return jsonify({
+            return JSONResponse({
                 "status": "ok",
                 "message": "No issues found in the response format"
-            }), 200
+            }, status_code=200)
 
 @app.post('/api/embeddings')
 def embeddings_ollama():
     # This is a placeholder as embeddings aren't implemented in RKLLAMA
-    return jsonify({
+    return JSONResponse({
         "error": "Embeddings not supported in RKLLAMA"
-    }), 501
+    }, status_code=501)
 
 # Version endpoint for Ollama API compatibility
 @app.get('/api/version')
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
-    return jsonify({
+    return JSONResponse({
         "version": "0.5.1"
-    }), 200
+    }, status_code=200)
 
 # Default route
 @app.get('/')
 def default_route():
-    return jsonify({
+    return JSONResponse({
         "message": "Welcome to RKLLama with Ollama API compatibility!",
         "github": "https://github.com/notpunhnox/rkllama"
-    }), 200
+    }, status_code=200)
 
 # Launch function
 def main():

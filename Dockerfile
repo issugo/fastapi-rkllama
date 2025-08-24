@@ -4,7 +4,7 @@
 FROM python:slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 wget curl sudo git build-essential \
+    && apt-get install -y --no-install-recommends libgomp1 wget curl sudo git build-essential nano \
     && rm -rf /var/cache/apt/archives /var/lib/apt/lists/*
 
 # Install RKNPU driver

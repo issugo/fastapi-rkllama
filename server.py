@@ -1,10 +1,13 @@
 # Import libs
 import sys, os, subprocess, resource, argparse, shutil, time, requests, configparser, json, threading, datetime, logging
 import re
+import uvicorn
 from dotenv import load_dotenv
 from huggingface_hub import hf_hub_url, HfFileSystem
-from flask import Flask, request, jsonify, Response, stream_with_context, redirect , url_for
-from flask_cors import CORS
+# from flask import Flask, request, jsonify, Response, stream_with_context, redirect , url_for
+# from flask_cors import CORS
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from transformers import AutoTokenizer
 
 # Local file
@@ -152,9 +155,17 @@ def unload_model():
         modele_rkllm.release()
         modele_rkllm = None
 
-app = Flask(__name__)
+## app = Flask(__name__)
+app = FastAPI()
 # Enable CORS for all routes
-CORS(app)
+## CORS(app)
+app.add_middleware(
+  CORSMiddleware,
+  allow_origins=["*"],
+  allow_credentials=True,
+  allow_methods=["*"],
+  allow_headers=["*"]
+)
 
 # Original RKLLAMA Routes:
 # GET    /models
@@ -1196,8 +1207,9 @@ def main():
     print_color(f"Start the API at http://localhost:{port}", "blue")
     
     # Set Flask debug mode to match our debug flag
-    flask_debug = config.is_debug_mode()
-    app.run(host=config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
+    ## flask_debug = config.is_debug_mode()
+    ## app.run(host=config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
+    uvicorn.run(app, host=config.get("server", "host", "0.0.0.0"), port=int(port), log_level="debug")
 
 if __name__ == "__main__":
     main()

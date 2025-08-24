@@ -176,7 +176,7 @@ app.add_middleware(
 # DELETE /rm
 
 # Route to view models
-@app.route('/models', methods=['GET'])
+@app.get('/models')
 def list_models():
     # Return the list of available models using config path
     models_dir = config.get_path("models")
@@ -206,7 +206,7 @@ def list_models():
     return jsonify({"models": model_dirs}), 200
 
 # Delete a model
-@app.route('/rm', methods=['DELETE'])
+@app.delete('/rm')
 def Rm_model():
     data = request.get_json(force=True)
     if "model" not in data:
@@ -221,7 +221,7 @@ def Rm_model():
     return jsonify({"message": f"The model has been successfully deleted!"}), 200
 
 # route to pull a model
-@app.route('/pull', methods=['POST'])
+@app.post('/pull')
 def pull_model():
     @stream_with_context
     def generate_progress():
@@ -292,7 +292,7 @@ def pull_model():
     return Response(generate_progress(), content_type=content_type)
 
 # Route for loading a model into the NPU
-@app.route('/load_model', methods=['POST'])
+@app.post('/load_model')
 def load_model_route():
     global current_model, modele_rkllm
 
@@ -321,7 +321,7 @@ def load_model_route():
     return jsonify({"message": f"Model {model_name} loaded successfully."}), 200
 
 # Route to unload a model from the NPU
-@app.route('/unload_model', methods=['POST'])
+@app.post('/unload_model')
 def unload_model_route():
     global current_model, modele_rkllm
 
@@ -333,7 +333,7 @@ def unload_model_route():
     return jsonify({"message": "Model successfully unloaded!"}), 200
 
 # Route to retrieve the current model
-@app.route('/current_model', methods=['GET'])
+@app.get('/current_model')
 def get_current_model():
     global current_model, modele_rkllm
 
@@ -343,7 +343,7 @@ def get_current_model():
         return jsonify({"error": "No models are currently loaded."}), 404
 
 # Route to make a request to the model
-@app.route('/generate', methods=['POST'])
+@app.post('/generate')
 def recevoir_message():
     global modele_rkllm
 
@@ -358,7 +358,7 @@ def recevoir_message():
 
 # Ollama API compatibility routes
 
-@app.route('/api/tags', methods=['GET'])
+@app.get('/api/tags')
 def list_ollama_models():
     # Return models in Ollama API format
     models_dir = config.get_path("models")
@@ -396,7 +396,7 @@ def list_ollama_models():
 
     return jsonify({"models": models}), 200
 
-@app.route('/api/show', methods=['POST'])
+@app.post('/api/show')
 def show_model_info():
 
     ##### Github Copilot Start Workaround
@@ -782,7 +782,7 @@ def show_model_info():
     
     return jsonify(response), 200
 
-@app.route('/api/create', methods=['POST'])
+@app.post('/api/create')
 def create_model():
     data = request.get_json(force=True)
     model_name = data.get('name')
@@ -815,7 +815,7 @@ def create_model():
     # For compatibility with existing implementation
     return jsonify({"status": "success", "model": model_name}), 200
 
-@app.route('/api/pull', methods=['POST'])
+@app.post('/api/pull')
 def pull_model_ollama():
     # TODO: Implement the pull model
     data = request.get_json(force=True)
@@ -832,7 +832,7 @@ def pull_model_ollama():
     response_stream.content_type = 'application/x-ndjson'
     return response_stream
 
-@app.route('/api/delete', methods=['DELETE'])
+@app.delete('/api/delete')
 def delete_model_ollama():
     data = request.get_json(force=True)
     model_name = data.get('name')
@@ -868,7 +868,7 @@ def delete_model_ollama():
         logger.error(f"Failed to delete model '{model_name}': {str(e)}")
         return jsonify({"error": f"Failed to delete model: {str(e)}"}), 500
 
-@app.route('/api/generate', methods=['POST'])
+@app.post('/api/generate')
 def generate_ollama():
     global modele_rkllm, current_model
     
@@ -940,8 +940,8 @@ def generate_ollama():
 
 
 # Also update the chat endpoint for consistency
-@app.route('/api/chat', methods=['POST'])
-@app.route('/v1/chat/completions', methods=['POST'])
+@app.post('/api/chat')
+@app.post('/v1/chat/completions')
 def chat_ollama():
     global modele_rkllm, current_model
     
@@ -1116,7 +1116,7 @@ def chat_ollama():
 
 # Only include debug endpoint if in debug mode
 if DEBUG_MODE:
-    @app.route('/api/debug', methods=['POST'])
+    @app.post('/api/debug')
     def debug_streaming():
         """Endpoint to diagnose streaming issues"""
         data = request.get_json(force=True)
@@ -1136,7 +1136,7 @@ if DEBUG_MODE:
                 "message": "No issues found in the response format"
             }), 200
 
-@app.route('/api/embeddings', methods=['POST'])
+@app.post('/api/embeddings')
 def embeddings_ollama():
     # This is a placeholder as embeddings aren't implemented in RKLLAMA
     return jsonify({
@@ -1144,7 +1144,7 @@ def embeddings_ollama():
     }), 501
 
 # Version endpoint for Ollama API compatibility
-@app.route('/api/version', methods=['GET'])
+@app.get('/api/version')
 def ollama_version():
     """Return a dummy version to be compatible with Ollama clients"""
     return jsonify({
@@ -1152,7 +1152,7 @@ def ollama_version():
     }), 200
 
 # Default route
-@app.route('/', methods=['GET'])
+@app.get('/')
 def default_route():
     return jsonify({
         "message": "Welcome to RKLLama with Ollama API compatibility!",

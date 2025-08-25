@@ -7,11 +7,9 @@ name: Docker
 
 on:
   push:
-    branches: [ "main", "Rkllama-Docker" ]
+    # branches: [ "main", "Rkllama-Docker" ]
     # Publish semver tags as releases.
     tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main" ]
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -22,7 +20,8 @@ env:
 
 jobs:
   build:
-    runs-on: [self-hosted, Linux, ARM64]
+    # runs-on: [Linux, ARM64]
+    runs-on: [ubuntu-latest]
     permissions:
       contents: read
       packages: write
@@ -79,8 +78,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/notpunchnox/rkllama:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/notpunchnox/rkllama:buildcache,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/issugo/fastapi-rkllama:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/issugo/fastapi-rkllama:buildcache,mode=max
           platforms: linux/arm64
 
       # Sign the resulting Docker image digest except on PRs.

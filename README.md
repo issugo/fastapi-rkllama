@@ -6,6 +6,18 @@ This project is a fork of [NotPunchnox/rkllama](https://github.com/NotPunchnox/r
 
 Big thanks to **NotPunchnox** to have initiated rkllama !
 
+### Docker Installation
+
+Pull the fastapi-RKLLama Docker image:
+
+```bash
+docker pull ghcr.io/issugo/fastapi-rkllama:latest
+```
+run server
+```bash
+docker run -it --privileged -p 8080:8080 ghcr.io/issugo/fastapi-rkllama:latest
+```
+
 ## Contributing
 
 This project is set up using [PyCharm](https://www.jetbrains.com/fr-fr/pycharm/).

@@ -6,7 +6,7 @@ This project is a fork of [NotPunchnox/rkllama](https://github.com/NotPunchnox/r
 
 Big thanks to **NotPunchnox** to have initiated rkllama !
 
-## contributing
+## Contributing
 
 This project is set up using [PyCharm](https://www.jetbrains.com/fr-fr/pycharm/).
 
@@ -17,3 +17,8 @@ Supported target are **Ubuntu 24** Armbian [OrangePI 5](https://www.armbian.com/
 - on your dev computer, install PyCharm
 - setup [Remote Development ...](https://www.jetbrains.com/help/pycharm/remote-development-starting-page.html) using ssh
 - create [uv environment](https://www.jetbrains.com/help/pycharm/uv.html) (existing)
+
+## Contributors
+<a href="https://github.com/issugo/fastapi-rkllama/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=issugo/fastapi-rkllama" />
+</a>

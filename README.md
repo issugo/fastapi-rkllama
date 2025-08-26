@@ -36,10 +36,11 @@ This project is set up using [PyCharm](https://www.jetbrains.com/fr-fr/pycharm/)
 Supported target are **Ubuntu 24** Armbian [OrangePI 5](https://www.armbian.com/orangepi-5/) or [raxda rock 5C](https://www.armbian.com/radxa-rock-5c/).
 
 - Setup your SBC with Armbian
-- create a default user
+- create a default user (ex: ubuntu), add it as sudoer
+- install uv on client (ssh, then, as user, execute "curl -LsSf https://astral.sh/uv/install.sh | sh")
 - on your dev computer, install PyCharm
 - setup [Remote Development ...](https://www.jetbrains.com/help/pycharm/remote-development-starting-page.html) using ssh
-- create [uv environment](https://www.jetbrains.com/help/pycharm/uv.html) (existing)
+- create [uv environment](https://www.jetbrains.com/help/pycharm/uv.html) ("add local", then "new" )
 
 ## Contributors
 <a href="https://github.com/issugo/fastapi-rkllama/graphs/contributors">

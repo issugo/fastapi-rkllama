@@ -42,6 +42,13 @@ Supported target are **Ubuntu 24** Armbian [OrangePI 5](https://www.armbian.com/
 - setup [Remote Development ...](https://www.jetbrains.com/help/pycharm/remote-development-starting-page.html) using ssh
 - create [uv environment](https://www.jetbrains.com/help/pycharm/uv.html) ("add local", then "new" )
 
+## executing tests
+
+```bash
+uv pip install pytest pytest-asyncio httpx
+uv run pytest -v
+```
+
 ## Contributors
 <a href="https://github.com/issugo/fastapi-rkllama/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=issugo/fastapi-rkllama" />

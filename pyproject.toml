@@ -1,14 +1,23 @@
 [project]
 name = "fastapi-rkllama"
 version = "0.1.0"
-description = "Add your description here"
+description = "LLM Server and Client for Rockchip 3588/3576"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.116.1",
+    "fastapi[standard]>=0.116.1",
     "huggingface-hub>=0.34.4",
     "python-dotenv>=1.1.1",
     "requests>=2.32.5",
     "torch>=2.8.0",
     "transformers>=4.55.4",
     "uvicorn>=0.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
 ]

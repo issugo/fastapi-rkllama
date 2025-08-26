@@ -18,6 +18,17 @@ run server
 docker run -it --privileged -p 8080:8080 ghcr.io/issugo/fastapi-rkllama:latest
 ```
 
+### Models
+
+You can find a good collection of models by visiting [dulimov huggingface profile](https://huggingface.co/dulimov).
+
+Tested are Quen3 and Deepseek-R1-0528:
+- [Qwen3-4B-Thinking-2507-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm](https://huggingface.co/dulimov/Qwen3-4B-Thinking-2507-rk3588-1.2.1/blob/main/Qwen3-4B-Thinking-2507-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm)
+- [DeepSeek-R1-0528-Qwen3-8B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm](https://huggingface.co/dulimov/DeepSeek-R1-0528-Qwen3-8B-rk3588-1.2.1/blob/main/DeepSeek-R1-0528-Qwen3-8B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm)
+- [Qwen3-8B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm](https://huggingface.co/dulimov/Qwen3-8B-rk3588-1.2.1-unsloth-16k/blob/main/Qwen3-8B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm)
+- [Qwen3-4B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm](https://huggingface.co/dulimov/Qwen3-4B-rk3588-1.2.1-unsloth-16k/blob/main/Qwen3-4B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm)
+- [Qwen3-1.7B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm](https://huggingface.co/dulimov/Qwen3-1.7B-rk3588-1.2.1-unsloth-16k/blob/main/Qwen3-1.7B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm)
+
 ## Contributing
 
 This project is set up using [PyCharm](https://www.jetbrains.com/fr-fr/pycharm/).

@@ -1,0 +1,104 @@
+# Test your FastAPI endpoints
+
+# Test default route
+GET http://127.0.0.1:8000/
+Accept: application/json
+
+###
+
+# Test listing models
+GET http://127.0.0.1:8000/api/models
+Accept: application/json
+
+###
+
+# Test getting current model
+GET http://127.0.0.1:8000/api/current_model
+Accept: application/json
+
+###
+
+# Test loading a model
+POST http://127.0.0.1:8000/api/load/qwen2.5:3b
+Content-Type: application/json
+
+###
+
+# Test unloading the current model
+POST http://127.0.0.1:8000/api/unload
+Content-Type: application/json
+
+###
+
+# Test chat endpoint
+POST http://127.0.0.1:8000/api/chat
+Content-Type: application/json
+
+{
+  "message": "Hello, how are you?",
+  "history": [],
+  "temperature": 0.7,
+  "max_tokens": 100
+}
+
+###
+
+# Test Ollama API models endpoint
+GET http://127.0.0.1:8000/api/ollama/models
+Accept: application/json
+
+###
+
+# Test Ollama API chat endpoint
+POST http://127.0.0.1:8000/api/ollama/chat
+Content-Type: application/json
+
+{
+  "model": "qwen2.5:3b",
+  "messages": [{"role": "user", "content": "Hello, how are you?"}],
+  "stream": false
+}
+
+###
+
+# Test Ollama API generate endpoint
+POST http://127.0.0.1:8000/api/ollama/generate
+Content-Type: application/json
+
+{
+  "model": "qwen2.5:3b",
+  "prompt": "Hello, how are you?",
+  "stream": false
+}
+
+###
+
+# Test Ollama API version endpoint
+GET http://127.0.0.1:8000/api/ollama/version
+Accept: application/json
+
+###
+
+# Test Ollama API with tool calling
+POST http://127.0.0.1:8000/api/ollama/chat
+Content-Type: application/json
+
+{
+  "model": "qwen2.5:3b",
+  "messages": [{"role": "user", "content": "What's the weather in Paris?"}],
+  "tools": [{
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get current weather",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": {"type": "string", "description": "City name"}
+        },
+        "required": ["location"]
+      }
+    }
+  }],
+  "stream": false
+}

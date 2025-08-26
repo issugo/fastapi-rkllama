@@ -82,7 +82,7 @@ class RKLLMConverter:
             vocab_size=model_config.vocab_size,
             hidden_size=model_config.hidden_size,
             num_layers=model_config.num_hidden_layers,
-            max_seq_len=self.config.get('max_context_len', 4096),
+            max_seq_len=self.config.get('max_context_len', 16385),
             quantization=self.config.get('quantization', 'Q4_0')
         )
     

@@ -1,6 +1,9 @@
 import threading, time, json
 from transformers import AutoTokenizer
-from flask import Flask, request, jsonify, Response
+## from flask import Flask, request, jsonify, Response
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 import src.variables as variables
 import datetime
 import logging
@@ -15,6 +18,7 @@ DEBUG_MODE = is_debug_mode()
 import os
 from typing import Optional
 from transformers import AutoTokenizer
+import urllib.parse
 from dotenv import load_dotenv
 
 def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
@@ -53,7 +57,7 @@ def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
 
 
 
-def Request(modele_rkllm, modelfile, custom_request=None):
+async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
     """
     Process a request to the language model
     
@@ -69,8 +73,9 @@ def Request(modele_rkllm, modelfile, custom_request=None):
         is_locked = True
 
         # Use custom_request if provided, otherwise use Flask's request
-        req = custom_request if custom_request is not None else request
-        data = req.json
+        # req = custom_request if custom_request is not None else request
+        # data = req.json
+        data = await request.json()
         
         if data and 'messages' in data:
             # Extract format parameters
@@ -104,8 +109,10 @@ def Request(modele_rkllm, modelfile, custom_request=None):
             }
 
             # Check if this is an Ollama-style request
-            is_ollama_request = req.path.startswith('/api/')
-            
+            urlparsed_path = urllib.parse.urlparse(str(request.url)).path
+            ## is_ollama_request = req.path.startswith('/api/')
+            is_ollama_request = urlparsed_path.startswith('/api/')
+
             # Get chat history from JSON request
             messages = data["messages"]
 
@@ -331,7 +338,10 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                             time.sleep(0.01)
                     
                 # Return appropriate streaming response based on request type
-                return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
+                ## return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
+                content_type = 'application/x-ndjson' if is_ollama_request else 'text/plain'
+                print("gonna return a stream boy")
+                return StreamingResponse(generate(), headers={'Content-Type': content_type})
             
             # For non-streaming responses
             else:
@@ -407,7 +417,8 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                         "eval_duration": int(eval_duration * 1_000_000_000)
                     }
                     
-                    return jsonify(ollama_response), 200
+                    ## return jsonify(ollama_response), 200
+                    return JSONResponse(ollama_response, status_code=200)
                 else:
                     # Standard RKLLAMA API response
                     llmResponse["choices"] = [{
@@ -431,12 +442,15 @@ def Request(modele_rkllm, modelfile, custom_request=None):
                     if eval_duration > 0:
                         llmResponse["usage"]["tokens_per_second"] = round(count / eval_duration, 2)
                     
-                    return jsonify(llmResponse), 200
+                    ## return jsonify(llmResponse), 200
+                    return JSONResponse(ollama_response, status_code=200)
                     
         else:
-            return jsonify({'status': 'error', 'message': 'Invalid JSON data!'}), 400
+            ## return jsonify({'status': 'error', 'message': 'Invalid JSON data!'}), 400
+            return JSONResponse({'status': 'error', 'message': 'Invalid JSON data!'}, status_code=400)
     finally:
         # No need to release the lock here as it should be handled by the calling function
-        if custom_request is None:
+        if request is None:
             variables.verrou.release()
         is_locked = False
+        return JSONResponse({'status': 'error', 'message': 'Invalid JSON data!'}, status_code=400)

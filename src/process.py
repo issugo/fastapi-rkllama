@@ -448,8 +448,9 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
         else:
             ## return jsonify({'status': 'error', 'message': 'Invalid JSON data!'}), 400
             return JSONResponse({'status': 'error', 'message': 'Invalid JSON data!'}, status_code=400)
-    finally:
-        # No need to release the lock here as it should be handled by the calling function
+    except Exception as e:
+        # No need to relese the lock here as it should be handled by the calling function
+        print(e)
         if request is None:
             variables.verrou.release()
         is_locked = False

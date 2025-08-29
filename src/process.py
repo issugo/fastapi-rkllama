@@ -76,7 +76,8 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
         # req = custom_request if custom_request is not None else request
         # data = req.json
         data = await request.json()
-        
+
+
         if data and 'messages' in data:
             # Extract format parameters
             format_spec = data.get('format')
@@ -167,6 +168,9 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                     # Initialize accumulated text for JSON format validation
                     complete_text = ""
                     tokens_since_last_response = 0  # Track tokens since last response sent
+
+                    counter=0
+                    max_loop=100000
 
                     while not thread_model_finished or not final_message_sent:
                         processed_tokens = False
@@ -336,7 +340,11 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                         # If we didn't process any tokens in this loop iteration, add a small sleep to avoid CPU spin
                         if not processed_tokens:
                             time.sleep(0.01)
-                    
+                        counter += 1
+                        if counter == max_loop:
+                            print(f"reached max loop (max_loop={max_loop}) in generate function")
+                            break
+
                 # Return appropriate streaming response based on request type
                 ## return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
                 content_type = 'application/x-ndjson' if is_ollama_request else 'text/plain'
@@ -390,7 +398,8 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                 load_duration = 0.1  # Fixed 100ms in seconds
                 
                 # Handle format validation for completed response
-                if format_spec and complete_text:
+                ## if format_spec and complete_text:
+                if complete_text:
                     # Updated to unpack the additional cleaned_json return value
                     success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
                     logger.debug(f"Format validation: success={success}, error={error}")
@@ -418,6 +427,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                     }
                     
                     ## return jsonify(ollama_response), 200
+                    variables.verrou.release()
                     return JSONResponse(ollama_response, status_code=200)
                 else:
                     # Standard RKLLAMA API response
@@ -443,15 +453,16 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                         llmResponse["usage"]["tokens_per_second"] = round(count / eval_duration, 2)
                     
                     ## return jsonify(llmResponse), 200
-                    return JSONResponse(ollama_response, status_code=200)
+                    variables.verrou.release()
+                    return JSONResponse(llmResponse, status_code=200)
                     
         else:
             ## return jsonify({'status': 'error', 'message': 'Invalid JSON data!'}), 400
+            variables.verrou.release()
             return JSONResponse({'status': 'error', 'message': 'Invalid JSON data!'}, status_code=400)
     except Exception as e:
         # No need to relese the lock here as it should be handled by the calling function
-        print(e)
-        if request is None:
-            variables.verrou.release()
+        print(f"ERREUR: {e}")
+        variables.verrou.release()
         is_locked = False
         return JSONResponse({'status': 'error', 'message': 'Invalid JSON data!'}, status_code=400)

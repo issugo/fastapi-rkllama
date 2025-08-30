@@ -42,11 +42,12 @@ Supported target are **Ubuntu 24** Armbian [OrangePI 5](https://www.armbian.com/
 - setup [Remote Development ...](https://www.jetbrains.com/help/pycharm/remote-development-starting-page.html) using ssh
 - create [uv environment](https://www.jetbrains.com/help/pycharm/uv.html) ("add local", then "new" )
 
-## executing tests
+## executing tests and pre-commit
 
 ```bash
-uv pip install pytest pytest-asyncio httpx
-uv run pytest -v
+uv add --dev pytest pytest-asyncio httpx pre-commit
+uvx pytest -v
+uvx pre-commit run
 ```
 
 ## Contributors

@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+function failed {
+  echo "${1}" >&2
+  exit $2
+}
+
 # Define colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -12,27 +17,60 @@ RESET='\033[0m'
 
 # Determine script location to find application root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-APP_ROOT="$SCRIPT_DIR"
-CONFIG_DIR="$APP_ROOT/config"
+APP_ROOT="${SCRIPT_DIR}"
+CONFIG_DIR="${APP_ROOT}/config"
 
 # Create config directory if it doesn't exist
-mkdir -p "$CONFIG_DIR"
+mkdir -p "${CONFIG_DIR}"
 
-# Check for the argument to disable Miniconda
-USE_CONDA=true
-CONDA_ARG="" # This will hold "--no-conda" if conda is disabled
-if [[ -n "${1-}" && "$1" == "--no-conda" ]]; then
+if test -z "${USE_UV}" -o -z "${USE_CONDA}" ; then
+  USE_UV=true
+  UV_ARG="" # This will hold "--no-uv" if uv is disabled
   USE_CONDA=false
-  CONDA_ARG="--no-conda"
-  echo -e "${YELLOW}Miniconda is disabled for this installation.${RESET}"
+  CONDA_ARG="--no-conda" # This will hold "--no-conda" if conda is disabled
+  for arg in "$@"; do
+      if [[ "$arg" == "--no-uv" ]]; then
+          USE_UV=false
+          UV_ARG="--no-uv"
+          echo -e "${YELLOW}Uv is disabled for this installation.${RESET}"
+      elif [[ "$arg" == "--no-conda" ]]; then
+          USE_CONDA=false
+          CONDA_ARG="--no-conda"
+          echo -e "${YELLOW}Miniconda is disabled for this installation.${RESET}"
+      elif [[ "$arg" == "--uv" ]]; then
+          USE_UV=true
+          UV_ARG="" # This will hold "--no-uv" if uv is disabled
+      elif [[ "$arg" == "--conda" ]]; then
+          USE_CONDA=true
+          CONDA_ARG="" # This will hold "--no-conda" if conda is disabled
+      fi
+  done
 fi
 
-# Miniconda installation path
-MINICONDA_DIR=~/miniconda3
+
+if test -z "${UV_DIR}" ; then
+  # Uv installation path
+  UV_DIR=~/miniconda3
+fi
+UV_URL="https://astral.sh/uv/install.sh"
+
+if test -z "${MINICONDA_DIR}" ; then
+  # Miniconda installation path
+  MINICONDA_DIR=~/miniconda3
+fi
 MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
 
-# Install Miniconda (if enabled)
-if $USE_CONDA; then
+# Install uv ro Miniconda (if enabled)
+if $USE_UV; then
+  if [ -x "${UV_DIR}/uv" ]; then
+    echo -e "${GREEN}uv is already installed.${RESET}"
+    uv self update
+  else
+    echo -e "${YELLOW}uv is not installed. Proceeding with installation...${RESET}"
+    curl -LsSf "${UV_URL}" | sh
+    echo -e "${GREEN}uv was successfully installed.${RESET}"
+  fi
+elif $USE_CONDA; then
   if [ -d "$MINICONDA_DIR" ]; then
     echo -e "${GREEN}Miniconda is already installed.${RESET}"
   else
@@ -58,8 +96,37 @@ cp -rf . "$INSTALL_DIR/"
 
 # Generate initial configuration first so we can use it to create the right directories
 echo -e "${CYAN}Generating initial configuration...${RESET}"
-cd "$INSTALL_DIR"
-python3 -c "import config; config.validate()"
+
+cd "${INSTALL_DIR}" || failed "## failed to cd ${INSTALL_DIR}" 1
+
+if test ! -s requirements.in -a -s requirements.txt ; then
+  # create dummy requirements.in
+  failed '## TODO' 1
+fi
+if test -s requirements.in -a ! -s requirements-dev.in ; then
+  cat <<EOF | tee ./requirements-dev.in
+-r requirements.in
+-c requirements.txt
+
+precommit
+pytest
+EOF
+fi
+
+if $USE_UV; then
+  # install python
+  uv python install
+
+  test ! -s pyproject.toml && \
+    uv init
+
+  uv run - <<EOF
+import config
+config.validate()
+EOF
+else
+  python3 -c "import config; config.validate()"
+fi
 
 # Create required directories based on configured paths
 echo -e "${CYAN}Creating required directories based on configuration...${RESET}"
@@ -71,19 +138,56 @@ mkdir -p "$RKLLAMA_PATHS_TEMP_RESOLVED"
 mkdir -p "$RKLLAMA_PATHS_SRC_RESOLVED"
 mkdir -p "$RKLLAMA_PATHS_LIB_RESOLVED"
 
-# Activate Miniconda and install dependencies (if enabled)
-if $USE_CONDA; then
-  source "$MINICONDA_DIR/bin/activate"
-fi
+function install_reqs {
+  PIP=$1
+  UV=$2
+  if test -s requirements.in ; then
+    ${UV} ${PIP} compile requirements.in -o requirements.txt
+    test -n "${UV}" && ${UV} add -r requirements.in -c requirements.txt
+  fi
+  if test -s requirements-dev.in ; then
+    ${UV} ${PIP} compile requirements-dev.in -o requirements-dev.txt
+  fi
 
-# Install dependencies using pip
-echo -e "${CYAN}Installing dependencies from requirements.txt...${RESET}"
-pip3 install -r "$INSTALL_DIR/requirements.txt"
+  test ! -s requirements.txt && failed "## cannot find requirements.txt from $(pwd)" 1
+  # Install dependencies using pip
+  echo -e "${CYAN}Installing dependencies from requirements.txt...${RESET}"
+  ${UV} ${PIP} install -r requirements.txt
+
+  if test -s requirements-dev.txt ; then
+      # Install dependencies-dev using pip
+      echo -e "${CYAN}Installing dependencies from requirements-dev.txt...${RESET}"
+      ${UV} ${PIP} install -r requirements-dev.txt
+      test -n "${UV}" && (
+        if grep '^-r ' requirements-dev.in 1>/dev/null ; then
+          sed '/^-r /d' requirements-dev.in | ${UV} add --dev -r - -c requirements-dev.txt
+        else
+          uv add --dev -r requirements-dev.in -c requirements-dev.txt
+        fi
+      )
+  fi
+}
 
 # Install python libraries
 echo -e "\e[32m=======Installing Python dependencies=======\e[0m"
 # Add flask-cors to the pip install command
 pip install requests flask huggingface_hub flask-cors python-dotenv transformers
+
+
+if $USE_UV; then
+  install_reqs pip uv
+elif $USE_CONDA; then
+  # Activate Miniconda and install dependencies (if enabled)
+  source "${MINICONDA_DIR}/bin/activate"
+  install_reqs pip3
+elif test -d .venv ; then
+  source venv/bin/activate
+  install_reqs pip
+else
+  install_reqs pip3
+fi
+
+
 
 # Make client.sh and server.sh executable
 echo -e "${CYAN}Making scripts executable${RESET}"

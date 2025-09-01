@@ -6,9 +6,9 @@ repos:
       - id: uv-lock
       - id: uv-export
       # Compile requirements
-      #- id: pip-compile
-      #  name: pip-compile requirements.in
-      #  args: [requirements.in, -o, requirements.txt]
+      - id: pip-compile
+        name: pip-compile requirements.in
+        args: [requirements.in, -o, requirements.txt]
       - id: pip-compile
         name: pip-compile requirements-dev.in
         args: [requirements-dev.in, -o, requirements-dev.txt]

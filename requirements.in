@@ -1,0 +1,8 @@
+requests
+huggingface_hub
+python-dotenv
+transformers
+torch
+pydantic
+fastapi
+uvicorn

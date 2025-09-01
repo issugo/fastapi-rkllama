@@ -101,15 +101,27 @@ cd "${INSTALL_DIR}" || failed "## failed to cd ${INSTALL_DIR}" 1
 
 if test ! -s requirements.in -a -s requirements.txt ; then
   # create dummy requirements.in
-  failed '## TODO' 1
+  cat <<EOF | tee ./requirements-dev.in
+requests
+huggingface_hub
+python-dotenv
+transformers
+torch
+pydantic
+fastapi
+uvicorn
+EOF
 fi
 if test -s requirements.in -a ! -s requirements-dev.in ; then
   cat <<EOF | tee ./requirements-dev.in
 -r requirements.in
 -c requirements.txt
 
-precommit
+ruff
 pytest
+pytest-asyncio
+httpx
+pre-commit
 EOF
 fi
 
@@ -174,13 +186,21 @@ echo -e "\e[32m=======Installing Python dependencies=======\e[0m"
 pip install requests flask huggingface_hub flask-cors python-dotenv transformers
 
 
+for PYTHON_ENV in venv .venv ; do
+  grep -e "^${PYTHON_ENV}/" ./.gitignore || ( echo "${PYTHON_ENV}/" | tee ./.gitignore 1>/dev/null )
+done
+
 if $USE_UV; then
+  uv venv
   install_reqs pip uv
 elif $USE_CONDA; then
   # Activate Miniconda and install dependencies (if enabled)
   source "${MINICONDA_DIR}/bin/activate"
   install_reqs pip3
 elif test -d .venv ; then
+  source .venv/bin/activate
+  install_reqs pip
+elif test -d venv ; then
   source venv/bin/activate
   install_reqs pip
 else
@@ -196,7 +216,43 @@ chmod +x "$INSTALL_DIR/server.sh"
 chmod +x "$INSTALL_DIR/uninstall.sh"
 
 # Modify client.sh and server.sh to always use --no-conda if conda is disabled
-if ! $USE_CONDA; then
+if $USE_UV && ! $USE_CONDA ; then
+  echo -e "${CYAN}Ensuring client.sh and server.sh always run with --uv --no-conda${RESET}"
+
+  # Add --no-uv to client.sh if not already present
+  if ! grep -q -- "--no-uv" "$INSTALL_DIR/client.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --uv --no-conda "$@"|' "$INSTALL_DIR/client.sh"
+  fi
+
+  # Add --no-conda to server.sh if not already present
+  if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --uv --no-conda "$@"|' "$INSTALL_DIR/server.sh"
+  fi
+elif ! $USE_UV && $USE_CONDA ; then
+  echo -e "${CYAN}Ensuring client.sh and server.sh always run with --conda --no-uv${RESET}"
+
+  # Add --no-uv to client.sh if not already present
+  if ! grep -q -- "--no-uv" "$INSTALL_DIR/client.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --conda --no-uv "$@"|' "$INSTALL_DIR/client.sh"
+  fi
+
+  # Add --no-conda to server.sh if not already present
+  if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --conda --no-uv "$@"|' "$INSTALL_DIR/server.sh"
+  fi
+elif ! $USE_UV; then
+  echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-uv${RESET}"
+
+  # Add --no-uv to client.sh if not already present
+  if ! grep -q -- "--no-uv" "$INSTALL_DIR/client.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-uv "$@"|' "$INSTALL_DIR/client.sh"
+  fi
+
+  # Add --no-conda to server.sh if not already present
+  if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
+    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-uv "$@"|' "$INSTALL_DIR/server.sh"
+  fi
+elif ! $USE_CONDA; then
   echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-conda${RESET}"
 
   # Add --no-conda to client.sh if not already present
@@ -228,6 +284,7 @@ fi
 # Parse arguments to pass along
 ARGS=""
 PORT_ARG=""
+USE_UV={{USE_UV}}
 USE_CONDA={{USE_CONDA}}
 
 for arg in "$@"; do
@@ -237,6 +294,9 @@ for arg in "$@"; do
     elif [[ "$arg" == "--no-conda" ]]; then
         # Handle no-conda flag
         USE_CONDA=false
+    elif [[ "$arg" == "--no-uv" ]]; then
+        # Handle no-uv flag
+        USE_UV=false
     elif [[ "$arg" == --port=* ]]; then
         # Extract port argument
         PORT_ARG="$arg"
@@ -257,6 +317,9 @@ if [[ -n "$COMMAND" && "$COMMAND" == "serve" ]]; then
     fi
 
     # Add no-conda flag if specified
+    if [[ "$USE_UV" == false ]]; then
+        FINAL_CMD="$FINAL_CMD --no-uv"
+    fi
     if [[ "$USE_CONDA" == false ]]; then
         FINAL_CMD="$FINAL_CMD --no-conda"
     fi
@@ -273,6 +336,9 @@ else
     fi
 
     # Add no-conda flag if specified
+    if [ "$USE_UV" == false ]; then
+        FINAL_CMD="$FINAL_CMD --no-uv"
+    fi
     if [ "$USE_CONDA" == false ]; then
         FINAL_CMD="$FINAL_CMD --no-conda"
     fi
@@ -285,6 +351,7 @@ fi
 eval $FINAL_CMD
 EOF
 
+sudo sed -i "s|{{USE_UV}}|$USE_UV|" /usr/local/bin/rkllama
 sudo sed -i "s|{{USE_CONDA}}|$USE_CONDA|" /usr/local/bin/rkllama
 
 sudo chmod +x /usr/local/bin/rkllama

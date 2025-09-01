@@ -23,7 +23,7 @@ CONFIG_DIR="${APP_ROOT}/config"
 # Create config directory if it doesn't exist
 mkdir -p "${CONFIG_DIR}"
 
-if test -z "${USE_UV}" -o -z "${USE_CONDA}" ; then
+if test -z "${USE_UV:-}" -o -z "${USE_CONDA:-}" ; then
   USE_UV=true
   UV_ARG="" # This will hold "--no-uv" if uv is disabled
   USE_CONDA=false
@@ -48,13 +48,13 @@ if test -z "${USE_UV}" -o -z "${USE_CONDA}" ; then
 fi
 
 
-if test -z "${UV_DIR}" ; then
+if test -z "${UV_DIR:-}" ; then
   # Uv installation path
-  UV_DIR=~/miniconda3
+  UV_DIR=~/.local/bin
 fi
 UV_URL="https://astral.sh/uv/install.sh"
 
-if test -z "${MINICONDA_DIR}" ; then
+if test -z "${MINICONDA_DIR:-}" ; then
   # Miniconda installation path
   MINICONDA_DIR=~/miniconda3
 fi
@@ -101,7 +101,7 @@ cd "${INSTALL_DIR}" || failed "## failed to cd ${INSTALL_DIR}" 1
 
 if test ! -s requirements.in -a -s requirements.txt ; then
   # create dummy requirements.in
-  cat <<EOF | tee ./requirements-dev.in
+  cat <<EOF | tee ./requirements.in
 requests
 huggingface_hub
 python-dotenv
@@ -179,12 +179,6 @@ function install_reqs {
       )
   fi
 }
-
-# Install python libraries
-echo -e "\e[32m=======Installing Python dependencies=======\e[0m"
-# Add flask-cors to the pip install command
-pip install requests flask huggingface_hub flask-cors python-dotenv transformers
-
 
 for PYTHON_ENV in venv .venv ; do
   grep -e "^${PYTHON_ENV}/" ./.gitignore || ( echo "${PYTHON_ENV}/" | tee ./.gitignore 1>/dev/null )

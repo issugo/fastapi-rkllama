@@ -87,14 +87,13 @@ function failed {
 # If uv is enabled, check if it exists and activate it
 # If Miniconda is enabled, check if it exists and activate it
 if $USE_UV; then
-    failed '## TODO' 1
-    if [ -d "$UV_DIR" ]; then
+    if [ -x "${UV_DIR}/uv" ]; then
         echo -e "${GREEN}Starting the environment with uv.${RESET}"
-        source "$MINICONDA_DIR/bin/activate" ""
+        uv .venv/bin/activate
     else
         echo -e "${YELLOW}Launching the installation file...${RESET}"
         # Download and install Miniconda
-        source "${APP_ROOT}/setup.sh" --uv
+        source "${APP_ROOT}/setup.sh" --uv --no-conda
     fi
 elif $USE_CONDA; then
     if [ -d "$MINICONDA_DIR" ]; then
@@ -103,11 +102,14 @@ elif $USE_CONDA; then
     else
         echo -e "${YELLOW}Launching the installation file...${RESET}"
         # Download and install Miniconda
-        source "${APP_ROOT}/setup.sh" --conda
+        source "${APP_ROOT}/setup.sh" --conda --no-uv
     fi
 else
     echo -e "${YELLOW}uv and Miniconda are disabled. Running without it.${RESET}"
 fi
+
+failed '## TODO' 1
+
 
 # Function to prompt for processor selection
 select_processor() {

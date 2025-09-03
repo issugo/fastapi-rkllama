@@ -108,8 +108,6 @@ else
     echo -e "${YELLOW}uv and Miniconda are disabled. Running without it.${RESET}"
 fi
 
-failed '## TODO' 1
-
 
 # Function to prompt for processor selection
 select_processor() {
@@ -156,8 +154,12 @@ if [ -z "$PROCESSOR" ]; then
   fi
 fi
 
-# Build full command with all arguments
-COMMAND=("python3" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
+if $USE_UV; then
+  COMMAND=("uvx" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
+else
+  # Build full command with all arguments
+  COMMAND=("python3" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
+fi
 
 # Add debug flag if enabled
 if $DEBUG_MODE; then

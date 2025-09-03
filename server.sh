@@ -89,7 +89,7 @@ function failed {
 if $USE_UV; then
     if [ -x "${UV_DIR}/uv" ]; then
         echo -e "${GREEN}Starting the environment with uv.${RESET}"
-        uv .venv/bin/activate
+        source .venv/bin/activate
     else
         echo -e "${YELLOW}Launching the installation file...${RESET}"
         # Download and install Miniconda

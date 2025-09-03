@@ -125,11 +125,15 @@ pre-commit
 EOF
 fi
 
+cd "${INSTALL_DIR}" || failed "## failed to cd ${INSTALL_DIR}" 1
+echo -e "${CYAN}setup initial configuration in ${INSTALL_DIR}...${RESET}"
+
 if $USE_UV; then
   # install python
+  test ! -s ./.python-version && ( echo "3.12" >./.python-version )
   uv python install
 
-  test ! -s pyproject.toml && \
+  test ! -s ./pyproject.toml && \
     uv init
 
   uv run - <<EOF
@@ -185,7 +189,7 @@ for PYTHON_ENV in venv .venv ; do
 done
 
 if $USE_UV; then
-  uv venv
+  uv venv --allow-existing
   install_reqs pip uv
 elif $USE_CONDA; then
   # Activate Miniconda and install dependencies (if enabled)
@@ -355,6 +359,6 @@ echo -e "${CYAN}Executable created successfully: /usr/local/bin/rkllama${RESET}"
 echo -e "${GREEN}+ Configuration: OK.${RESET}"
 echo -e "${GREEN}+ Installation : OK.${RESET}"
 
-echo -e "${BLUE}Server${GREEN}  : $INSTALL_DIR/server.sh $CONDA_ARG${RESET}"
-echo -e "${BLUE}Client${GREEN}  : $INSTALL_DIR/client.sh $CONDA_ARG${RESET}\n"
+echo -e "${BLUE}Server${GREEN}  : $INSTALL_DIR/server.sh ${UV_ARG} ${CONDA_ARG}${RESET}"
+echo -e "${BLUE}Client${GREEN}  : $INSTALL_DIR/client.sh ${UV_ARG} ${CONDA_ARG}${RESET}\n"
 echo -e "${BLUE}Global command  : ${RESET}rkllama"

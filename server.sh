@@ -155,7 +155,7 @@ if [ -z "$PROCESSOR" ]; then
 fi
 
 if $USE_UV; then
-  COMMAND=("uvx" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
+  COMMAND=("uv" "run" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
 else
   # Build full command with all arguments
   COMMAND=("python3" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")

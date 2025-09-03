@@ -25,7 +25,7 @@ mkdir -p "${CONFIG_DIR}"
 
 if test -z "${USE_UV:-}" -o -z "${USE_CONDA:-}" ; then
   USE_UV=true
-  UV_ARG="" # This will hold "--no-uv" if uv is disabled
+  UV_ARG="--uv" # This will hold "--no-uv" if uv is disabled
   USE_CONDA=false
   CONDA_ARG="--no-conda" # This will hold "--no-conda" if conda is disabled
   for arg in "$@"; do
@@ -39,10 +39,10 @@ if test -z "${USE_UV:-}" -o -z "${USE_CONDA:-}" ; then
           echo -e "${YELLOW}Miniconda is disabled for this installation.${RESET}"
       elif [[ "$arg" == "--uv" ]]; then
           USE_UV=true
-          UV_ARG="" # This will hold "--no-uv" if uv is disabled
+          UV_ARG="--uv" # This will hold "--no-uv" if uv is disabled
       elif [[ "$arg" == "--conda" ]]; then
           USE_CONDA=true
-          CONDA_ARG="" # This will hold "--no-conda" if conda is disabled
+          CONDA_ARG="--conda" # This will hold "--no-conda" if conda is disabled
       fi
   done
 fi

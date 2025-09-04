@@ -165,10 +165,46 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                     complete_text = ""
                     tokens_since_last_response = 0  # Track tokens since last response sent
 
-                    counter = 0
-                    max_loop = 100000
-                    while counter < 10:
-                        yield f"{json.dumps({"counter": counter})}\n\n"
+                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
+                    thread_modele.start()
+
+                    thread_model_finished = False
+
+                    while not thread_model_finished:
+                        print("rkllm thread running")
+
+                        while len(variables.global_text) > 0:
+                            current_token = variables.global_text.pop(0)
+                            llmResponse["choices"] = [
+                                {
+                                    "role": "assistant",
+                                    "content": current_token,
+                                    "logprobs": None,
+                                    "finish_reason": "stop" if variables.global_status == 1 else None,
+                                }
+                            ]
+                            llmResponse["usage"]["completion_tokens"] = count
+                            llmResponse["usage"]["total_tokens"] += 1
+
+                            # Process format in the final chunk
+                            if variables.global_status == 1 and format_spec:
+                                success, parsed_data, error, cleaned_json = validate_format_response(complete_text,
+                                                                                                     format_spec)
+                                if success and parsed_data:
+                                    llmResponse["choices"][0]["format"] = format_spec
+                                    llmResponse["choices"][0]["parsed"] = parsed_data
+
+                            # Send the response
+                            yield f"{json.dumps(llmResponse)}\n\n"
+
+
+                        print("sleeping")
+                        time.sleep(0.005)
+                        print("joining")
+                        thread_modele.join(timeout=0.005)
+                        thread_model_finished = not thread_modele.is_alive()
+
+                    print("rkllm thread finished")
 
                     # while not final_message_sent:
                     #     print("in first while")

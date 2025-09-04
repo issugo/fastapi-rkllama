@@ -277,6 +277,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                         
                         # If model is done and we haven't sent the final message yet, do it now
                         if thread_model_finished and not final_message_sent:
+                            print("sending final message")
                             final_message_sent = True
                             
                             # Calculate final metrics

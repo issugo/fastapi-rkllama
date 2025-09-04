@@ -155,6 +155,105 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
             sortie_rkllm = ""
 
             if "stream" in data.keys() and data["stream"] == True:
+                def generate1():
+                    count = 0
+                    start = time.time()
+                    prompt_eval_end_time = None
+                    final_message_sent = False  # Track if we've sent the final message
+
+                    # Initialize accumulated text for JSON format validation
+                    complete_text = ""
+                    tokens_since_last_response = 0  # Track tokens since last response sent
+
+                    counter = 0
+                    max_loop = 100000
+
+                    while not final_message_sent:
+                        processed_tokens = False
+
+                        while len(variables.global_text) > 0:
+                            processed_tokens = True
+                            count += 1
+                            current_token = variables.global_text.pop(0)
+                            tokens_since_last_response += 1
+
+                            # Mark time when first token is generated
+                            if count == 1:
+                                prompt_eval_end_time = time.time()
+
+                            # Accumulate text for format validation
+                            complete_text += current_token
+
+                            # For original RKLLAMA API streaming
+                            llmResponse["choices"] = [
+                                {
+                                    "role": "assistant",
+                                    "content": current_token,
+                                    "logprobs": None,
+                                    "finish_reason": "stop" if variables.global_status == 1 else None,
+                                }
+                            ]
+                            llmResponse["usage"]["completion_tokens"] = count
+                            llmResponse["usage"]["total_tokens"] += 1
+
+                            # Process format in the final chunk
+                            if variables.global_status == 1 and format_spec:
+                                success, parsed_data, error, cleaned_json = validate_format_response(complete_text,
+                                                                                                     format_spec)
+                                if success and parsed_data:
+                                    llmResponse["choices"][0]["format"] = format_spec
+                                    llmResponse["choices"][0]["parsed"] = parsed_data
+
+                            # Send the response
+                            yield f"{json.dumps(llmResponse)}\n\n"
+                            tokens_since_last_response = 0
+
+                        # If model is done and we haven't sent the final message yet, do it now
+                        if not final_message_sent:
+                            print("sending final message")
+                            final_message_sent = True
+
+                            # Calculate final metrics
+                            current_time = time.time()
+                            total_duration = current_time - start
+
+                            if prompt_eval_end_time is None:
+                                prompt_eval_end_time = start + (total_duration * 0.1)
+
+                            prompt_eval_duration = prompt_eval_end_time - start
+                            eval_duration = current_time - prompt_eval_end_time
+                            load_duration = 0.1
+
+                            # Process format validation if requested
+                            parsed_data = None
+                            if format_spec and complete_text:
+                                success, parsed_data, error, cleaned_json = validate_format_response(complete_text,
+                                                                                                     format_spec)
+
+                            # Handle final message for RKLLAMA API
+                            # If there are still tokens waiting to send, create one final response
+                            if tokens_since_last_response > 0:
+                                llmResponse["choices"] = [
+                                    {
+                                        "role": "assistant",
+                                        "content": "",  # Empty to avoid duplication
+                                        "logprobs": None,
+                                        "finish_reason": "stop"
+                                    }
+                                ]
+                                llmResponse["usage"]["completion_tokens"] = count
+                                llmResponse["usage"]["total_tokens"] += 1
+
+                                # Add format information if available
+                                if format_spec and parsed_data:
+                                    llmResponse["choices"][0]["format"] = format_spec
+                                    llmResponse["choices"][0]["parsed"] = parsed_data
+
+                                yield f"{json.dumps(llmResponse)}\n\n"
+
+                        # If we didn't process any tokens in this loop iteration, add a small sleep to avoid CPU spin
+                        if not processed_tokens:
+                            time.sleep(0.01)
                 def generate():
                     thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
                     thread_modele.start()
@@ -350,7 +449,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                 ## return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
                 content_type = 'application/x-ndjson' if is_ollama_request else 'text/plain'
                 print("gonna return a stream boy")
-                return StreamingResponse(generate(), headers={'Content-Type': content_type})
+                return StreamingResponse(generate1(), headers={'Content-Type': content_type})
             
             # For non-streaming responses
             else:

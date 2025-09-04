@@ -4,7 +4,7 @@
 
 This project is a fork of [NotPunchnox/rkllama](https://github.com/NotPunchnox/rkllama) migrated to [fastAPI](https://fastapi.tiangolo.com/).
 
-Big thanks to **NotPunchnox** to have initiated rkllama !
+Big thanks to **NotPunchnox** to have initiated rkllama!
 
 ### Docker Installation
 
@@ -37,16 +37,17 @@ Supported target are **Ubuntu 24** Armbian [OrangePI 5](https://www.armbian.com/
 
 - Setup your SBC with Armbian
 - create a default user (ex: ubuntu), add it as sudoer
-- install uv on client (ssh, then, as user, execute "curl -LsSf https://astral.sh/uv/install.sh | sh")
+- install uv on the client (ssh, then, as your user, execute "curl -LsSf https://astral.sh/uv/install.sh | sh")
 - on your dev computer, install PyCharm
 - setup [Remote Development ...](https://www.jetbrains.com/help/pycharm/remote-development-starting-page.html) using ssh
-- create [uv environment](https://www.jetbrains.com/help/pycharm/uv.html) ("add local", then "new" )
+- create [uv environment](https://www.jetbrains.com/help/pycharm/uv.html) ("add local", then "new")
 
-## executing tests
+## executing tests and pre-commit
 
 ```bash
-uv pip install pytest pytest-asyncio httpx
-uv run pytest -v
+uv add --dev pytest pytest-asyncio httpx pre-commit
+uvx pytest -v
+uvx pre-commit run
 ```
 
 ## Contributors

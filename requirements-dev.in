@@ -1,0 +1,5 @@
+ruff
+pytest
+pytest-asyncio
+httpx
+pre-commit

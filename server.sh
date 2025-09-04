@@ -7,19 +7,21 @@ RESET='\033[0m'
 
 # Determine script location to find application root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-APP_ROOT="$SCRIPT_DIR"
-CONFIG_DIR="$APP_ROOT/config"
+APP_ROOT="${SCRIPT_DIR}"
+CONFIG_DIR="${APP_ROOT}/config"
 
 # Default values
 PORT="8080"  # Default port
 DEBUG_MODE=false
 
+# astral uv installation
+UV_DIR=~/.local/bin
 # Miniconda installation path
 MINICONDA_DIR=~/miniconda3
 
 # Source configuration if available
-if [ -f "$CONFIG_DIR/config.env" ]; then
-    source "$CONFIG_DIR/config.env"
+if [ -f "${CONFIG_DIR}/config.env" ]; then
+    source "${CONFIG_DIR}/config.env"
     
     # Apply values from config.env if available
     if [ -n "$RKLLAMA_SERVER_PORT" ]; then
@@ -30,11 +32,19 @@ if [ -f "$CONFIG_DIR/config.env" ]; then
     fi
 fi
 
+
 # Parse command line arguments (override config)
-USE_CONDA=true
+USE_UV=true
+USE_CONDA=false
 for arg in "$@"; do
-    if [[ "$arg" == "--no-conda" ]]; then
+    if [[ "$arg" == "--no-uv" ]]; then
+        USE_UV=false
+    elif [[ "$arg" == "--no-conda" ]]; then
         USE_CONDA=false
+    elif [[ "$arg" == "--uv" ]]; then
+        USE_UV=true
+    elif [[ "$arg" == "--conda" ]]; then
+        USE_CONDA=true
     elif [[ "$arg" == "--debug" ]]; then
         DEBUG_MODE=true
     elif [[ "$arg" == --port=* ]]; then
@@ -56,19 +66,48 @@ if $DEBUG_MODE; then
     CONFIG_ARGS+=("--debug")
 fi
 
+
+cat <<EOF
+# SCRIPT_DIR=$SCRIPT_DIR
+# APP_ROOT=$APP_ROOT
+# CONFIG_DIR=$CONFIG_DIR
+# UV_DIR=$UV_DIR
+# MINICONDA_DIR=$MINICONDA_DIR
+# PORT=$PORT
+# DEBUG_MODE=$DEBUG_MODE
+# USE_UV=$USE_UV
+# USE_CONDA=$USE_CONDA
+EOF
+
+function failed {
+  echo "${1}" >&2
+  exit $2
+}
+
+# If uv is enabled, check if it exists and activate it
 # If Miniconda is enabled, check if it exists and activate it
-if $USE_CONDA; then
+if $USE_UV; then
+    if [ -x "${UV_DIR}/uv" ]; then
+        echo -e "${GREEN}Starting the environment with uv.${RESET}"
+        source .venv/bin/activate
+    else
+        echo -e "${YELLOW}Launching the installation file...${RESET}"
+        # Download and install Miniconda
+        source "${APP_ROOT}/setup.sh" --uv --no-conda
+    fi
+elif $USE_CONDA; then
     if [ -d "$MINICONDA_DIR" ]; then
         echo -e "${GREEN}Starting the environment with Miniconda3.${RESET}"
         source "$MINICONDA_DIR/bin/activate" ""
     else
         echo -e "${YELLOW}Launching the installation file...${RESET}"
         # Download and install Miniconda
-        bash "$APP_ROOT/setup.sh"
+        source "${APP_ROOT}/setup.sh" --conda --no-uv
     fi
 else
-    echo -e "${YELLOW}Miniconda is disabled. Running without it.${RESET}"
+    echo -e "${YELLOW}uv and Miniconda are disabled. Running without it.${RESET}"
 fi
+
 
 # Function to prompt for processor selection
 select_processor() {
@@ -115,8 +154,12 @@ if [ -z "$PROCESSOR" ]; then
   fi
 fi
 
-# Build full command with all arguments
-COMMAND=("python3" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
+if $USE_UV; then
+  COMMAND=("uv" "run" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
+else
+  # Build full command with all arguments
+  COMMAND=("python3" "$APP_ROOT/server.py" "--processor" "$PROCESSOR" "--port" "$PORT")
+fi
 
 # Add debug flag if enabled
 if $DEBUG_MODE; then

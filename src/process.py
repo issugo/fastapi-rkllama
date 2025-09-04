@@ -156,194 +156,55 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
             if "stream" in data.keys() and data["stream"] == True:
                 def generate():
-                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
-                    thread_modele.start()
-
-                    thread_model_finished = False
                     count = 0
                     start = time.time()
                     prompt_eval_end_time = None
                     final_message_sent = False  # Track if we've sent the final message
-                    
+
                     # Initialize accumulated text for JSON format validation
                     complete_text = ""
                     tokens_since_last_response = 0  # Track tokens since last response sent
 
-                    counter=0
-                    max_loop=100000
+                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
+                    thread_modele.start()
 
-                    while not thread_model_finished or not final_message_sent:
-                        processed_tokens = False
-                        
+                    thread_model_finished = False
+
+                    while not thread_model_finished:
+                        print("rkllm thread running")
+
                         while len(variables.global_text) > 0:
-                            processed_tokens = True
-                            count += 1
                             current_token = variables.global_text.pop(0)
-                            tokens_since_last_response += 1
-                            
-                            # Mark time when first token is generated
-                            if count == 1:
-                                prompt_eval_end_time = time.time()
-                            
-                            # Accumulate text for format validation
-                            complete_text += current_token
-
-                            # Prepare response based on request type
-                            if is_ollama_request:
-                                
-                                if variables.global_status != 1:
-                                    # Intermediate chunks - minimal fields only
-                                    ollama_chunk = {
-                                        "model": variables.model_id,
-                                        "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                                        "message": {
-                                            "role": "assistant",
-                                            "content": current_token
-                                        },
-                                        "done": False
-                                    }
-                                    yield f"{json.dumps(ollama_chunk)}\n"
-                                else:
-                                    # This is the final token from the model, mark that we're ready to send final message
-                                    final_message_sent = True
-                                    
-                                    # Final chunk - include all metrics
-                                    current_time = time.time()
-                                    total_duration = current_time - start
-                                    
-                                    # Calculate durations
-                                    if prompt_eval_end_time is None:
-                                        prompt_eval_end_time = start + (total_duration * 0.1)
-                                    
-                                    prompt_eval_duration = prompt_eval_end_time - start
-                                    eval_duration = current_time - prompt_eval_end_time
-                                    load_duration = 0.1  # Fixed 100ms in seconds
-                                    
-                                    # Process format validation if requested
-                                    cleaned_content = None
-                                    parsed_data = None
-                                    if format_spec:
-                                        success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-                                        if success and cleaned_json:
-                                            cleaned_content = cleaned_json
-                                    
-                                    # Final message with metrics
-                                    ollama_chunk = {
-                                        "model": variables.model_id,
-                                        "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                                        "message": {
-                                            "role": "assistant",
-                                            # Use cleaned content if available, otherwise use current token
-                                            "content": cleaned_content if cleaned_content else current_token
-                                        },
-                                        "done": True,
-                                        "done_reason": "stop",
-                                        "total_duration": int(total_duration * 1_000_000_000),
-                                        "load_duration": int(load_duration * 1_000_000_000),
-                                        "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
-                                        "prompt_eval_duration": int(prompt_eval_duration * 1_000_000_000),
-                                        "eval_count": count,
-                                        "eval_duration": int(eval_duration * 1_000_000_000)
-                                    }
-                                    
-                                    yield f"{json.dumps(ollama_chunk)}\n"
-                            else:
-                                # For original RKLLAMA API streaming
-                                llmResponse["choices"] = [
-                                    {
+                            llmResponse["choices"] = [
+                                {
                                     "role": "assistant",
                                     "content": current_token,
                                     "logprobs": None,
                                     "finish_reason": "stop" if variables.global_status == 1 else None,
-                                    }
-                                ]
-                                llmResponse["usage"]["completion_tokens"] = count
-                                llmResponse["usage"]["total_tokens"] += 1
-                                
-                                # Process format in the final chunk
-                                if variables.global_status == 1 and format_spec:
-                                    success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-                                    if success and parsed_data:
-                                        llmResponse["choices"][0]["format"] = format_spec
-                                        llmResponse["choices"][0]["parsed"] = parsed_data
-                                
-                                # Send the response
-                                yield f"{json.dumps(llmResponse)}\n\n"
-                                tokens_since_last_response = 0
+                                }
+                            ]
+                            llmResponse["usage"]["completion_tokens"] = count
+                            llmResponse["usage"]["total_tokens"] += 1
 
-                        # Check if thread is done but we haven't sent final message yet
+                            # Process format in the final chunk
+                            if variables.global_status == 1 and format_spec:
+                                success, parsed_data, error, cleaned_json = validate_format_response(complete_text,
+                                                                                                     format_spec)
+                                if success and parsed_data:
+                                    llmResponse["choices"][0]["format"] = format_spec
+                                    llmResponse["choices"][0]["parsed"] = parsed_data
+
+                            # Send the response
+                            yield f"{json.dumps(llmResponse)}\n\n"
+
+
+                        print("sleeping")
+                        time.sleep(0.005)
+                        print("joining")
                         thread_modele.join(timeout=0.005)
                         thread_model_finished = not thread_modele.is_alive()
-                        
-                        # If model is done and we haven't sent the final message yet, do it now
-                        if thread_model_finished and not final_message_sent:
-                            final_message_sent = True
-                            
-                            # Calculate final metrics
-                            current_time = time.time()
-                            total_duration = current_time - start
-                            
-                            if prompt_eval_end_time is None:
-                                prompt_eval_end_time = start + (total_duration * 0.1)
-                                
-                            prompt_eval_duration = prompt_eval_end_time - start
-                            eval_duration = current_time - prompt_eval_end_time
-                            load_duration = 0.1
-                            
-                            # Process format validation if requested
-                            parsed_data = None
-                            if format_spec and complete_text:
-                                success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-                            
-                            if is_ollama_request:
-                                # Create final message for Ollama API
-                                ollama_final = {
-                                    "model": variables.model_id,
-                                    "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                                    "message": {
-                                        "role": "assistant",
-                                        "content": ""  # Empty content to avoid duplicating text
-                                    },
-                                    "done": True,
-                                    "done_reason": "stop",
-                                    "total_duration": int(total_duration * 1_000_000_000),
-                                    "load_duration": int(load_duration * 1_000_000_000),
-                                    "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
-                                    "prompt_eval_duration": int(prompt_eval_duration * 1_000_000_000),
-                                    "eval_count": count,
-                                    "eval_duration": int(eval_duration * 1_000_000_000)
-                                }
-                                
-                                yield f"{json.dumps(ollama_final)}\n"
-                            else:
-                                # Handle final message for RKLLAMA API
-                                # If there are still tokens waiting to send, create one final response
-                                if tokens_since_last_response > 0:
-                                    llmResponse["choices"] = [
-                                        {
-                                        "role": "assistant",
-                                        "content": "",  # Empty to avoid duplication
-                                        "logprobs": None,
-                                        "finish_reason": "stop"
-                                        }
-                                    ]
-                                    llmResponse["usage"]["completion_tokens"] = count
-                                    llmResponse["usage"]["total_tokens"] += 1
-                                    
-                                    # Add format information if available
-                                    if format_spec and parsed_data:
-                                        llmResponse["choices"][0]["format"] = format_spec
-                                        llmResponse["choices"][0]["parsed"] = parsed_data
-                                    
-                                    yield f"{json.dumps(llmResponse)}\n\n"
-                            
-                        # If we didn't process any tokens in this loop iteration, add a small sleep to avoid CPU spin
-                        if not processed_tokens:
-                            time.sleep(0.01)
-                        counter += 1
-                        if counter == max_loop:
-                            print(f"reached max loop (max_loop={max_loop}) in generate function")
-                            break
+
+                    print("rkllm thread finished")
 
                 # Return appropriate streaming response based on request type
                 ## return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')

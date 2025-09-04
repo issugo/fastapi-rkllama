@@ -372,7 +372,8 @@ async def recevoir_message(request: Request):
     # define modelfile path
     modelfile = os.path.join(modele_rkllm.model_dir, "Modelfile")
 
-    variables.verrou.acquire()
+    # variables.verrou.acquire()
+    print("in generate request")
     return await CustomRequest(modele_rkllm, modelfile, request)
 
 

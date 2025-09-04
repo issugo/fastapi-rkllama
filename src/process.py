@@ -169,9 +169,11 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                     max_loop = 100000
 
                     while not final_message_sent:
+                        print("in first while")
                         processed_tokens = False
 
                         while len(variables.global_text) > 0:
+                            print("in second while")
                             processed_tokens = True
                             count += 1
                             current_token = variables.global_text.pop(0)
@@ -198,6 +200,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
                             # Process format in the final chunk
                             if variables.global_status == 1 and format_spec:
+                                print("gonna validate")
                                 success, parsed_data, error, cleaned_json = validate_format_response(complete_text,
                                                                                                      format_spec)
                                 if success and parsed_data:
@@ -253,6 +256,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
                         # If we didn't process any tokens in this loop iteration, add a small sleep to avoid CPU spin
                         if not processed_tokens:
+                            print("gonna sleep a little")
                             time.sleep(0.01)
                 def generate():
                     thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))

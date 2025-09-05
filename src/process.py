@@ -1,13 +1,16 @@
-import threading, time, json
-from transformers import AutoTokenizer
+import threading
+import time
+import json
+
 ## from flask import Flask, request, jsonify, Response
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from core import config
 import src.variables as variables
 import datetime
 import logging
-from config import is_debug_mode  # Import the config module
+from core.config import is_debug_mode  # Import the config module
 from .format_utils import create_format_instruction, validate_format_response
 
 logger = logging.getLogger("rkllama.process")
@@ -21,8 +24,8 @@ from transformers import AutoTokenizer
 import urllib.parse
 from dotenv import load_dotenv
 
-def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
 
+def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
     # Load environment variables from Modelfile
     load_dotenv(modelfile, override=True)
 
@@ -35,14 +38,20 @@ def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
         if os.path.exists(custom_tokenizer):
             try:
                 # Attempt to load the custom tokenizer
-                tokenizer = AutoTokenizer.from_pretrained(custom_tokenizer, trust_remote_code=True)
+                tokenizer = AutoTokenizer.from_pretrained(
+                    custom_tokenizer, trust_remote_code=True
+                )
                 print(f"Loaded custom tokenizer from {custom_tokenizer}")
             except Exception as e:
                 # Warn user and prepare to fallback
-                print(f"Warning: Could not load tokenizer from {custom_tokenizer}. \nError: {str(e)}. Falling back to default tokenizer.")
+                print(
+                    f"Warning: Could not load tokenizer from {custom_tokenizer}. \nError: {str(e)}. Falling back to default tokenizer."
+                )
         else:
             # Warn user if path is invalid
-            print(f"Warning: Tokenizer path {custom_tokenizer} does not exist.\nFalling back to default tokenizer.")
+            print(
+                f"Warning: Tokenizer path {custom_tokenizer} does not exist.\nFalling back to default tokenizer."
+            )
 
     # Fallback to default AutoTokenizer if necessary
     if tokenizer is None:
@@ -50,21 +59,22 @@ def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
             tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
             print(f"Loaded default tokenizer for model {model_id}")
         except Exception as e:
-            print(f"Error: Failed to load default tokenizer for {model_id}.\nError: {str(e)}.")
+            print(
+                f"Error: Failed to load default tokenizer for {model_id}.\nError: {str(e)}."
+            )
             return None
 
     return tokenizer
 
 
-
 async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
     """
     Process a request to the language model
-    
+
     Args:
         modele_rkllm: The language model instance
         custom_request: Optional custom request object that mimics Flask request
-    
+
     Returns:
         Flask response with generated text
     """
@@ -77,21 +87,21 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
         # data = req.json
         data = await request.json()
 
-
-        if data and 'messages' in data:
+        if data and "messages" in data:
             # Extract format parameters
-            format_spec = data.get('format')
-            format_options = data.get('options', {})
-            
+            format_spec = config.get("format")
+            format_options = config.get("options", {})
+
             # Store format settings in model instance for reference
             if modele_rkllm:
                 modele_rkllm.format_schema = format_spec
                 modele_rkllm.format_type = (
-                    format_spec.get("type", "") if isinstance(format_spec, dict) 
+                    format_spec.get("type", "")
+                    if isinstance(format_spec, dict)
                     else format_spec
                 )
                 modele_rkllm.format_options = format_options
-            
+
             # Reset global variables
             variables.global_status = -1
 
@@ -105,14 +115,14 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                     "prompt_tokens": 0,
                     "completion_tokens": 0,
                     "tokens_per_second": 0,
-                    "total_tokens": 0
-                }
+                    "total_tokens": 0,
+                },
             }
 
             # Check if this is an Ollama-style request
             urlparsed_path = urllib.parse.urlparse(str(request.url)).path
             ## is_ollama_request = req.path.startswith('/api/')
-            is_ollama_request = urlparsed_path.startswith('/api/')
+            is_ollama_request = urlparsed_path.startswith("/api/")
 
             # Get chat history from JSON request
             messages = data["messages"]
@@ -127,17 +137,24 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                         if messages[i]["role"] == "user":
                             last_user_msg_idx = i
                             break
-                    
+
                     if last_user_msg_idx >= 0:
                         original_content = messages[last_user_msg_idx]["content"]
-                        messages[last_user_msg_idx]["content"] = original_content + format_instruction
+                        messages[last_user_msg_idx]["content"] = (
+                            original_content + format_instruction
+                        )
                         if DEBUG_MODE:
-                            logger.debug(f"Added format instruction: {format_instruction}")
+                            logger.debug(
+                                f"Added format instruction: {format_instruction}"
+                            )
 
             # Setup tokenizer
             tokenizer = load_tokenizer(modelfile, variables.model_id)
 
-            supports_system_role = "raise_exception('System role not supported')" not in tokenizer.chat_template
+            supports_system_role = (
+                "raise_exception('System role not supported')"
+                not in tokenizer.chat_template
+            )
 
             if variables.system and supports_system_role:
                 prompt = [{"role": "system", "content": variables.system}] + messages
@@ -146,15 +163,22 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
             for i in range(1, len(prompt)):
                 if prompt[i]["role"] == prompt[i - 1]["role"]:
-                    raise ValueError("Roles must alternate between 'user' and 'assistant'.")
+                    raise ValueError(
+                        "Roles must alternate between 'user' and 'assistant'."
+                    )
 
             # Set up chat template
-            prompt = tokenizer.apply_chat_template(prompt, tokenize=True, add_generation_prompt=True)
-            llmResponse["usage"]["prompt_tokens"] = llmResponse["usage"]["total_tokens"] = len(prompt)
+            prompt = tokenizer.apply_chat_template(
+                prompt, tokenize=True, add_generation_prompt=True
+            )
+            llmResponse["usage"]["prompt_tokens"] = llmResponse["usage"][
+                "total_tokens"
+            ] = len(prompt)
 
             sortie_rkllm = ""
 
             if "stream" in data.keys() and data["stream"] == True:
+
                 def generate():
                     count = 0
                     start = time.time()
@@ -163,9 +187,13 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
                     # Initialize accumulated text for JSON format validation
                     complete_text = ""
-                    tokens_since_last_response = 0  # Track tokens since last response sent
+                    tokens_since_last_response = (
+                        0  # Track tokens since last response sent
+                    )
 
-                    thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
+                    thread_modele = threading.Thread(
+                        target=modele_rkllm.run, args=(prompt,)
+                    )
                     thread_modele.start()
 
                     thread_model_finished = False
@@ -180,7 +208,9 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                                     "role": "assistant",
                                     "content": current_token,
                                     "logprobs": None,
-                                    "finish_reason": "stop" if variables.global_status == 1 else None,
+                                    "finish_reason": "stop"
+                                    if variables.global_status == 1
+                                    else None,
                                 }
                             ]
                             llmResponse["usage"]["completion_tokens"] = count
@@ -188,15 +218,15 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
                             # Process format in the final chunk
                             if variables.global_status == 1 and format_spec:
-                                success, parsed_data, error, cleaned_json = validate_format_response(complete_text,
-                                                                                                     format_spec)
+                                success, parsed_data, error, cleaned_json = (
+                                    validate_format_response(complete_text, format_spec)
+                                )
                                 if success and parsed_data:
                                     llmResponse["choices"][0]["format"] = format_spec
                                     llmResponse["choices"][0]["parsed"] = parsed_data
 
                             # Send the response
                             yield f"{json.dumps(llmResponse)}\n\n"
-
 
                         print("sleeping")
                         time.sleep(0.005)
@@ -208,14 +238,20 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
                 # Return appropriate streaming response based on request type
                 ## return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
-                content_type = 'application/x-ndjson' if is_ollama_request else 'text/plain'
+                content_type = (
+                    "application/x-ndjson" if is_ollama_request else "text/plain"
+                )
                 print("gonna return a stream boy")
-                return StreamingResponse(generate(), headers={'Content-Type': content_type})
-            
+                return StreamingResponse(
+                    generate(), headers={"Content-Type": content_type}
+                )
+
             # For non-streaming responses
             else:
                 # Create inference thread
-                thread_modele = threading.Thread(target=modele_rkllm.run, args=(prompt,))
+                thread_modele = threading.Thread(
+                    target=modele_rkllm.run, args=(prompt,)
+                )
                 try:
                     thread_modele.start()
                     print("Inference thread started")
@@ -226,7 +262,9 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                 thread_model_finished = False
                 count = 0
                 start = time.time()
-                prompt_eval_end_time = None  # Will store time when first token is generated
+                prompt_eval_end_time = (
+                    None  # Will store time when first token is generated
+                )
                 complete_text = ""
                 first_token_generated = False
 
@@ -234,12 +272,12 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                     while len(variables.global_text) > 0:
                         count += 1
                         token = variables.global_text.pop(0)
-                        
+
                         # Mark the time when first token is generated (end of prompt evaluation)
                         if not first_token_generated:
                             first_token_generated = True
                             prompt_eval_end_time = time.time()
-                        
+
                         complete_text += token
                         time.sleep(0.005)
 
@@ -248,82 +286,107 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
 
                 end_time = time.time()
                 total_duration = end_time - start
-                
+
                 # Calculate the various duration metrics
                 if prompt_eval_end_time is None:
                     # If no tokens were generated, use 10% of total time as estimate
                     prompt_eval_end_time = start + (total_duration * 0.1)
-                
-                prompt_eval_duration = prompt_eval_end_time - start  # Time spent evaluating prompt
-                eval_duration = end_time - prompt_eval_end_time  # Time spent generating tokens
+
+                prompt_eval_duration = (
+                    prompt_eval_end_time - start
+                )  # Time spent evaluating prompt
+                eval_duration = (
+                    end_time - prompt_eval_end_time
+                )  # Time spent generating tokens
                 load_duration = 0.1  # Fixed 100ms in seconds
-                
+
                 # Handle format validation for completed response
                 ## if format_spec and complete_text:
                 if complete_text:
                     # Updated to unpack the additional cleaned_json return value
-                    success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+                    success, parsed_data, error, cleaned_json = (
+                        validate_format_response(complete_text, format_spec)
+                    )
                     logger.debug(f"Format validation: success={success}, error={error}")
-                
+
                 # Prepare appropriate response based on request type
                 if is_ollama_request:
-                    
                     ollama_response = {
                         "model": variables.model_id,
-                        "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "created_at": datetime.datetime.now().strftime(
+                            "%Y-%m-%dT%H:%M:%S.%fZ"
+                        ),
                         "message": {
-                            "role": "assistant", 
+                            "role": "assistant",
                             # Use only the clean JSON text if available, otherwise use complete response
-                            "content": cleaned_json if success and cleaned_json else complete_text
+                            "content": cleaned_json
+                            if success and cleaned_json
+                            else complete_text,
                         },
                         "done_reason": "stop",  # Always add done_reason for completed responses
                         "done": True,
                         # Add all required duration fields in nanoseconds
                         "total_duration": int(total_duration * 1_000_000_000),
-                        "load_duration": int(load_duration * 1_000_000_000),  # Fixed 100ms
+                        "load_duration": int(
+                            load_duration * 1_000_000_000
+                        ),  # Fixed 100ms
                         "prompt_eval_count": llmResponse["usage"]["prompt_tokens"],
-                        "prompt_eval_duration": int(prompt_eval_duration * 1_000_000_000),
+                        "prompt_eval_duration": int(
+                            prompt_eval_duration * 1_000_000_000
+                        ),
                         "eval_count": count,
-                        "eval_duration": int(eval_duration * 1_000_000_000)
+                        "eval_duration": int(eval_duration * 1_000_000_000),
                     }
-                    
+
                     ## return jsonify(ollama_response), 200
                     variables.verrou.release()
                     return JSONResponse(ollama_response, status_code=200)
                 else:
                     # Standard RKLLAMA API response
-                    llmResponse["choices"] = [{
-                        "role": "assistant",
-                        # Use only the clean JSON text if available
-                        "content": cleaned_json if success and cleaned_json else complete_text,
-                        "logprobs": None,
-                        "finish_reason": "stop"
-                    }]
-                    
+                    llmResponse["choices"] = [
+                        {
+                            "role": "assistant",
+                            # Use only the clean JSON text if available
+                            "content": cleaned_json
+                            if success and cleaned_json
+                            else complete_text,
+                            "logprobs": None,
+                            "finish_reason": "stop",
+                        }
+                    ]
+
                     # Add format information if available
                     if success and parsed_data:
                         llmResponse["choices"][0]["format"] = format_spec
                         llmResponse["choices"][0]["parsed"] = parsed_data
-                    
+
                     # Update token counts
                     llmResponse["usage"]["completion_tokens"] = count
-                    llmResponse["usage"]["total_tokens"] = llmResponse["usage"]["prompt_tokens"] + count
-                    
+                    llmResponse["usage"]["total_tokens"] = (
+                        llmResponse["usage"]["prompt_tokens"] + count
+                    )
+
                     # Calculate tokens per second if we have meaningful duration
                     if eval_duration > 0:
-                        llmResponse["usage"]["tokens_per_second"] = round(count / eval_duration, 2)
-                    
+                        llmResponse["usage"]["tokens_per_second"] = round(
+                            count / eval_duration, 2
+                        )
+
                     ## return jsonify(llmResponse), 200
                     variables.verrou.release()
                     return JSONResponse(llmResponse, status_code=200)
-                    
+
         else:
             ## return jsonify({'status': 'error', 'message': 'Invalid JSON data!'}), 400
             variables.verrou.release()
-            return JSONResponse({'status': 'error', 'message': 'Invalid JSON data!'}, status_code=400)
+            return JSONResponse(
+                {"status": "error", "message": "Invalid JSON data!"}, status_code=400
+            )
     except Exception as e:
         # No need to relese the lock here as it should be handled by the calling function
         print(f"ERREUR: {e}")
         variables.verrou.release()
         is_locked = False
-        return JSONResponse({'status': 'error', 'message': 'Invalid JSON data!'}, status_code=400)
+        return JSONResponse(
+            {"status": "error", "message": "Invalid JSON data!"}, status_code=400
+        )

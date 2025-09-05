@@ -1,6 +1,6 @@
 import os
 
-import config
+from core import config
 
 MODEL_PATH = os.path.join(config.get_path("models"))
 
@@ -18,7 +18,7 @@ def GetModels():
         for file in files:
             if file.endswith(".rkllm"):
                 models_list.append(file)
-    
+
     print("Number of valid models:", len(models_list), "\n")
 
     return models_list

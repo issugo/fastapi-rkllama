@@ -1,8 +1,6 @@
 # test_server.py
-import json
-import pytest
 from fastapi.testclient import TestClient
-from server import app
+from main import app
 
 client = TestClient(app)
 
@@ -52,7 +50,7 @@ def test_recevoir_message():
         "message": "Hello, how are you?",
         "history": [],
         "temperature": 0.7,
-        "max_tokens": 100
+        "max_tokens": 100,
     }
     response = client.post("/api/chat", json=payload)
     # Status might vary based on whether a model is loaded
@@ -73,7 +71,7 @@ def test_ollama_chat():
     payload = {
         "model": "test_model",  # Replace with a valid model name
         "messages": [{"role": "user", "content": "Hello"}],
-        "stream": False
+        "stream": False,
     }
     response = client.post("/api/ollama/chat", json=payload)
     # Status might vary based on model availability
@@ -85,7 +83,7 @@ def test_ollama_generate():
     payload = {
         "model": "test_model",  # Replace with a valid model name
         "prompt": "Hello, world!",
-        "stream": False
+        "stream": False,
     }
     response = client.post("/api/ollama/generate", json=payload)
     # Status might vary based on model availability
@@ -105,20 +103,22 @@ def test_tool_calling_chat():
     payload = {
         "model": "test_model",  # Replace with a valid model name
         "messages": [{"role": "user", "content": "What's the weather in Paris?"}],
-        "tools": [{
-            "type": "function",
-            "function": {
-                "name": "get_weather",
-                "description": "Get current weather",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "location": {"type": "string", "description": "City name"}
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get current weather",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "location": {"type": "string", "description": "City name"}
+                        },
+                        "required": ["location"],
                     },
-                    "required": ["location"]
-                }
+                },
             }
-        }]
+        ],
     }
     response = client.post("/api/ollama/chat", json=payload)
     # Status might vary based on model availability

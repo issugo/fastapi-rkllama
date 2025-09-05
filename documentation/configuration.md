@@ -76,6 +76,8 @@ python -m rkllama --server_port 8080 --server_debug
 ### Basic Usage
 
 ```python
+
+from core import config
 from rkllama import config
 
 # Get values with automatic type inference
@@ -98,6 +100,8 @@ config.set("logging", "level", "DEBUG")
 
 ```python
 # Display current configuration
+from core import config
+
 config.display()
 
 # Validate configuration
@@ -112,6 +116,8 @@ config.save_to_project_ini()
 
 ```python
 # Reload configuration from all sources
+from core import config
+
 config.reload_config()
 ```
 

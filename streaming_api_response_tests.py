@@ -1,5 +1,4 @@
 # test_streaming.py
-import pytest
 from fastapi.testclient import TestClient
 from server import app
 
@@ -11,7 +10,7 @@ def test_streaming_chat_response(mock_model_loaded):
     payload = {
         "model": "test_model",
         "messages": [{"role": "user", "content": "Hello"}],
-        "stream": True
+        "stream": True,
     }
 
     with client.stream("POST", "/api/ollama/chat", json=payload) as response:
@@ -29,11 +28,7 @@ def test_streaming_chat_response(mock_model_loaded):
 
 def test_streaming_generate_response(mock_model_loaded):
     """Test streaming generate responses."""
-    payload = {
-        "model": "test_model",
-        "prompt": "Hello, world!",
-        "stream": True
-    }
+    payload = {"model": "test_model", "prompt": "Hello, world!", "stream": True}
 
     with client.stream("POST", "/api/ollama/generate", json=payload) as response:
         assert response.status_code in [200, 404, 500]

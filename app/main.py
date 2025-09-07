@@ -832,7 +832,7 @@ async def chat_ollama(request: Request):
 
         # Get all model options
         model_file = ModelFile(model_name=model_name, rkllm_model_file="", huggingface_path="", request_options=options)
-        options = model_file.full_options()
+        options = model_file.full_options
 
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages

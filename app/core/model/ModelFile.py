@@ -111,7 +111,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
 
         # Get model parameters if not provided
         if not self.options:
-            self.options = self.full_options()
+            self.options = self.full_options
 
         try:
             # Change value of model_id with huggingface_path

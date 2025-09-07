@@ -78,7 +78,7 @@ Advanced parameters (optional):
 
         # Get all model options
         model_file = ModelFile(model_name=model_name, rkllm_model_file="", huggingface_path="", request_options=options)
-        options = model_file.full_options()
+        options = model_file.full_options
 
         # Load model if needed
         if not variables.worker_manager_rkllm.exists_model_loaded(model_name):

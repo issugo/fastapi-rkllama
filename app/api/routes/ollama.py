@@ -4,11 +4,11 @@ from starlette.responses import JSONResponse
 
 from core import config, model
 from core.model.Model import unload_model
-from core.model.ModelFile import load_model
-from main import app, DEBUG_MODE, logger
+from core.model.ModelFile import ModelFile
+from main import DEBUG_MODE, logger
 from src import variables as variables
 from src.format_utils import strtobool
-from src.model_utils import get_property_modelfile, get_model_full_options
+from src.model_utils import get_property_modelfile
 
 router = APIRouter(tags=["ollama"])
 
@@ -77,11 +77,12 @@ Advanced parameters (optional):
                 model_thinking_enabled) else False  # Disabled by default
 
         # Get all model options
-        options = get_model_full_options(model_name, config.get_path("models"), options)
+        model_file = ModelFile(model_name=model_name, model_file="", huggingface_path="", request_options=options)
+        options = model_file.get_model_full_options()
 
         # Load model if needed
         if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
-            _, error = load_model(model_name, request_options=options)
+            _, error = model_file.load_model()
             if error:
                 return JSONResponse(
                     {"error": f"Failed to load model '{model_name}': {error}"},
@@ -114,78 +115,4 @@ Advanced parameters (optional):
         if lock_acquired and variables.verrou.locked():
             variables.verrou.release()
 
-    lock_acquired = False  # Track lock status
 
-    try:
-        data = await request.json()
-        model_name = config.get("model")
-        prompt = config.get("prompt")
-        system = config.get("system", "")
-        stream = config.get("stream", True)
-        enable_thinking = config.get("enable_thinking", None)
-
-        # Support format options for structured JSON output
-        format_spec = config.get("format")
-        options = config.get("options", {})
-
-        if DEBUG_MODE:
-            logger.debug(f"API generate request data: {data}")
-
-        if not model_name:
-            return JSONResponse({"error": "Missing model name"}, status_code=400)
-
-        if not prompt:
-            return JSONResponse({"error": "Missing prompt"}, status_code=400)
-
-        # Get Thinking setting from modelfile if not provided
-        if enable_thinking is None:
-            model_thinking_enabled = get_property_modelfile(
-                model_name, "ENABLE_THINKING", config.get_path("models")
-            )
-            enable_thinking = (
-                strtobool(model_thinking_enabled)
-                if bool(model_thinking_enabled)
-                else False
-            )  # Disabled by default
-
-        # Get all model options
-        options = get_model_full_options(model_name, config.get_path("models"), options)
-
-        # Load model if needed
-        if model.current_model != model_name:
-            if model.current_model:
-                unload_model()
-            modele_instance, error = load_model(model_name, request_options=options)
-            if error:
-                return JSONResponse(
-                    {"error": f"Failed to load model '{model_name}': {error}"},
-                    status_code=500,
-                )
-            model.modele_rkllm = modele_instance
-            model.current_model = model_name
-
-        # Acquire lock before processing
-        variables.verrou.acquire()
-        lock_acquired = True
-
-        # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
-        from src.server_utils import GenerateEndpointHandler
-
-        return GenerateEndpointHandler.handle_request(
-            modele_rkllm=model.modele_rkllm,
-            model_name=model_name,
-            prompt=prompt,
-            system=system,
-            stream=stream,
-            format_spec=format_spec,
-            options=options,
-            enable_thinking=enable_thinking,
-        )
-    except Exception as e:
-        if DEBUG_MODE:
-            logger.exception(f"Error in generate_ollama: {str(e)}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            variables.verrou.release()

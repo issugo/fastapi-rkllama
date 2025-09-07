@@ -1,2 +1,7 @@
+import logging
+
+# Set up logger for this package
+logger = logging.getLogger("core.model")
+
 current_model = None  # Global variable for storing the loaded model
-modele_rkllm = None  # Model instance
+rkllm_model = None  # Model instance

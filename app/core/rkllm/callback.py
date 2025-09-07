@@ -1,23 +1,27 @@
-import ctypes, sys
-import time
-from .classes import *
-from .variables import *
+import sys
+import logging
+
+from core.rkllm.classes import LLMCallState
+from app.core.rkllm.GlobalState import GLOBAL_STATE
+
+# Get logger for this module
+logger = logging.getLogger("core.rkllm.callback")
 
 # Definir la fonction de rappel
 def callback_impl(result, donnees_utilisateur, status):
     global split_byte_data
 
     if status == LLMCallState.RKLLM_RUN_FINISH:
-        global_status = status
-        print("\n")
+        GLOBAL_STATE.global_status = status
+        logger.info("Generation completed")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_ERROR:
-        global_status = status
-        print("erreur d'execution")
+        GLOBAL_STATE.global_status = status
+        logger.error("erreur d'execution")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_NORMAL:
         # Sauvegarder le texte du token de sortie et l'status d'execution de RKLLM
-        global_status = status
+        GLOBAL_STATE.global_status = status
         # Check if result or result.contents or result.contents.text is None
         try:
             # Add defensive checks to prevent None concatenation
@@ -27,17 +31,19 @@ def callback_impl(result, donnees_utilisateur, status):
                     # If not bytes, try to convert or use empty bytes
                     try:
                         text_bytes = bytes(text_bytes)
-                    except:
+                    except Exception as conv_error:
+                        logger.error(f"Error converting to bytes: {str(conv_error)}")
                         text_bytes = b""
-                        
+
                 # Now safely concatenate
                 try:
                     decoded_text = (split_byte_data + text_bytes).decode('utf-8')
-                    global_text.append(decoded_text)
-                    print(decoded_text, end='')
+                    GLOBAL_STATE.global_text.append(decoded_text)
+                    logger.debug(f"Token: {decoded_text}")
                     split_byte_data = bytes(b"")
-                except UnicodeDecodeError:
+                except UnicodeDecodeError as decode_error:
                     # Handle incomplete UTF-8 sequences
+                    logger.debug(f"Incomplete UTF-8 sequence received")
                     split_byte_data += text_bytes
             else:
                 # Handle case where text is None
@@ -45,13 +51,14 @@ def callback_impl(result, donnees_utilisateur, status):
                     try:
                         # Try to decode any accumulated bytes
                         decoded_text = split_byte_data.decode('utf-8')
-                        global_text.append(decoded_text)
-                        print(decoded_text, end='')
+                        GLOBAL_STATE.global_text.append(decoded_text)
+                        logger.debug(f"Token from accumulated bytes: {decoded_text}")
                         split_byte_data = bytes(b"")
-                    except UnicodeDecodeError:
+                    except UnicodeDecodeError as decode_error:
                         # Still incomplete, keep for next time
+                        logger.debug(f"Still incomplete UTF-8 sequence")
                         pass
         except Exception as e:
-            print(f"\nError processing callback: {str(e)}", end='')
+            logger.error(f"Error processing callback: {str(e)}")
             
         sys.stdout.flush()

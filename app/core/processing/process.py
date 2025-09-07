@@ -2,16 +2,17 @@ import threading
 import time
 import json
 
-## from flask import Flask, request, jsonify, Response
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+import core.rkllm.GlobalState
 from core import config
 import src.variables as variables
 import datetime
 import logging
 from core.config import is_debug_mode  # Import the config module
-from .format_utils import create_format_instruction, validate_format_response
+from core.processing.formatting import create_format_instruction, validate_format_response
+from app.core.rkllm.GlobalState import GLOBAL_STATE
 
 logger = logging.getLogger("rkllama.process")
 
@@ -41,38 +42,38 @@ def load_tokenizer(modelfile: str, model_id: str) -> Optional[AutoTokenizer]:
                 tokenizer = AutoTokenizer.from_pretrained(
                     custom_tokenizer, trust_remote_code=True
                 )
-                print(f"Loaded custom tokenizer from {custom_tokenizer}")
+                logger.info(f"Loaded custom tokenizer from {custom_tokenizer}")
             except Exception as e:
                 # Warn user and prepare to fallback
-                print(
-                    f"Warning: Could not load tokenizer from {custom_tokenizer}. \nError: {str(e)}. Falling back to default tokenizer."
+                logger.warning(
+                    f"Could not load tokenizer from {custom_tokenizer}. Error: {str(e)}. Falling back to default tokenizer."
                 )
         else:
             # Warn user if path is invalid
-            print(
-                f"Warning: Tokenizer path {custom_tokenizer} does not exist.\nFalling back to default tokenizer."
+            logger.warning(
+                f"Tokenizer path {custom_tokenizer} does not exist. Falling back to default tokenizer."
             )
 
     # Fallback to default AutoTokenizer if necessary
     if tokenizer is None:
         try:
             tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-            print(f"Loaded default tokenizer for model {model_id}")
+            logger.info(f"Loaded default tokenizer for model {model_id}")
         except Exception as e:
-            print(
-                f"Error: Failed to load default tokenizer for {model_id}.\nError: {str(e)}."
+            logger.error(
+                f"Failed to load default tokenizer for {model_id}. Error: {str(e)}."
             )
             return None
 
     return tokenizer
 
 
-async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
+async def CustomRequest(rkllm_model, modelfile, request: Request = None):
     """
     Process a request to the language model
 
     Args:
-        modele_rkllm: The language model instance
+        rkllm_model: The language model instance
         custom_request: Optional custom request object that mimics Flask request
 
     Returns:
@@ -93,17 +94,17 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
             format_options = config.get("options", {})
 
             # Store format settings in model instance for reference
-            if modele_rkllm:
-                modele_rkllm.format_schema = format_spec
-                modele_rkllm.format_type = (
+            if rkllm_model:
+                rkllm_model.format_schema = format_spec
+                rkllm_model.format_type = (
                     format_spec.get("type", "")
                     if isinstance(format_spec, dict)
                     else format_spec
                 )
-                modele_rkllm.format_options = format_options
+                rkllm_model.format_options = format_options
 
             # Reset global variables
-            variables.global_status = -1
+            GLOBAL_STATE.global_status = -1
 
             # Define the structure of the returned response
             llmResponse = {
@@ -149,7 +150,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                             )
 
             # Setup tokenizer
-            tokenizer = load_tokenizer(modelfile, variables.model_id)
+            tokenizer = load_tokenizer(modelfile, GLOBAL_STATE.loaded_model_hfpath)
 
             supports_system_role = (
                 "raise_exception('System role not supported')"
@@ -192,24 +193,24 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                     )
 
                     thread_modele = threading.Thread(
-                        target=modele_rkllm.run, args=(prompt,)
+                        target=rkllm_model.run, args=(prompt,)
                     )
                     thread_modele.start()
 
                     thread_model_finished = False
 
                     while not thread_model_finished:
-                        print("rkllm thread running")
+                        logger.debug("rkllm thread running")
 
-                        while len(variables.global_text) > 0:
-                            current_token = variables.global_text.pop(0)
+                        while len(GLOBAL_STATE.global_text) > 0:
+                            current_token = GLOBAL_STATE.global_text.pop(0)
                             llmResponse["choices"] = [
                                 {
                                     "role": "assistant",
                                     "content": current_token,
                                     "logprobs": None,
                                     "finish_reason": "stop"
-                                    if variables.global_status == 1
+                                    if GLOBAL_STATE.global_status == 1
                                     else None,
                                 }
                             ]
@@ -228,20 +229,20 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                             # Send the response
                             yield f"{json.dumps(llmResponse)}\n\n"
 
-                        print("sleeping")
+                        logger.debug("sleeping")
                         time.sleep(0.005)
-                        print("joining")
+                        logger.debug("joining")
                         thread_modele.join(timeout=0.005)
                         thread_model_finished = not thread_modele.is_alive()
 
-                    print("rkllm thread finished")
+                    logger.info("rkllm thread finished")
 
                 # Return appropriate streaming response based on request type
                 ## return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
                 content_type = (
                     "application/x-ndjson" if is_ollama_request else "text/plain"
                 )
-                print("gonna return a stream boy")
+                logger.info("Returning streaming response")
                 return StreamingResponse(
                     generate(), headers={"Content-Type": content_type}
                 )
@@ -250,13 +251,13 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
             else:
                 # Create inference thread
                 thread_modele = threading.Thread(
-                    target=modele_rkllm.run, args=(prompt,)
+                    target=rkllm_model.run, args=(prompt,)
                 )
                 try:
                     thread_modele.start()
-                    print("Inference thread started")
+                    logger.info("Inference thread started")
                 except Exception as e:
-                    print("Error starting thread:", e)
+                    logger.error(f"Error starting thread: {e}")
 
                 # Wait for model to finish
                 thread_model_finished = False
@@ -269,9 +270,9 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                 first_token_generated = False
 
                 while not thread_model_finished:
-                    while len(variables.global_text) > 0:
+                    while len(GLOBAL_STATE.global_text) > 0:
                         count += 1
-                        token = variables.global_text.pop(0)
+                        token = GLOBAL_STATE.global_text.pop(0)
 
                         # Mark the time when first token is generated (end of prompt evaluation)
                         if not first_token_generated:
@@ -312,7 +313,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
                 # Prepare appropriate response based on request type
                 if is_ollama_request:
                     ollama_response = {
-                        "model": variables.model_id,
+                        "model": GLOBAL_STATE.loaded_model_hfpath,
                         "created_at": datetime.datetime.now().strftime(
                             "%Y-%m-%dT%H:%M:%S.%fZ"
                         ),
@@ -384,7 +385,7 @@ async def CustomRequest(modele_rkllm, modelfile, request: Request = None):
             )
     except Exception as e:
         # No need to relese the lock here as it should be handled by the calling function
-        print(f"ERREUR: {e}")
+        logger.error(f"Request processing error: {e}", exc_info=True)
         variables.verrou.release()
         is_locked = False
         return JSONResponse(

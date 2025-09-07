@@ -3,17 +3,19 @@ import json
 import time
 import datetime
 import logging
+
+import core.rkllm.GlobalState
+from app.core.rkllm.GlobalState import GLOBAL_STATE
 import os
 import re  # Add import for regex used in JSON extraction
 import src.variables as variables
 from transformers import AutoTokenizer
 from flask import jsonify, Response, stream_with_context
 from .format_utils import (
-    create_format_instruction,
-    validate_format_response,
     get_tool_calls,
     handle_ollama_response,
 )
+from core.processing.formatting import create_format_instruction, validate_format_response
 
 from core import config
 
@@ -50,7 +52,7 @@ class EndpointHandler:
     def prepare_prompt(messages, system="", tools=None, enable_thinking=False):
         """Prepare prompt with proper system handling"""
         tokenizer = AutoTokenizer.from_pretrained(
-            variables.model_id, trust_remote_code=True
+            GLOBAL_STATE.loaded_model_hfpath, trust_remote_code=True
         )
         supports_system_role = (
             "raise_exception('System role not supported')"
@@ -301,7 +303,7 @@ class ChatEndpointHandler(EndpointHandler):
             while not thread_finished or not final_sent:
                 tokens_processed = False
 
-                while len(variables.global_text) > 0:
+                while len(GLOBAL_STATE.global_text) > 0:
                     tokens_processed = True
                     count += 1
                     token = variables.global_text.pop(0)
@@ -566,7 +568,7 @@ class GenerateEndpointHandler(EndpointHandler):
             logger.debug(f"Format spec: {format_spec}")
 
         try:
-            variables.global_status = -1
+            GLOBAL_STATE.global_status = -1
 
             if format_spec:
                 format_instruction = create_format_instruction(format_spec)

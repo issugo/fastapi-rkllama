@@ -1,14 +1,12 @@
 import threading
+
 from core.config import is_debug_mode
 
 isLocked = False
-global_status = -1
-global_text = []
 split_byte_data = bytes(b"")
 
 verrou = threading.Lock()
 
-model_id = ""
 system = "Tu es un assistant artificiel."
 model_config = {}  # For storing model-specific configuration
 generation_complete = False  # Flag to track completion status

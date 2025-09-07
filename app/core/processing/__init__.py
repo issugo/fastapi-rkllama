@@ -1,4 +1,4 @@
 import logging
 
 # Set up logger for this package
-logger = logging.getLogger("core")
+logger = logging.getLogger("core.processing")

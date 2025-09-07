@@ -10,6 +10,6 @@ class Model(BaseModel):
 
 # TODO: move as method "unload" in Model
 def unload_model():
-    if model.modele_rkllm:
-        model.modele_rkllm.release()
-        model.modele_rkllm = None
+    if model.rkllm_model:
+        model.rkllm_model.release()
+        model.rkllm_model = None

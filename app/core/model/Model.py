@@ -1,15 +1,26 @@
+import threading
+from typing import Union
+
 from pydantic import BaseModel
 
-from core import model
-from core.model import ModelName
+from core.model.ModelFile import ModelFile
+from core.rkllm.rkllm import RKLLM
+
+class ModelSharedData(BaseModel):
+    global_status = -1
+    global_text = []
 
 
 class Model(BaseModel):
-    name: ModelName
+    model_file: Union[ModelFile|None] = None
+    rkllm_model: Union[RKLLM|None] = None
+    shared_data: ModelSharedData = ModelSharedData()
+    usage_lock: threading.Lock = threading.Lock() # old verrou
+
+    def unload(self):
+        if self.rkllm_model:
+            self.rkllm_model.release()
+            self.rkllm_model = None
+        self.model_file = None
 
 
-# TODO: move as method "unload" in Model
-def unload_model():
-    if model.rkllm_model:
-        model.rkllm_model.release()
-        model.rkllm_model = None

@@ -1,10 +1,16 @@
+import json
 import os
 import time
 import logging
+from typing import Union, Tuple
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
+from pydantic.v1.json import pydantic_encoder
 
+import core.rkllm.GlobalState
+from core.model.Model import Model
+from core.model.ModelPath import ModelPath
 from core.rkllm.GlobalState import GLOBAL_STATE
 from core import config, model
 from core.config.ModelConfig import get_model_default_options
@@ -13,31 +19,24 @@ from core.rkllm.rkllm import RKLLM
 # Get logger for this module
 logger = logging.getLogger("core.model.ModelFile")
 
+DEFAULT_SYSTEM = "Tu es un assistant artificiel."
 
-class ModelFileIdentifier(BaseModel):
-    model_name: str = None
-
-class ModelFileInfo(ModelFileIdentifier):
-    huggingface_path: str
-    model_file: str
+class ModelFileInfo(ModelPath):
     system_prompt: str = ""
 
 class ModelFile(ModelFileInfo):
-    file: str
-    model_dir: str
     request_options = None
     options = None
 
+    @property
+    def file(self):
+        return os.path.join(self.model_dir, "Modelfile")
+
     @classmethod
     def create_model(cls, model_file_info : ModelFileInfo):
-        """Class method to create a model file - replaces the create_modelfile function"""
-        return cls.create_modelfile(model_file_info)
-
-    @staticmethod
-    def create_modelfile(model_file_info : ModelFileInfo):
-        model_file : ModelFile = ModelFile(model_file_info)
+        model_file : ModelFile = ModelFile(**json.loads(json.dumps(model_file_info, default=pydantic_encoder)))
         struct_modelfile = f"""
-FROM="{model_file_info.model_file}"
+FROM="{model_file_info.rkllm_model_file}"
 
 HUGGINGFACE_PATH="{model_file_info.huggingface_path}"
 
@@ -70,23 +69,17 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
 
 """
 
-        # Use config for models path
-        # path = os.path.join(config.get_path("models"), From.replace('.rkllm', ''))
-        path = os.path.join(config.get_path("models"), model_file_info.model_name)
-    
         # Create the directory if it doesn't exist
-        if not os.path.exists(path):
-            os.makedirs(path)
+        if not os.path.exists(model_file.model_dir):
+            os.makedirs(model_file.model_dir)
     
         # Create the Modelfile and write the content
-        with open(os.path.join(path, "Modelfile"), "w") as f:
+        with open(model_file.file, "w") as f:
             f.write(struct_modelfile)
 
+        return model_file
 
-    def load_model(self):
-        # Use config for models path
-        self.model_dir = os.path.join(config.get_path("models"), self.model_name)
-        self.file = os.path.join(self.model_dir, "Modelfile")
+    def load_model(self) -> Tuple[Model|None, str|None]:
 
         if not os.path.exists(self.model_dir):
             return None, f"Model directory '{self.model_name}' not found."
@@ -99,7 +92,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
             ModelFile.create_modelfile(self)
             time.sleep(0.1)
 
-        model_file = self.model_file
+        model_file = self.rkllm_model_file
         huggingface_path = self.huggingface_path
         try:
             # Load modelfile
@@ -118,12 +111,12 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
 
         # Get model parameters if not provided
         if not self.options:
-            self.options = self.get_model_full_options()
+            self.options = self.full_options()
 
         try:
             # Change value of model_id with huggingface_path
             GLOBAL_STATE.loaded_model_hfpath = huggingface_path
-            model.rkllm_model = RKLLM(
+            core.rkllm.GlobalState.rkllm_model = RKLLM(
                 os.path.join(self.model_dir, model_file), self.model_dir, options=self.options
             )
         except RuntimeError as e:
@@ -131,10 +124,10 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
             return None, str(e)
 
         # return model and error message
-        return model.rkllm_model, None
+        return Model(self, core.rkllm.GlobalState.rkllm_model), None
 
-
-    def get_model_full_options(self) -> dict:
+    @property
+    def full_options(self) -> dict:
         """
         Get model options from Modelfile or return default options if not found.
 
@@ -169,3 +162,6 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
 
         # Return the options dictionary
         return self.options
+
+
+

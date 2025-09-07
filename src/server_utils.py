@@ -4,6 +4,7 @@ import time
 import datetime
 import logging
 
+import core.model.ModelFile
 import core.rkllm.GlobalState
 from app.core.rkllm.GlobalState import GLOBAL_STATE
 import os
@@ -200,9 +201,9 @@ class ChatEndpointHandler(EndpointHandler):
     ):
         """Process a chat request with proper format handling"""
 
-        original_system = variables.system
+        original_system = core.model.ModelFile.system
         if system:
-            variables.system = system
+            core.model.ModelFile.system = system
 
         try:
             variables.global_status = -1
@@ -262,7 +263,7 @@ class ChatEndpointHandler(EndpointHandler):
                 return ollama_response, code
 
         finally:
-            variables.system = original_system
+            core.model.ModelFile.system = original_system
 
     @classmethod
     def handle_streaming(
@@ -557,9 +558,9 @@ class GenerateEndpointHandler(EndpointHandler):
         """Process a generate request with proper format handling"""
         messages = [{"role": "user", "content": prompt}]
 
-        original_system = variables.system
+        original_system = core.model.ModelFile.system
         if system:
-            variables.system = system
+            core.model.ModelFile.system = system
 
         if DEBUG_MODE:
             logger.debug(
@@ -600,7 +601,7 @@ class GenerateEndpointHandler(EndpointHandler):
                     format_spec,
                 )
         finally:
-            variables.system = original_system
+            core.model.ModelFile.system = original_system
 
     @classmethod
     def handle_streaming(

@@ -72,7 +72,7 @@ class Usage(BaseModel):
     """Token usage information."""
     prompt_tokens: int
     completion_tokens: int
-    total_tokens: int
+    tokens_per_second: int
 
 
 class Tool(BaseModel):

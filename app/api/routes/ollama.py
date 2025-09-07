@@ -3,7 +3,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from core import config, model
-from core.model.Model import unload_model
+from core.rkllm.GlobalState import unload_model
 from core.model.ModelFile import ModelFile
 from main import DEBUG_MODE, logger
 from src import variables as variables
@@ -77,8 +77,8 @@ Advanced parameters (optional):
                 model_thinking_enabled) else False  # Disabled by default
 
         # Get all model options
-        model_file = ModelFile(model_name=model_name, model_file="", huggingface_path="", request_options=options)
-        options = model_file.get_model_full_options()
+        model_file = ModelFile(model_name=model_name, rkllm_model_file="", huggingface_path="", request_options=options)
+        options = model_file.full_options()
 
         # Load model if needed
         if not variables.worker_manager_rkllm.exists_model_loaded(model_name):

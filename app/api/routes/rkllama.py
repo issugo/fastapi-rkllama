@@ -3,10 +3,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from core.processing import rkllama_handler
-from core.rkllm.GlobalState import GLOBAL_STATE
+from core.endpoints.rkllm import GLOBAL_STATE
 from core.model.ModelFile import ModelFile, ModelFileInfo
 from core.processing.process import rkllm_request
-from main import DEBUG_MODE, logger, app
+from main import logger
 
 router = APIRouter(tags=["rkllama"])
 

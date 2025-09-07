@@ -1,11 +1,11 @@
 import ctypes
 
 from core.config import config
-from core.rkllm.callback import callback_impl
+from core.endpoints.rkllm.callback import callback_impl
 import logging
 import multiprocessing
 
-from core.rkllm.classes import RKLLMResult, RKLLMParam, RKLLM_Handle_t, rkllm_lib, RKLLMInput, RKLLMInferParam, \
+from core.endpoints.rkllm.classes import RKLLMResult, RKLLMParam, RKLLM_Handle_t, rkllm_lib, RKLLMInput, RKLLMInferParam, \
     RKLLMLoraAdapter, RKLLMLoraParam, RKLLMInferMode, RKLLMInputType
 
 logger = logging.getLogger("rkllama.rkllm")

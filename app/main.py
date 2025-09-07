@@ -15,14 +15,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 import core.model.ModelFile
-import core.rkllm.GlobalState
+import core.endpoints.rkllm.GlobalState
 from api import api_router
 from loggers import setup
-from core.rkllm.GlobalState import current_model, unload_model
+from core.endpoints.rkllm import current_model, unload_model
 from core.model.ModelFile import ModelFile, ModelFileInfo
 
 # Local file
-from core.rkllm.rkllm import *
+from core.endpoints.rkllm import *
 import src.variables as variables
 from src.debug_utils import check_response_format
 from src.format_utils import strtobool, openai_to_ollama_request
@@ -34,7 +34,7 @@ from src.model_utils import (
 )
 
 # Import the config module
-from core import config, model
+from core import config
 from ui import print_color
 
 
@@ -208,8 +208,8 @@ async def pull_model(request: Request):
 # Route to retrieve the current model
 @app.get("/current_model")
 def get_current_model():
-    if core.rkllm.GlobalState.current_model and core.rkllm.GlobalState.rkllm_model:
-        return JSONResponse({"model_name": core.rkllm.GlobalState.current_model}, status_code=200)
+    if core.endpoints.rkllm.GlobalState.current_model and core.endpoints.rkllm.GlobalState.rkllm_model:
+        return JSONResponse({"model_name": core.endpoints.rkllm.GlobalState.current_model}, status_code=200)
     else:
         return JSONResponse(
             {"error": "No models are currently loaded."}, status_code=404
@@ -866,10 +866,10 @@ async def chat_ollama(request: Request):
                 logger.debug(f"Using system message: {system}")
 
         # Load model if needed
-        if core.rkllm.GlobalState.current_model != model_name:
-            if core.rkllm.GlobalState.current_model:
+        if core.endpoints.rkllm.GlobalState.current_model != model_name:
+            if core.endpoints.rkllm.GlobalState.current_model:
                 if DEBUG_MODE:
-                    logger.debug(f"Unloading current model: {core.rkllm.GlobalState.current_model}")
+                    logger.debug(f"Unloading current model: {core.endpoints.rkllm.GlobalState.current_model}")
                 unload_model()
 
             if DEBUG_MODE:
@@ -883,33 +883,33 @@ async def chat_ollama(request: Request):
                     {"error": f"Failed to load model '{model_name}': {error}"},
                     status_code=500,
                 )
-            core.rkllm.GlobalState.rkllm_model = modele_instance
-            core.rkllm.GlobalState.current_model = model_name
+            core.endpoints.rkllm.GlobalState.rkllm_model = modele_instance
+            core.endpoints.rkllm.GlobalState.current_model = model_name
             if DEBUG_MODE:
                 logger.debug(f"Model {model_name} loaded successfully")
         else:
             # If model is already loaded, check its options are the same for the current request
             if (
-                core.rkllm.GlobalState.rkllm_model.rkllm_param.max_context_len
+                core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.max_context_len
                 != int(options.get("num_ctx"))
-                or core.rkllm.GlobalState.rkllm_model.rkllm_param.max_new_tokens
+                or core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.max_new_tokens
                 != int(options.get("max_new_tokens"))
-                or core.rkllm.GlobalState.rkllm_model.rkllm_param.top_k != int(options.get("top_k"))
-                or round(core.rkllm.GlobalState.rkllm_model.rkllm_param.top_p, 2)
+                or core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.top_k != int(options.get("top_k"))
+                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.top_p, 2)
                 != round(float(options.get("top_p")), 2)
-                or round(core.rkllm.GlobalState.rkllm_model.rkllm_param.temperature, 2)
+                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.temperature, 2)
                 != round(float(options.get("temperature")), 2)
-                or round(core.rkllm.GlobalState.rkllm_model.rkllm_param.repeat_penalty, 2)
+                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.repeat_penalty, 2)
                 != round(float(options.get("repeat_penalty")), 2)
-                or round(core.rkllm.GlobalState.rkllm_model.rkllm_param.frequency_penalty, 2)
+                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.frequency_penalty, 2)
                 != round(float(options.get("frequency_penalty")), 2)
-                or round(core.rkllm.GlobalState.rkllm_model.rkllm_param.presence_penalty, 2)
+                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.presence_penalty, 2)
                 != round(float(options.get("presence_penalty")), 2)
-                or core.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat
+                or core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat
                 != int(options.get("mirostat"))
-                or round(core.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat_tau, 2)
+                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat_tau, 2)
                 != round(float(options.get("mirostat_tau")), 2)
-                or round(core.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat_eta, 2)
+                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat_eta, 2)
                 != round(float(options.get("mirostat_eta")), 2)
             ):
                 # Update model parameters if they differ
@@ -918,9 +918,9 @@ async def chat_ollama(request: Request):
                         f"Updating model parameters for {model_name} with options: {options}"
                     )
 
-                if core.rkllm.GlobalState.current_model:
+                if core.endpoints.rkllm.GlobalState.current_model:
                     if DEBUG_MODE:
-                        logger.debug(f"Unloading current model: {core.rkllm.GlobalState.current_model}")
+                        logger.debug(f"Unloading current model: {core.endpoints.rkllm.GlobalState.current_model}")
                     unload_model()
 
                 if DEBUG_MODE:
@@ -934,15 +934,15 @@ async def chat_ollama(request: Request):
                         {"error": f"Failed to reload model '{model_name}': {error}"},
                         status_code=500,
                     )
-                core.rkllm.GlobalState.rkllm_model = modele_instance
-                core.rkllm.GlobalState.current_model = model_name
+                core.endpoints.rkllm.GlobalState.rkllm_model = modele_instance
+                core.endpoints.rkllm.GlobalState.current_model = model_name
                 if DEBUG_MODE:
                     logger.debug(f"Model {model_name} reloaded successfully")
 
         # Store format settings in model instance
-        if core.rkllm.GlobalState.rkllm_model:
-            core.rkllm.GlobalState.rkllm_model.format_schema = format_spec
-            core.rkllm.GlobalState.rkllm_model.format_options = options
+        if core.endpoints.rkllm.GlobalState.rkllm_model:
+            core.endpoints.rkllm.GlobalState.rkllm_model.format_schema = format_spec
+            core.endpoints.rkllm.GlobalState.rkllm_model.format_options = options
 
         # Acquire lock before processing the request
         variables.verrou.acquire()
@@ -975,7 +975,7 @@ async def chat_ollama(request: Request):
         from src.server_utils import ChatEndpointHandler
 
         return ChatEndpointHandler.handle_request(
-            modele_rkllm=core.rkllm.GlobalState.rkllm_model,
+            modele_rkllm=core.endpoints.rkllm.GlobalState.rkllm_model,
             model_name=model_name,
             messages=messages,
             system=system,

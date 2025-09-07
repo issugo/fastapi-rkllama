@@ -36,7 +36,7 @@ class Counters:
         self.tokens_since_last_response = 0
         self.complete_text = ""
 
-class Handler:
+class APIHandler:
     def __init__(self, response_content_type: str):
         self.response_content_type = response_content_type
 

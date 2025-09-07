@@ -2,19 +2,18 @@ import json
 import os
 import time
 import logging
-from typing import Union, Tuple
+from typing import Tuple
 
 from dotenv import load_dotenv
-from pydantic import BaseModel
 from pydantic.v1.json import pydantic_encoder
 
-import core.rkllm.GlobalState
+import core.endpoints.rkllm.GlobalState
 from core.model.Model import Model
 from core.model.ModelPath import ModelPath
-from core.rkllm.GlobalState import GLOBAL_STATE
-from core import config, model
+from core.endpoints.rkllm import GLOBAL_STATE
+from core import config
 from core.config.ModelConfig import get_model_default_options
-from core.rkllm.rkllm import RKLLM
+from core.endpoints.rkllm import RKLLM
 
 # Get logger for this module
 logger = logging.getLogger("core.model.ModelFile")
@@ -116,7 +115,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
         try:
             # Change value of model_id with huggingface_path
             GLOBAL_STATE.loaded_model_hfpath = huggingface_path
-            core.rkllm.GlobalState.rkllm_model = RKLLM(
+            core.endpoints.rkllm.GlobalState.rkllm_model = RKLLM(
                 os.path.join(self.model_dir, model_file), self.model_dir, options=self.options
             )
         except RuntimeError as e:
@@ -124,7 +123,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
             return None, str(e)
 
         # return model and error message
-        return Model(self, core.rkllm.GlobalState.rkllm_model), None
+        return Model(self, core.endpoints.rkllm.GlobalState.rkllm_model), None
 
     @property
     def full_options(self) -> dict:

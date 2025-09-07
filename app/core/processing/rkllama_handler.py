@@ -9,12 +9,12 @@ from core.model.Model import ModelSharedData
 from core.parameters import Message
 from core.parameters.rkllama_responses import RKllamaResponse, RKllamaChoice
 from core.processing.formatting import validate_format_response, create_format_instruction
-from core.processing.Handler import Counters, DataFormat, Handler, SharedData
+from core.processing.APIHandler import Counters, DataFormat, APIHandler, SharedData
 from core.processing import logger
 from loggers import DEBUG_MODE
 
 
-class RKllamaHandler(Handler):
+class RKllamaAPIHandler(APIHandler):
 
     def __init__(self):
         super().__init__("text/plain")

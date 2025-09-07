@@ -2,8 +2,8 @@ import sys
 import logging
 
 from core.model import Model
-from core.rkllm.classes import LLMCallState
-from app.core.rkllm.GlobalState import GLOBAL_STATE
+from core.endpoints.rkllm.classes import LLMCallState
+from core.endpoints.rkllm.GlobalState import GLOBAL_STATE
 
 # Get logger for this module
 logger = logging.getLogger("core.rkllm.callback")

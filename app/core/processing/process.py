@@ -11,9 +11,9 @@ from core.config import is_debug_mode  # Import the config module
 from core.model.Model import ModelSharedData
 from core.model.ModelFile import ModelFile
 from core.parameters import Message, Role
-from core.processing.Handler import DataFormat, Counters, Handler, SharedData
+from core.processing.APIHandler import DataFormat, Counters, APIHandler, SharedData
 from core.processing.formatting import create_format_instruction, validate_format_response
-from core.rkllm.rkllm import RKLLM
+from core.endpoints.rkllm.rkllm import RKLLM
 
 logger = logging.getLogger("core.processing.process")
 
@@ -21,7 +21,7 @@ logger = logging.getLogger("core.processing.process")
 DEBUG_MODE = is_debug_mode()
 
 import os
-from typing import Optional, List, Any
+from typing import Optional, List
 from transformers import AutoTokenizer
 from dotenv import load_dotenv
 
@@ -95,7 +95,7 @@ async def get_messages(data: dict | None, data_format: DataFormat) -> List[Messa
                     )
     return messages
 
-async def rkllm_request(rkllm_model: RKLLM, model_shared_data: ModelSharedData, model_file: ModelFile, usage_lock: threading.Lock, handler: Handler, data: dict = None) -> JSONResponse | StreamingResponse:
+async def rkllm_request(rkllm_model: RKLLM, model_shared_data: ModelSharedData, model_file: ModelFile, usage_lock: threading.Lock, handler: APIHandler, data: dict = None) -> JSONResponse | StreamingResponse:
     """
     Process a request to the language model
 

@@ -4,7 +4,7 @@ from typing import Union
 from pydantic import BaseModel
 
 from core.model.ModelFile import ModelFile
-from core.rkllm.rkllm import RKLLM
+from core.endpoints.rkllm import RKLLM
 
 class ModelSharedData(BaseModel):
     global_status = -1

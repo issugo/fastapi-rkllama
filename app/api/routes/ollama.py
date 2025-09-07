@@ -2,8 +2,7 @@ from fastapi import APIRouter
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from core import config, model
-from core.rkllm.GlobalState import unload_model
+from core import config
 from core.model.ModelFile import ModelFile
 from main import DEBUG_MODE, logger
 from src import variables as variables

@@ -3,11 +3,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from core import config
-from core.model.ModelFile import ModelFile
+from core.model.ModelFile import ModelFile, get_property_modelfile
 from main import DEBUG_MODE, logger
 from src import variables as variables
-from src.format_utils import strtobool
-from src.model_utils import get_property_modelfile
+from core.processing.json_utils import strtobool
 
 router = APIRouter(tags=["ollama"])
 
@@ -76,7 +75,7 @@ Advanced parameters (optional):
                 model_thinking_enabled) else False  # Disabled by default
 
         # Get all model options
-        model_file = ModelFile(model_name=model_name, rkllm_model_file="", huggingface_path="", request_options=options)
+        model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="", request_options=options)
         options = model_file.full_options
 
         # Load model if needed
@@ -93,7 +92,7 @@ Advanced parameters (optional):
         lock_acquired = True
 
         # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
-        from src.server_utils import GenerateEndpointHandler
+        from core.processing.endpoints.GenerateEndpointHandler import GenerateEndpointHandler
         return GenerateEndpointHandler.handle_request(
             model_name=model_name,
             prompt=prompt,

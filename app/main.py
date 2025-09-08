@@ -3,35 +3,30 @@ import subprocess
 import resource
 import argparse
 import shutil
-import requests
 import json
 import datetime
 import re
-import urllib.parse
 import uvicorn
-from huggingface_hub import hf_hub_url, HfFileSystem
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 
 import core.model.ModelFile
-import core.endpoints.rkllm.GlobalState
+import core.backends.GlobalState
 from api import api_router
+from api.routes.rkllama import pull_model
 from loggers import setup
-from core.endpoints.rkllm import current_model, unload_model
-from core.model.ModelFile import ModelFile, ModelFileInfo
+from core.backends.rkllm import current_model, unload_model
+from core.model.ModelFile import ModelFile, get_property_modelfile
 
 # Local file
-from core.endpoints.rkllm import *
+from core.backends.rkllm import *
 import src.variables as variables
 from src.debug_utils import check_response_format
-from src.format_utils import strtobool, openai_to_ollama_request
-from src.model_utils import (
-    extract_model_details,
-    get_huggingface_model_info,
-    get_property_modelfile,
-    find_rkllm_model_name,
-)
+from src.format_utils import openai_to_ollama_request
+from core.processing.json_utils import strtobool
+from core.model.ModelPath import find_rkllm_model_name, get_huggingface_model_info
+from core.model.Model import extract_model_details
 
 # Import the config module
 from core import config
@@ -67,159 +62,6 @@ app.include_router(api_router)
 # DELETE /rm
 
 
-# Route to view models
-@app.get("/models")
-def list_models():
-    # Return the list of available models using config path
-    models_dir = config.get_path("models")
-
-    if not os.path.exists(models_dir):
-        return JSONResponse(
-            {"error": f"The models directory {models_dir} is not found."},
-            status_code=500,
-        )
-
-    direct_models = [f for f in os.listdir(models_dir) if f.endswith(".rkllm")]
-
-    for model in direct_models:
-        model_name = os.path.splitext(model)[0]
-        model_dir = os.path.join(models_dir, model_name)
-
-        os.makedirs(model_dir, exist_ok=True)
-
-        shutil.move(os.path.join(models_dir, model), os.path.join(model_dir, model))
-
-    model_dirs = []
-    for subdir in os.listdir(models_dir):
-        subdir_path = os.path.join(models_dir, subdir)
-        if os.path.isdir(subdir_path):
-            for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm"):
-                    model_dirs.append(subdir)
-                    break
-
-    return JSONResponse({"models": model_dirs}, status_code=200)
-
-
-# Delete a model
-@app.delete("/rm")
-async def Rm_model(request: Request):
-    data = await request.json()
-    if "model" not in data:
-        return JSONResponse({"error": "Please specify a model."}, status_code=400)
-
-    model_path = os.path.join(config.get_path("models"), data["model"])
-    if not os.path.exists(model_path):
-        return JSONResponse(
-            {"error": f"The model: {data['model']} cannot be found."}, status_code=404
-        )
-
-    os.remove(model_path)
-
-    return JSONResponse(
-        {"message": "The model has been successfully deleted!"}, status_code=200
-    )
-
-
-# route to pull a model
-@app.post("/pull")
-async def pull_model(request: Request):
-    data = await request.json()
-
-    ## @stream_with_context
-    async def generate_progress():
-        if "model" not in data:
-            yield "Error: Model not specified.\n"
-            return
-
-        splitted = data["model"].split("/")
-        model_name = splitted[1] if "model_name" not in data else data["model_name"]
-        if len(splitted) < 3:
-            yield f"Error: Invalid path '{data['model']}'\n"
-            return
-
-        file = splitted[2]
-        repo = data["model"].replace(f"/{file}", "")
-
-        try:
-            # Use Hugging Face HfFileSystem to get the file metadata
-            fs = HfFileSystem()
-            file_info = fs.info(repo + "/" + file)
-
-            total_size = file_info["size"]  # File size in bytes
-            if total_size == 0:
-                yield "Error: Unable to retrieve file size.\n"
-                return
-
-            # Use config to get models path
-            # model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
-            model_dir = os.path.join(config.get_path("models"), model_name)
-            os.makedirs(model_dir, exist_ok=True)
-
-            # Define a file to download
-            local_filename = os.path.join(model_dir, file)
-
-            # Create fonfiguration file for model
-            #ModelFile.create_model(ModelFileInfo(huggingface_path=repo, model_file=file, model_name=model_name))
-            model_file: ModelFile = ModelFile.create(ModelFileInfo(huggingface_path=repo, rkllm_model_file=file, model_name=model_name))
-
-            yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
-
-            try:
-                # Download the file with progress
-                url = hf_hub_url(repo_id=repo, filename=file)
-                with (
-                    requests.get(url, stream=True) as r,
-                    open(local_filename, "wb") as f,
-                ):
-                    downloaded_size = 0
-                    chunk_size = 8192  # 8KB
-
-                    for chunk in r.iter_content(chunk_size=chunk_size):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded_size += len(chunk)
-                            progress = int((downloaded_size / total_size) * 100)
-                            yield f"{progress}%\n"
-
-            except Exception as download_error:
-                # Remove the file if an error occurs during download
-                if os.path.exists(local_filename):
-                    os.remove(local_filename)
-                yield f"Error during download: {str(download_error)}\n"
-                return
-
-        except Exception as e:
-            yield f"Error: {str(e)}\n"
-
-    # Use the appropriate content type for streaming responses
-    ## is_ollama_request = request.path.startswith('/api/')
-    logger.debug(f"request.url={request.url}")
-    urlparsed_path = urllib.parse.urlparse(str(request.url)).path
-    logger.debug(f"urlparsed_path={urlparsed_path}")
-    is_ollama_request = urlparsed_path.startswith("/api/")
-    content_type = "application/x-ndjson" if is_ollama_request else "text/plain"
-    return StreamingResponse(
-        generate_progress(), headers={"Content-Type": content_type}
-    )
-
-
-
-# Route to retrieve the current model
-@app.get("/current_model")
-def get_current_model():
-    if core.endpoints.rkllm.GlobalState.current_model and core.endpoints.rkllm.GlobalState.rkllm_model:
-        return JSONResponse({"model_name": core.endpoints.rkllm.GlobalState.current_model}, status_code=200)
-    else:
-        return JSONResponse(
-            {"error": "No models are currently loaded."}, status_code=404
-        )
-
-
-# Route to make a request to the model
-
-
-# Ollama API compatibility routes
 
 
 @app.get("/api/tags")
@@ -688,47 +530,6 @@ def show_model_info(request: Request):
     return JSONResponse(response, status_code=200)
 
 
-@app.post("/api/create")
-async def create_model(request: Request):
-    data = await request.json()
-    model_name = config.get("name")
-    modelfile = config.get("modelfile", "")
-
-    if DEBUG_MODE:
-        logger.debug(f"API create request data: {data}")
-
-    if not model_name:
-        return JSONResponse({"error": "Missing model name"}, status_code=400)
-
-    model_dir = os.path.join(config.get_path("models"), model_name)
-    os.makedirs(model_dir, exist_ok=True)
-
-    with open(os.path.join(model_dir, "Modelfile"), "w") as f:
-        f.write(modelfile)
-
-    # Parse the modelfile to extract parameters
-    modelfile_lines = modelfile.strip().split("\n")
-    from_line = next(
-        (line for line in modelfile_lines if line.startswith("FROM=")), None
-    )
-    huggingface_path = next(
-        (line for line in modelfile_lines if line.startswith("HUGGINGFACE_PATH=")), None
-    )
-
-    if not from_line or not huggingface_path:
-        return JSONResponse(
-            {"error": "Invalid Modelfile: missing FROM or HUGGINGFACE_PATH"},
-            status_code=400,
-        )
-
-    # Extract values
-    from_value = from_line.split("=")[1].strip("\"'")
-    huggingface_path = huggingface_path.split("=")[1].strip("\"'")
-
-    # For compatibility with existing implementation
-    return JSONResponse({"status": "success", "model": model_name}, status_code=200)
-
-
 @app.post("/api/pull")
 async def pull_model_ollama(request: Request):
     # TODO: Implement the pull model
@@ -831,7 +632,7 @@ async def chat_ollama(request: Request):
             )  # Disabled by default
 
         # Get all model options
-        model_file = ModelFile(model_name=model_name, rkllm_model_file="", huggingface_path="", request_options=options)
+        model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="", request_options=options)
         options = model_file.full_options
 
         # Check if we're starting a new conversation
@@ -866,15 +667,15 @@ async def chat_ollama(request: Request):
                 logger.debug(f"Using system message: {system}")
 
         # Load model if needed
-        if core.endpoints.rkllm.GlobalState.current_model != model_name:
-            if core.endpoints.rkllm.GlobalState.current_model:
+        if core.endpoints.GlobalState.current_model != model_name:
+            if core.endpoints.GlobalState.current_model:
                 if DEBUG_MODE:
-                    logger.debug(f"Unloading current model: {core.endpoints.rkllm.GlobalState.current_model}")
+                    logger.debug(f"Unloading current model: {core.endpoints.GlobalState.current_model}")
                 unload_model()
 
             if DEBUG_MODE:
                 logger.debug(f"Loading model: {model_name}")
-            model_file = ModelFile(model_name=model_name, rkllm_model_file="", huggingface_path="", request_options=options)
+            model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="", request_options=options)
             modele_instance, error = model_file.load_model()
             if error:
                 if DEBUG_MODE:
@@ -883,33 +684,33 @@ async def chat_ollama(request: Request):
                     {"error": f"Failed to load model '{model_name}': {error}"},
                     status_code=500,
                 )
-            core.endpoints.rkllm.GlobalState.rkllm_model = modele_instance
-            core.endpoints.rkllm.GlobalState.current_model = model_name
+            core.endpoints.GlobalState.rkllm_model = modele_instance
+            core.endpoints.GlobalState.current_model = model_name
             if DEBUG_MODE:
                 logger.debug(f"Model {model_name} loaded successfully")
         else:
             # If model is already loaded, check its options are the same for the current request
             if (
-                core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.max_context_len
+                core.endpoints.GlobalState.rkllm_model.rkllm_param.max_context_len
                 != int(options.get("num_ctx"))
-                or core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.max_new_tokens
+                or core.endpoints.GlobalState.rkllm_model.rkllm_param.max_new_tokens
                 != int(options.get("max_new_tokens"))
-                or core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.top_k != int(options.get("top_k"))
-                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.top_p, 2)
+                or core.endpoints.GlobalState.rkllm_model.rkllm_param.top_k != int(options.get("top_k"))
+                or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.top_p, 2)
                 != round(float(options.get("top_p")), 2)
-                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.temperature, 2)
+                or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.temperature, 2)
                 != round(float(options.get("temperature")), 2)
-                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.repeat_penalty, 2)
+                or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.repeat_penalty, 2)
                 != round(float(options.get("repeat_penalty")), 2)
-                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.frequency_penalty, 2)
+                or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.frequency_penalty, 2)
                 != round(float(options.get("frequency_penalty")), 2)
-                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.presence_penalty, 2)
+                or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.presence_penalty, 2)
                 != round(float(options.get("presence_penalty")), 2)
-                or core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat
+                or core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat
                 != int(options.get("mirostat"))
-                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat_tau, 2)
+                or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat_tau, 2)
                 != round(float(options.get("mirostat_tau")), 2)
-                or round(core.endpoints.rkllm.GlobalState.rkllm_model.rkllm_param.mirostat_eta, 2)
+                or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat_eta, 2)
                 != round(float(options.get("mirostat_eta")), 2)
             ):
                 # Update model parameters if they differ
@@ -918,14 +719,14 @@ async def chat_ollama(request: Request):
                         f"Updating model parameters for {model_name} with options: {options}"
                     )
 
-                if core.endpoints.rkllm.GlobalState.current_model:
+                if core.endpoints.GlobalState.current_model:
                     if DEBUG_MODE:
-                        logger.debug(f"Unloading current model: {core.endpoints.rkllm.GlobalState.current_model}")
+                        logger.debug(f"Unloading current model: {core.endpoints.GlobalState.current_model}")
                     unload_model()
 
                 if DEBUG_MODE:
                     logger.debug(f"Reoading model: {model_name}")
-                model_file = ModelFile(model_name=model_name, rkllm_model_file="", huggingface_path="", request_options=options)
+                model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="", request_options=options)
                 modele_instance, error = model_file.load_model()
                 if error:
                     if DEBUG_MODE:
@@ -934,15 +735,15 @@ async def chat_ollama(request: Request):
                         {"error": f"Failed to reload model '{model_name}': {error}"},
                         status_code=500,
                     )
-                core.endpoints.rkllm.GlobalState.rkllm_model = modele_instance
-                core.endpoints.rkllm.GlobalState.current_model = model_name
+                core.endpoints.GlobalState.rkllm_model = modele_instance
+                core.endpoints.GlobalState.current_model = model_name
                 if DEBUG_MODE:
                     logger.debug(f"Model {model_name} reloaded successfully")
 
         # Store format settings in model instance
-        if core.endpoints.rkllm.GlobalState.rkllm_model:
-            core.endpoints.rkllm.GlobalState.rkllm_model.format_schema = format_spec
-            core.endpoints.rkllm.GlobalState.rkllm_model.format_options = options
+        if core.endpoints.GlobalState.rkllm_model:
+            core.endpoints.GlobalState.rkllm_model.format_schema = format_spec
+            core.endpoints.GlobalState.rkllm_model.format_options = options
 
         # Acquire lock before processing the request
         variables.verrou.acquire()
@@ -972,10 +773,10 @@ async def chat_ollama(request: Request):
         custom_req.handle_lock = False
 
         # Process the request - this won't release the lock
-        from src.server_utils import ChatEndpointHandler
+        from core.processing.endpoints.ChatEndpointHandler import ChatEndpointHandler
 
         return ChatEndpointHandler.handle_request(
-            modele_rkllm=core.endpoints.rkllm.GlobalState.rkllm_model,
+            modele_rkllm=core.endpoints.GlobalState.rkllm_model,
             model_name=model_name,
             messages=messages,
             system=system,

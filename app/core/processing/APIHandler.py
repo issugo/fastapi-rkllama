@@ -1,9 +1,9 @@
 import time
 from threading import Thread
-from typing import List, Any
+from typing import List
 
 from core.model.Model import ModelSharedData
-from core.parameters import Message
+from core.api.parameters import Message
 
 
 class DataFormat:

@@ -10,10 +10,12 @@ import logging
 from core.config import is_debug_mode  # Import the config module
 from core.model.Model import ModelSharedData
 from core.model.ModelFile import ModelFile
-from core.parameters import Message, Role
+from core.api.parameters import Message, Role
 from core.processing.APIHandler import DataFormat, Counters, APIHandler, SharedData
-from core.processing.formatting import create_format_instruction, validate_format_response
-from core.endpoints.rkllm.rkllm import RKLLM
+from core.processing.endpoints.ChatEndpointHandler import ChatEndpointHandler
+from core.processing.endpoints.GenerateEndpointHandler import GenerateEndpointHandler
+from core.processing.format_spec.formatting import create_format_instruction, validate_format_response
+from core.backends.rkllm.rkllm_backend import RKLLMBackend
 
 logger = logging.getLogger("core.processing.process")
 
@@ -95,7 +97,7 @@ async def get_messages(data: dict | None, data_format: DataFormat) -> List[Messa
                     )
     return messages
 
-async def rkllm_request(rkllm_model: RKLLM, model_shared_data: ModelSharedData, model_file: ModelFile, usage_lock: threading.Lock, handler: APIHandler, data: dict = None) -> JSONResponse | StreamingResponse:
+async def rkllm_request(rkllm_model: RKLLMBackend, model_shared_data: ModelSharedData, model_file: ModelFile, usage_lock: threading.Lock, handler: APIHandler, data: dict = None) -> JSONResponse | StreamingResponse:
     """
     Process a request to the language model
 
@@ -267,6 +269,43 @@ async def rkllm_request(rkllm_model: RKLLM, model_shared_data: ModelSharedData, 
         )
 
 
+def process_ollama_chat_request(
+    modele_rkllm,
+    model_name,
+    messages,
+    system="",
+    stream=True,
+    format_spec=None,
+    options=None,
+):
+    """Process /api/chat request with correct format"""
+    return ChatEndpointHandler.handle_request(
+        modele_rkllm=modele_rkllm,
+        model_name=model_name,
+        messages=messages,
+        system=system,
+        stream=stream,
+        format_spec=format_spec,
+        options=options,
+    )
 
 
-
+def process_ollama_generate_request(
+    modele_rkllm,
+    model_name,
+    prompt,
+    system="",
+    stream=True,
+    format_spec=None,
+    options=None,
+):
+    """Process /api/generate request with correct format"""
+    return GenerateEndpointHandler.handle_request(
+        modele_rkllm=modele_rkllm,
+        model_name=model_name,
+        prompt=prompt,
+        system=system,
+        stream=stream,
+        format_spec=format_spec,
+        options=options,
+    )

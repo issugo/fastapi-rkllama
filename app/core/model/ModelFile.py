@@ -7,18 +7,20 @@ from typing import Tuple
 from dotenv import load_dotenv
 from pydantic.v1.json import pydantic_encoder
 
-import core.endpoints.rkllm.GlobalState
 from core.model.Model import Model
 from core.model.ModelPath import ModelPath
-from core.endpoints.rkllm import GLOBAL_STATE
+from core.backends.GlobalState import GLOBAL_STATE
 from core import config
 from core.config.ModelConfig import get_model_default_options
-from core.endpoints.rkllm import RKLLM
+from core.backends.rkllm.rkllm_endpoint import RKLLMEndpoint
+
+from src.model_utils import logger
 
 # Get logger for this module
 logger = logging.getLogger("core.model.ModelFile")
 
 DEFAULT_SYSTEM = "Tu es un assistant artificiel."
+
 
 class ModelFileInfo(ModelPath):
     system_prompt: str = ""
@@ -35,7 +37,7 @@ class ModelFile(ModelFileInfo):
     def create_model(cls, model_file_info : ModelFileInfo):
         model_file : ModelFile = ModelFile(**json.loads(json.dumps(model_file_info, default=pydantic_encoder)))
         struct_modelfile = f"""
-FROM="{model_file_info.rkllm_model_file}"
+FROM="{model_file_info.endpoint_model_file}"
 
 HUGGINGFACE_PATH="{model_file_info.huggingface_path}"
 
@@ -91,7 +93,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
             ModelFile.create_modelfile(self)
             time.sleep(0.1)
 
-        model_file = self.rkllm_model_file
+        model_file = self.endpoint_model_file
         huggingface_path = self.huggingface_path
         try:
             # Load modelfile
@@ -115,7 +117,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
         try:
             # Change value of model_id with huggingface_path
             GLOBAL_STATE.loaded_model_hfpath = huggingface_path
-            core.endpoints.rkllm.GlobalState.rkllm_model = RKLLM(
+            GLOBAL_STATE.endpoint = RKLLMEndpoint(
                 os.path.join(self.model_dir, model_file), self.model_dir, options=self.options
             )
         except RuntimeError as e:
@@ -123,7 +125,7 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
             return None, str(e)
 
         # return model and error message
-        return Model(self, core.endpoints.rkllm.GlobalState.rkllm_model), None
+        return Model(self, core.endpoints.GlobalState.endpoint), None
 
     @property
     def full_options(self) -> dict:
@@ -163,4 +165,24 @@ MIROSTAT_ETA={config.get("model", "default_mirostat_eta")}
         return self.options
 
 
+def get_property_modelfile(model_name: str, property: str, models_path: str = "models"):
+    """Get a specific property from the Modelfile of a model."""
+    modelfile = os.path.join(models_path, model_name, "Modelfile")
 
+    # Initialize an empty dictionary to store key-value pairs
+    modelfile_dict = {}
+
+    # Open and read the file
+    try:
+        with open(modelfile, "r") as file:
+            for line in file:
+                line = line.strip()
+                if "=" in line:
+                    # Split the line into key and value (split on first '=')
+                    key, value = line.split("=", 1)
+                    modelfile_dict[key] = value
+    except FileNotFoundError:
+        logger.error(f"Error: File '{modelfile}' not found.")
+
+    # Retrieve the value of the property
+    return modelfile_dict.get(property, None)

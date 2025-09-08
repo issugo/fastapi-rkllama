@@ -6,3 +6,5 @@ torch
 pydantic
 fastapi
 uvicorn
+psutil
+opencv-python

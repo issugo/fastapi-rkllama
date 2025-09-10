@@ -1,6 +1,8 @@
-from typing import Generic, Optional, Union, List, Any
+from typing import Generic, Optional, Union, List, Any, TypeVar
 
-from core.config import T, FieldType
+from core.config import FieldType
+
+T = TypeVar("T")
 
 
 class ConfigField(Generic[T]):

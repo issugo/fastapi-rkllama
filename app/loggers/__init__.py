@@ -1,16 +1,16 @@
 import logging
 import os
 
-from core import config
-from core.config import is_debug_mode
+import core.config.config_utils
+from core.config.config_utils import is_debug_mode
 
-logs_dir = config.get_path("logs")
 DEBUG_MODE = is_debug_mode()
 logging_level = logging.DEBUG if DEBUG_MODE else logging.INFO
 
 
 def setup():
     # Ensure logs directory exists before configuring logging
+    logs_dir = core.config.config_utils.get_path("logs")
     os.makedirs(logs_dir, exist_ok=True)
 
     # Set up logging with appropriate level based on debug mode

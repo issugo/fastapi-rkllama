@@ -419,7 +419,9 @@ This provides detailed logs showing:
 ### Python Client
 
 ```python
+import core.config.config_utils
 import requests
+
 
 def call_with_tools(prompt, tools):
     response = requests.post('http://localhost:8080/api/chat', json={
@@ -427,11 +429,12 @@ def call_with_tools(prompt, tools):
         'messages': [{'role': 'user', 'content': prompt}],
         'tools': tools
     })
-    
+
     data = response.json()
-    if 'tool_calls' in data.get('message', {}):
+    if 'tool_calls' in core.config.config_utils.get('message', {}):
         return data['message']['tool_calls']
     return None
+
 
 # Example usage
 weather_tool = {

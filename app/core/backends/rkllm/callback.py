@@ -1,9 +1,9 @@
 import sys
 import logging
 
-from core.model import Model
+from core.model.Model import Model
+import core.backends.GlobalState
 from core.backends.rkllm.classes import LLMCallState
-from core.backends.GlobalState import GLOBAL_STATE
 
 # Get logger for this module
 logger = logging.getLogger("core.rkllm.callback")
@@ -14,7 +14,7 @@ split_byte_data = bytes(b"")
 def callback_impl(result, userdata, status):
     global split_byte_data
 
-    rkllm_model: Model = GLOBAL_STATE.endpoint
+    rkllm_model: core.model.Model.Model = core.backends.GlobalState.GLOBAL_STATE.backend
 
     if status == LLMCallState.RKLLM_RUN_FINISH:
         rkllm_model.shared_data.global_status = status

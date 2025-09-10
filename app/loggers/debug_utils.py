@@ -1,6 +1,6 @@
 import json
 
-from core import config
+import core.config.config_utils
 
 
 def check_response_format(response_text):
@@ -38,7 +38,7 @@ def check_response_format(response_text):
 
     # Check if the last chunk has done=True
     last_chunk = parsed_chunks[-1]
-    if not config.get("done", False):
+    if not core.config.config_utils.get("done", False):
         issues.append("Last chunk does not have 'done' set to true")
 
     # Check for consistency in response format
@@ -47,7 +47,7 @@ def check_response_format(response_text):
     # Check if using generate or chat format
     is_generate_format = "response" in first_chunk
     is_chat_format = "message" in first_chunk and isinstance(
-        config.get("message", {}), dict
+        core.config.config_utils.get("message", {}), dict
     )
 
     if not (is_generate_format or is_chat_format):

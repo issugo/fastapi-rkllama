@@ -20,7 +20,8 @@ class ConversionConfig(BaseModel):
     quantization: str = 'Q4_0'
     max_context_len: int = 4096
     dtype: str = 'float16'
-    device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
+    #device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device: str = 'cpu'
     token: Optional[str] = os.getenv("HF_TOKEN")  # Get token from environment variable
 
     @property

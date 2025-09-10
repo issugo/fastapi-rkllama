@@ -2,6 +2,9 @@ import json
 import logging
 import uuid
 import time
+
+import core.config.config_utils
+
 #from flask import jsonify
 #import cv2
 
@@ -280,11 +283,11 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
         except json.JSONDecodeError:
             continue
 
-        content_piece = ollama_chunk.get("message", {}).get("content", "")
-        role = ollama_chunk.get("message", {}).get("role")
-        tool_calls = ollama_chunk.get("message", {}).get("tool_calls")
-        model = ollama_chunk.get("model", "unknown-model")
-        finish_reason = ollama_chunk.get("done_reason", None)
+        content_piece = core.config.config_utils.get("content", "")
+        role = core.config.config_utils.get("role")
+        tool_calls = core.config.config_utils.get("tool_calls")
+        model = core.config.config_utils.get("model", "unknown-model")
+        finish_reason = core.config.config_utils.get("done_reason", None)
 
         delta = {}
         delta["content"] = content_piece
@@ -312,7 +315,7 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
 
         yield f"data: {json.dumps(chunk)}\n\n"
 
-        if ollama_chunk.get("done") is True:
+        if core.config.config_utils.get("done") is True:
             # Final chunk — stop streaming
             final_chunk = {
                 "id": completion_id,
@@ -349,9 +352,9 @@ def ollama_generate_stream_to_openai_completions_chunks(ollama_stream_lines):
         except json.JSONDecodeError:
             continue
 
-        content_piece = ollama_chunk.get("response", "")
-        model = ollama_chunk.get("model", "unknown-model")
-        finish_reason = ollama_chunk.get("done_reason", None)
+        content_piece = core.config.config_utils.get("response", "")
+        model = core.config.config_utils.get("model", "unknown-model")
+        finish_reason = core.config.config_utils.get("done_reason", None)
 
         chunk = {
             "id": completion_id,
@@ -367,7 +370,7 @@ def ollama_generate_stream_to_openai_completions_chunks(ollama_stream_lines):
 
         yield f"data: {json.dumps(chunk)}\n\n"
 
-        if ollama_chunk.get("done") is True:
+        if core.config.config_utils.get("done") is True:
             # Final chunk — stop streaming
             final_chunk = {
                 "id": completion_id,
@@ -456,7 +459,7 @@ def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
 
     model = openai_payload.get("model", "llama3")
     stream = openai_payload.get("stream", False)
-    images = images.get("images", [])
+    images = core.config.config_utils.get("images", [])
 
     # Base Ollama payload
     ollama_payload = {

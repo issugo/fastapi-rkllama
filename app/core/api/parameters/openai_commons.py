@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -28,7 +28,7 @@ class OpenAIResponseFormat(BaseModel):
 
 class OpenAIJSONResponseFormat(OpenAIResponseFormat):
     """JSON format for OpenAI response."""
-    type: str = Field("json_object", const=True)
+    type: str = Literal["json_object"]
 
 
 class OpenAIResponseFormatOption(BaseModel):

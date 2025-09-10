@@ -3,6 +3,7 @@ from typing import List, Any, Dict, Optional
 
 from pydantic import create_model
 
+import core.config.config_utils
 from core.processing.json_utils import extract_json
 
 
@@ -27,7 +28,7 @@ def create_format_instruction(format_spec):
 
             # Create example values for each property
             for prop, details in properties.items():
-                prop_type = details.get('type', 'string')
+                prop_type = core.config.config_utils.get('type', 'string')
                 if prop_type == 'string':
                     example[prop] = ""
                 elif prop_type == 'integer':
@@ -106,7 +107,7 @@ def validate_format_response(text, format_spec):
         # Check field types
         for field, value in parsed_data.items():
             if field in properties:
-                expected_type = properties[field].get('type')
+                expected_type = core.config.config_utils.get('type')
 
                 # Validate type
                 if expected_type == 'string' and not isinstance(value, str):
@@ -174,7 +175,7 @@ def create_pydantic_model(format_spec: Dict) -> Optional[type]:
         # Create field definitions for the Pydantic model
         fields = {}
         for prop_name, prop_spec in properties.items():
-            prop_type = prop_spec.get("type", "string")
+            prop_type = core.config.config_utils.get("type", "string")
             python_type = get_pydantic_type(prop_type)
 
             # Make field optional if not required

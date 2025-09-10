@@ -1,9 +1,8 @@
 from enum import Enum
 
 
-class FieldType(Enum):
+class FieldType(str, Enum):
     """Enumeration of field types for configuration schema"""
-
     STRING = "string"
     INTEGER = "integer"
     FLOAT = "float"

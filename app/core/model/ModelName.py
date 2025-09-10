@@ -2,6 +2,7 @@ import os
 
 from pydantic import BaseModel
 
+import core.config.config_utils
 from core import config
 
 
@@ -19,7 +20,7 @@ def get_model_size(model_name) -> int:
     """
 
     # Get the models directory
-    models_dir = config.get_path("models")
+    models_dir = core.config.config_utils.get_path("models")
     model_path = os.path.join(models_dir, model_name)
 
     # check for the RKLLM file to get his size

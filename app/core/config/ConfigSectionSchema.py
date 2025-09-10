@@ -1,6 +1,6 @@
 from typing import Dict, List, Any
 
-from core.config import FieldType
+from core.config.FieldType import FieldType
 from core.config.ConfigField import ConfigField
 
 

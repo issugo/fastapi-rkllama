@@ -1,6 +1,6 @@
 import ctypes
 
-from core.config import config
+import core.config.config_utils
 from core.backends.backend import Backend, BackendType
 from core.backends.rkllm.callback import callback_impl
 import logging
@@ -43,41 +43,41 @@ class RKLLMBackend(Backend):
         self.rkllm_param = RKLLMParam()
         self.rkllm_param.model_path = bytes(model_path, "utf-8")
         self.rkllm_param.max_context_len = int(
-            config.get("num_ctx", config.get("model", "default_num_ctx"))
+            core.config.config_utils.get("num_ctx", core.config.config_utils.get("model", "default_num_ctx"))
         )
         self.rkllm_param.max_new_tokens = int(
-            config.get("max_new_tokens", config.get("model", "default_max_new_tokens"))
+            core.config.config_utils.get("max_new_tokens", core.config.config_utils.get("model", "default_max_new_tokens"))
         )
         self.rkllm_param.top_k = int(
-            config.get("top_k", config.get("model", "default_top_k"))
+            core.config.config_utils.get("top_k", core.config.config_utils.get("model", "default_top_k"))
         )
         self.rkllm_param.top_p = float(
-            config.get("top_p", config.get("model", "default_top_p"))
+            core.config.config_utils.get("top_p", core.config.config_utils.get("model", "default_top_p"))
         )
         self.rkllm_param.temperature = float(
-            config.get("temperature", config.get("model", "default_temperature"))
+            core.config.config_utils.get("temperature", core.config.config_utils.get("model", "default_temperature"))
         )
         self.rkllm_param.repeat_penalty = float(
-            config.get("repeat_penalty", config.get("model", "default_repeat_penalty"))
+            core.config.config_utils.get("repeat_penalty", core.config.config_utils.get("model", "default_repeat_penalty"))
         )
         self.rkllm_param.frequency_penalty = float(
-            config.get(
-                "frequency_penalty", config.get("model", "default_frequency_penalty")
+            core.config.config_utils.get(
+                "frequency_penalty", core.config.config_utils.get("model", "default_frequency_penalty")
             )
         )
         self.rkllm_param.presence_penalty = float(
-            config.get(
-                "presence_penalty", config.get("model", "default_presence_penalty")
+            core.config.config_utils.get(
+                "presence_penalty", core.config.config_utils.get("model", "default_presence_penalty")
             )
         )
         self.rkllm_param.mirostat = int(
-            config.get("mirostat", config.get("model", "default_mirostat"))
+            core.config.config_utils.get("mirostat", core.config.config_utils.get("model", "default_mirostat"))
         )
         self.rkllm_param.mirostat_tau = float(
-            config.get("mirostat_tau", config.get("model", "default_mirostat_tau"))
+            core.config.config_utils.get("mirostat_tau", core.config.config_utils.get("model", "default_mirostat_tau"))
         )
         self.rkllm_param.mirostat_eta = float(
-            config.get("mirostat_eta", config.get("model", "default_mirostat_eta"))
+            core.config.config_utils.get("mirostat_eta", core.config.config_utils.get("model", "default_mirostat_eta"))
         )
 
         # Fixme: these parameters are not used in the current implementation, but they are set to default values

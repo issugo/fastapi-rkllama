@@ -1,5 +1,7 @@
 import ctypes
 import os
+
+import core.config.config_utils
 from core import config
 
 PROMPT_TEXT_PREFIX = (
@@ -8,7 +10,7 @@ PROMPT_TEXT_PREFIX = (
 PROMPT_TEXT_POSTFIX = "<|im_end|><|im_start|>assistant"
 
 # Define the path to the dynamic library
-library_path = os.path.join(config.get_path("lib"), "librkllmrt.so")
+library_path = os.path.join(core.config.config_utils.get_path("lib"), "librkllmrt.so")
 rkllm_lib = ctypes.CDLL(library_path)
 
 # Define the structures from the library

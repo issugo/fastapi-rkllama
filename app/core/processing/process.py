@@ -5,9 +5,10 @@ from threading import Thread
 
 from fastapi.responses import JSONResponse, StreamingResponse
 
+import core.config.config_utils
 from core import config
 import logging
-from core.config import is_debug_mode  # Import the config module
+from core.config.config_utils import is_debug_mode
 from core.model.Model import ModelSharedData
 from core.model.ModelFile import ModelFile
 from core.api.parameters import Message, Role
@@ -118,8 +119,8 @@ async def rkllm_request(rkllm_model: RKLLMBackend, model_shared_data: ModelShare
         if data and "messages" in data:
             # Extract format parameters
             data_format: DataFormat = DataFormat(
-                format_spec=config.get("format"),
-                format_options=config.get("options", {}))
+                format_spec=core.config.config_utils.get("format"),
+                format_options=core.config.config_utils.get("options", {}))
 
             # Store format settings in model instance for reference
             if rkllm_model:

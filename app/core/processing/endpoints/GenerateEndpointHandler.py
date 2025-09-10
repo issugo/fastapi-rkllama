@@ -4,6 +4,7 @@ import re
 import threading
 import time
 
+import core.config.config_utils
 import core.model
 from core import config
 from core.processing.format_spec.formatting import create_format_instruction, validate_format_response
@@ -33,9 +34,9 @@ class GenerateEndpointHandler(EndpointHandler):
                     {
                         "total_duration": metrics["total"],
                         "load_duration": metrics["load"],
-                        "prompt_eval_count": config.get("prompt_tokens", 0),
+                        "prompt_eval_count": core.config.config_utils.get("prompt_tokens", 0),
                         "prompt_eval_duration": metrics["prompt_eval"],
-                        "eval_count": config.get("token_count", 0),
+                        "eval_count": core.config.config_utils.get("token_count", 0),
                         "eval_duration": metrics["eval"],
                     }
                 )
@@ -55,9 +56,9 @@ class GenerateEndpointHandler(EndpointHandler):
             "done": True,
             "total_duration": metrics["total"],
             "load_duration": metrics["load"],
-            "prompt_eval_count": config.get("prompt_tokens", 0),
+            "prompt_eval_count": core.config.config_utils.get("prompt_tokens", 0),
             "prompt_eval_duration": metrics["prompt_eval"],
-            "eval_count": config.get("token_count", 0),
+            "eval_count": core.config.config_utils.get("token_count", 0),
             "eval_duration": metrics["eval"],
             "context": [],
         }

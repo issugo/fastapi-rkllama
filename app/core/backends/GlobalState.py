@@ -2,7 +2,8 @@ from typing import Union, Optional
 
 from pydantic import BaseModel
 
-from core.model import ModelPath, Model
+from core.model.ModelPath import ModelPath
+from core.model.Model import Model
 
 
 class GlobalState(BaseModel):

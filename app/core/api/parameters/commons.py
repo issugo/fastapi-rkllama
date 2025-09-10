@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 
@@ -18,13 +18,13 @@ class MessageContent(BaseModel):
 
 class TextContent(MessageContent):
     """Text content in a message."""
-    type: str = Field("text", const=True)
+    type: str = Literal["text"]
     text: str = Field(..., description="Text content")
 
 
 class ImageContent(MessageContent):
     """Image content in a message."""
-    type: str = Field("image", const=True)
+    type: str = Literal["image"]
     image_url: HttpUrl = Field(..., description="URL of the image")
 
 
@@ -48,7 +48,7 @@ class FunctionCall(BaseModel):
 
 class FunctionToolCall(ToolCall):
     """Function tool call."""
-    type: str = Field("function", const=True)
+    type: str = Literal["function"]
     function: FunctionCall = Field(..., description="Function call details")
     id: str = Field(..., description="Unique ID of the tool call")
 
@@ -82,7 +82,7 @@ class Tool(BaseModel):
 
 class FunctionTool(Tool):
     """Function tool definition."""
-    type: str = Field("function", const=True)
+    type: str = Literal["function"]
     function: Dict[str, Any] = Field(..., description="Function definition")
 
 class ContentType(str, Enum):

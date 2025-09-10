@@ -2,20 +2,24 @@ import argparse
 import configparser
 import datetime
 import os
-import sys
 from pathlib import Path
 from typing import Tuple, Optional, Any, Union, List
 
-from core import config
-from core.config import logger, FieldType
-from core.config.config_schema import RKLLAMA_SCHEMA
+from core.config import logger
+from core.config.FieldType import FieldType
+from core.config.ConfigSchema import create_rkllama_schema
 
 
 class RKLLAMAConfig:
     """Centralized configuration system for RKLLAMA"""
 
-    def __init__(self):
-        self.app_root = self._determine_app_root()
+    RKLLAMA_SCHEMA = create_rkllama_schema()
+
+    def __init__(self, app_root: Path = None):
+        if app_root is None:
+            app_root = Path(os.getcwd())
+        self.app_root = app_root
+        logger.debug(f"app_root={self.app_root}")
         self.config_dir = self.app_root / "config"
         self.config = {}
         # Path cache stores resolved paths to avoid filesystem operations
@@ -52,7 +56,7 @@ class RKLLAMAConfig:
             return self._type_cache[cache_key]
 
         # Look up in schema
-        schema_section = RKLLAMA_SCHEMA.get_section(section)
+        schema_section = RKLLAMAConfig.RKLLAMA_SCHEMA.get_section(section)
         if schema_section and key in schema_section.fields:
             field = schema_section.fields[key]
             result = (field.field_type, field.default)
@@ -121,23 +125,12 @@ class RKLLAMAConfig:
         # Default to string for anything else
         return value
 
-    def _determine_app_root(self) -> Path:
-        """Finds the application root directory"""
-        if getattr(sys, "frozen", False):
-            # Frozen application (PyInstaller)
-            app_path = Path(sys.executable).parent
-        else:
-            # Regular Python script
-            app_path = Path(__file__).parent
-
-        return app_path
-
     def _load_defaults(self):
         """Loads default values from schema and creates default.ini file"""
         default_config = {}
 
         # Extract defaults from schema
-        for section_name, section_schema in RKLLAMA_SCHEMA.sections.items():
+        for section_name, section_schema in RKLLAMAConfig.RKLLAMA_SCHEMA.sections.items():
             default_config[section_name] = {}
             for field_name, field in section_schema.fields.items():
                 # Store the typed default value directly
@@ -352,7 +345,7 @@ class RKLLAMAConfig:
 
         # Check if we're updating a path in the 'paths' section
         invalidate_path_cache = section == "paths" and (
-            key not in self.config.get(section, {}) or config.get(key) != value
+                key not in self.config.get(section, {}) or self.config.get(key) != value
         )
 
         # Get field type information from schema
@@ -586,7 +579,7 @@ class RKLLAMAConfig:
         errors = []
 
         # Use schema to validate all sections
-        for section_name, section_schema in RKLLAMA_SCHEMA.sections.items():
+        for section_name, section_schema in RKLLAMAConfig.RKLLAMA_SCHEMA.sections.items():
             if section_name in self.config:
                 try:
                     # Validate section values against schema
@@ -685,3 +678,5 @@ class RKLLAMAConfig:
         self._generate_shell_config()
 
         logger.debug("Configuration reloaded")
+
+

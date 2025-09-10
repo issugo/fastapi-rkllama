@@ -10,15 +10,8 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
 import core.backends
-from core import config
-from core.model import Model, ModelMetadata
-from core.model.ModelInfo import ModelInfo
-from core.model.ModelPath import ModelType
-from core.processing import rkllama_handler
-from core.backends.GlobalState import GLOBAL_STATE
-from core.model.ModelFile import ModelFile, ModelFileInfo
-from core.processing.process import rkllm_request
-from main import logger, DEBUG_MODE
+import core.config.config_utils
+from api import logger
 
 router = APIRouter(tags=["rkllama"])
 
@@ -36,12 +29,16 @@ def default_route():
 
 @router.post("/generate")
 async def recevoir_message(request: Request):
-    if not GLOBAL_STATE.endpoint:
+    from core.processing.process import rkllm_request
+    from core.processing import rkllama_handler
+    from core.backends.GlobalState import GLOBAL_STATE
+
+    if not GLOBAL_STATE.backend:
         return JSONResponse(
             {"error": "No models are currently loaded."}, status_code=400
         )
 
-    GLOBAL_STATE.endpoint.usage_lock.acquire()
+    GLOBAL_STATE.backend.usage_lock.acquire()
     logger.info("Processing generate request")
 
     # Use custom_request if provided, otherwise use Flask's request
@@ -50,33 +47,37 @@ async def recevoir_message(request: Request):
     data = await request.json()
 
     return await rkllm_request(
-        rkllm_model=GLOBAL_STATE.endpoint.endpoint,
-        model_shared_data=GLOBAL_STATE.endpoint.shared_data,
-        model_file=GLOBAL_STATE.endpoint.model_file,
-        usage_lock=GLOBAL_STATE.endpoint.usage_lock,
+        rkllm_model=GLOBAL_STATE.backend.backend,
+        model_shared_data=GLOBAL_STATE.backend.shared_data,
+        model_file=GLOBAL_STATE.backend.model_file,
+        usage_lock=GLOBAL_STATE.backend.usage_lock,
         handler=rkllama_handler,
         data=data)
 
 
 @router.post("/unload_model")
 def unload_model_route():
-    if not GLOBAL_STATE.endpoint:
+    from core.backends.GlobalState import GLOBAL_STATE
+    if not GLOBAL_STATE.backend:
         return JSONResponse(
             {"error": "No models are currently loaded."}, status_code=400
         )
 
-    GLOBAL_STATE.endpoint.unload()
-    GLOBAL_STATE.endpoint = None
+    GLOBAL_STATE.backend.unload()
+    GLOBAL_STATE.backend = None
 
     return JSONResponse({"message": "Model successfully unloaded!"}, status_code=200)
 
 
 @router.post("/load_model")
 async def load_model_route(request: Request):
+    from core.model.ModelFile import ModelFile, ModelFileInfo
+    from core.backends.GlobalState import GLOBAL_STATE
+
     # Check if a model is currently loaded
-    if GLOBAL_STATE.endpoint:
+    if GLOBAL_STATE.backend:
         return JSONResponse(
-            {"error": f"model {GLOBAL_STATE.endpoint.model_file.model_name} is already loaded. Please unload it first."},
+            {"error": f"model {GLOBAL_STATE.backend.model_file.model_name} is already loaded. Please unload it first."},
             status_code=400,
         )
 
@@ -89,11 +90,11 @@ async def load_model_route(request: Request):
 
     model_file_info: ModelFileInfo = ModelFileInfo(**data)
     model_file: ModelFile = ModelFile.create_model(model_file_info)
-    GLOBAL_STATE.endpoint, error = model_file.load_model()
+    GLOBAL_STATE.backend, error = model_file.load_model()
 
     if error:
         return JSONResponse({"error": error}, status_code=400)
-    elif GLOBAL_STATE.endpoint:
+    elif GLOBAL_STATE.backend:
         return JSONResponse(
             {"message": f"Model {model_file.model_name} loaded successfully."}, status_code=200
         )
@@ -104,7 +105,7 @@ async def load_model_route(request: Request):
 @router.get("/models")
 def list_models():
     # Return the list of available models using config path
-    models_dir = config.get_path("models")
+    models_dir = core.config.config_utils.get_path("models")
 
     if not os.path.exists(models_dir):
         return JSONResponse(
@@ -140,7 +141,7 @@ async def Rm_model(request: Request):
     if "model" not in data:
         return JSONResponse({"error": "Please specify a model."}, status_code=400)
 
-    model_path = os.path.join(config.get_path("models"), data["model"])
+    model_path = os.path.join(core.config.config_utils.get_path("models"), data["model"])
     if not os.path.exists(model_path):
         return JSONResponse(
             {"error": f"The model: {data['model']} cannot be found."}, status_code=404
@@ -155,6 +156,8 @@ async def Rm_model(request: Request):
 
 @router.post("/pull")
 async def pull_model(request: Request):
+    from core.model.ModelFile import ModelFile, ModelFileInfo
+
     data = await request.json()
 
     ## @stream_with_context
@@ -184,7 +187,7 @@ async def pull_model(request: Request):
 
             # Use config to get models path
             # model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
-            model_dir = os.path.join(config.get_path("models"), model_name)
+            model_dir = os.path.join(core.config.config_utils.get_path("models"), model_name)
             os.makedirs(model_dir, exist_ok=True)
 
             # Define a file to download
@@ -237,8 +240,12 @@ async def pull_model(request: Request):
 
 @router.get("/current_models")
 def get_current_models():
+    from core.model import Model, ModelMetadata
+    from core.model.ModelInfo import ModelInfo
+    from core.model.ModelPath import ModelType
+
     # Get the models info from Modelfile and HF
-    models_dir = config.get_path("models")
+    models_dir = core.config.config_utils.get_path("models")
     models_info = {}
     for subdir in os.listdir(models_dir):
         subdir_path = os.path.join(models_dir, subdir)
@@ -296,8 +303,8 @@ def get_current_models():
 @router.post("/api/create")
 async def create_model(request: Request):
     data = await request.json()
-    model_name = config.get("name")
-    modelfile = config.get("modelfile", "")
+    model_name = core.config.config_utils.get("name")
+    modelfile = core.config.config_utils.get("modelfile", "")
 
     if DEBUG_MODE:
         logger.debug(f"API create request data: {data}")
@@ -305,7 +312,7 @@ async def create_model(request: Request):
     if not model_name:
         return JSONResponse({"error": "Missing model name"}, status_code=400)
 
-    model_dir = os.path.join(config.get_path("models"), model_name)
+    model_dir = os.path.join(core.config.config_utils.get_path("models"), model_name)
     os.makedirs(model_dir, exist_ok=True)
 
     with open(os.path.join(model_dir, "Modelfile"), "w") as f:

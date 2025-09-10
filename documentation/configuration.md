@@ -76,49 +76,51 @@ python -m rkllama --server_port 8080 --server_debug
 ### Basic Usage
 
 ```python
-
+import core.config.config_utils
 from core import config
 from rkllama import config
 
 # Get values with automatic type inference
-port = config.get("server", "port")
-debug = config.get("server", "debug")
+port = core.config.config_utils.get("server", "port")
+debug = core.config.config_utils.get("server", "debug")
 
 # Get values with explicit types
-port = config.get("server", "port", 8080, as_type=int)
-debug = config.get("server", "debug", False, as_type=bool)
+port = core.config.config_utils.get("server", "port", 8080, as_type=int)
+debug = core.config.config_utils.get("server", "debug", False, as_type=bool)
 
 # Get path values (resolved against app_root)
-models_dir = config.get_path("models")
+models_dir = core.config.config_utils.get_path("models")
 
 # Set values
-config.set("server", "port", 9090)
-config.set("logging", "level", "DEBUG")
+core.config.config_utils.set("server", "port", 9090)
+core.config.config_utils.set("logging", "level", "DEBUG")
 ```
 
 ### Displaying and Saving Configuration
 
 ```python
 # Display current configuration
+import core.config.config_utils
 from core import config
 
-config.display()
+core.config.config_utils.display()
 
 # Validate configuration
-if not config.validate():
+if not core.config.config_utils.validate():
     print("Configuration validation failed!")
 
 # Save to project configuration file
-config.save_to_project_ini()
+core.config.config_utils.save_to_project_ini()
 ```
 
 ### Reloading Configuration
 
 ```python
 # Reload configuration from all sources
+import core.config.config_utils
 from core import config
 
-config.reload_config()
+core.config.config_utils.reload_config()
 ```
 
 ## Type Conversion

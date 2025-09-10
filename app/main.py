@@ -1,4 +1,5 @@
 # Import libs
+import os
 import subprocess
 import resource
 import argparse
@@ -6,35 +7,28 @@ import shutil
 import json
 import datetime
 import re
+import sys
+import logging
+
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import core.config.config_utils
 import core.model.ModelFile
-import core.backends.GlobalState
 from api import api_router
 from api.routes.rkllama import pull_model
 from loggers import setup
-from core.backends.rkllm import current_model, unload_model
 from core.model.ModelFile import ModelFile, get_property_modelfile
 
 # Local file
-from core.backends.rkllm import *
-import src.variables as variables
-from src.debug_utils import check_response_format
-from src.format_utils import openai_to_ollama_request
 from core.processing.json_utils import strtobool
 from core.model.ModelPath import find_rkllm_model_name, get_huggingface_model_info
-from core.model.Model import extract_model_details
-
-# Import the config module
-from core import config
-from ui import print_color
 
 
 # Check for debug mode using the improved method
-DEBUG_MODE = config.is_debug_mode()
+DEBUG_MODE = core.config.config_utils.is_debug_mode()
 
 setup()
 logger = logging.getLogger("rkllama.server")
@@ -67,7 +61,7 @@ app.include_router(api_router)
 @app.get("/api/tags")
 def list_ollama_models():
     # Return models in Ollama API format
-    models_dir = config.get_path("models")
+    models_dir = core.config.config_utils.get_path("models")
 
     if not os.path.exists(models_dir):
         return JSONResponse({"models": []}, status_code=200)
@@ -95,10 +89,10 @@ def list_ollama_models():
                             "details": {
                                 "format": "rkllm",
                                 "family": "llama",  # Default family
-                                "parameter_size": config.get(
+                                "parameter_size": core.config.config_utils.get(
                                     "parameter_size", "Unknown"
                                 ),
-                                "quantization_level": config.get(
+                                "quantization_level": core.config.config_utils.get(
                                     "quantization_level", "Unknown"
                                 ),
                             },
@@ -124,7 +118,7 @@ def show_model_info(request: Request):
     if not model_name:
         return JSONResponse({"error": "Missing model name"}, status_code=400)
 
-    model_dir = os.path.join(config.get_path("models"), model_name)
+    model_dir = os.path.join(core.config.config_utils.get_path("models"), model_name)
     model_rkllm = find_rkllm_model_name(model_dir)
 
     if not os.path.exists(model_dir):
@@ -194,8 +188,8 @@ def show_model_info(request: Request):
 
     # Extract model details
     model_details = extract_model_details(model_rkllm)
-    parameter_size = config.get("parameter_size", "Unknown")
-    quantization_level = config.get("quantization_level", "Unknown")
+    parameter_size = core.config.config_utils.get("parameter_size", "Unknown")
+    quantization_level = core.config.config_utils.get("quantization_level", "Unknown")
 
     # Determine model family based on name patterns
     family = "llama"  # default family
@@ -534,7 +528,7 @@ def show_model_info(request: Request):
 async def pull_model_ollama(request: Request):
     # TODO: Implement the pull model
     data = await request.json()
-    model = config.get("name")
+    model = core.config.config_utils.get("name")
 
     if DEBUG_MODE:
         logger.debug(f"API pull request data: {data}")
@@ -551,7 +545,7 @@ async def pull_model_ollama(request: Request):
 @app.delete("/api/delete")
 async def delete_model_ollama(request: Request):
     data = await request.json()
-    model_name = config.get("name")
+    model_name = core.config.config_utils.get("name")
 
     if DEBUG_MODE:
         logger.debug(f"API delete request data: {data}")
@@ -566,7 +560,7 @@ async def delete_model_ollama(request: Request):
             {"error": f"Model '{model_name}' not found"}, status_code=404
         )
 
-    model_path = os.path.join(config.get_path("models"), model_name)
+    model_path = os.path.join(core.config.config_utils.get_path("models"), model_name)
     if not os.path.exists(model_path):
         return JSONResponse(
             {"error": f"Model directory for '{model_name}' not found"}, status_code=404
@@ -606,16 +600,16 @@ async def chat_ollama(request: Request):
                 logger.debug(f"API OpenAI chat request data: {data}")
             data = openai_to_ollama_request(data)
 
-        model_name = data.get("model")
-        messages = data.get("messages", [])
-        system = data.get("system", "")
-        stream = data.get("stream", True)
-        tools = data.get("tools", None)
-        enable_thinking = data.get("enable_thinking", None)
+        model_name = core.config.config_utils.get("model")
+        messages = core.config.config_utils.get("messages", [])
+        system = core.config.config_utils.get("system", "")
+        stream = core.config.config_utils.get("stream", True)
+        tools = core.config.config_utils.get("tools", None)
+        enable_thinking = core.config.config_utils.get("enable_thinking", None)
 
         # Extract format parameters - can be object or string
-        format_spec = data.get("format")
-        options = data.get("options", {})
+        format_spec = core.config.config_utils.get("format")
+        options = core.config.config_utils.get("options", {})
 
         if DEBUG_MODE:
             logger.debug(f"API Ollama chat request data: {data}")
@@ -623,7 +617,7 @@ async def chat_ollama(request: Request):
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
             model_thinking_enabled = get_property_modelfile(
-                model_name, "ENABLE_THINKING", config.get_path("models")
+                model_name, "ENABLE_THINKING", core.config.config_utils.get_path("models")
             )
             enable_thinking = (
                 strtobool(model_thinking_enabled)
@@ -638,7 +632,7 @@ async def chat_ollama(request: Request):
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages
         is_new_conversation = not any(
-            config.get("role") == "assistant" for msg in messages
+            core.config.config_utils.get("role") == "assistant" for msg in messages
         )
 
         # Always reset system prompt for new conversations
@@ -652,8 +646,8 @@ async def chat_ollama(request: Request):
         filtered_messages = []
 
         for message in messages:
-            if config.get("role") == "system":
-                system = config.get("content", "")
+            if core.config.config_utils.get("role") == "system":
+                system = core.config.config_utils.get("content", "")
                 system_in_messages = True
                 # Don't add system message to filtered messages
             else:
@@ -692,26 +686,27 @@ async def chat_ollama(request: Request):
             # If model is already loaded, check its options are the same for the current request
             if (
                 core.endpoints.GlobalState.rkllm_model.rkllm_param.max_context_len
-                != int(options.get("num_ctx"))
+                != int(core.config.config_utils.get("num_ctx"))
                 or core.endpoints.GlobalState.rkllm_model.rkllm_param.max_new_tokens
-                != int(options.get("max_new_tokens"))
-                or core.endpoints.GlobalState.rkllm_model.rkllm_param.top_k != int(options.get("top_k"))
+                != int(core.config.config_utils.get("max_new_tokens"))
+                or core.endpoints.GlobalState.rkllm_model.rkllm_param.top_k != int(
+                core.config.config_utils.get("top_k"))
                 or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.top_p, 2)
-                != round(float(options.get("top_p")), 2)
+                != round(float(core.config.config_utils.get("top_p")), 2)
                 or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.temperature, 2)
-                != round(float(options.get("temperature")), 2)
+                != round(float(core.config.config_utils.get("temperature")), 2)
                 or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.repeat_penalty, 2)
-                != round(float(options.get("repeat_penalty")), 2)
+                != round(float(core.config.config_utils.get("repeat_penalty")), 2)
                 or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.frequency_penalty, 2)
-                != round(float(options.get("frequency_penalty")), 2)
+                != round(float(core.config.config_utils.get("frequency_penalty")), 2)
                 or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.presence_penalty, 2)
-                != round(float(options.get("presence_penalty")), 2)
+                != round(float(core.config.config_utils.get("presence_penalty")), 2)
                 or core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat
-                != int(options.get("mirostat"))
+                != int(core.config.config_utils.get("mirostat"))
                 or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat_tau, 2)
-                != round(float(options.get("mirostat_tau")), 2)
+                != round(float(core.config.config_utils.get("mirostat_tau")), 2)
                 or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat_eta, 2)
-                != round(float(options.get("mirostat_eta")), 2)
+                != round(float(core.config.config_utils.get("mirostat_eta")), 2)
             ):
                 # Update model parameters if they differ
                 if DEBUG_MODE:
@@ -807,7 +802,7 @@ if DEBUG_MODE:
     async def debug_streaming(request: Request):
         """Endpoint to diagnose streaming issues"""
         data = await request.json()
-        stream_data = config.get("stream_data", "")
+        stream_data = core.config.config_utils.get("stream_data", "")
 
         issues = check_response_format(stream_data)
 
@@ -857,33 +852,33 @@ def main():
     args = parser.parse_args()
 
     # Load arguments into the config
-    config.load_args(args)
+    core.config.config_utils.load_args(args)
 
     # Set debug mode if specified in config - using the improved method
     global DEBUG_MODE
-    DEBUG_MODE = config.is_debug_mode()
+    DEBUG_MODE = core.config.config_utils.is_debug_mode()
     if DEBUG_MODE:
         logger.setLevel(logging.DEBUG)
         logger.warning("Debug mode enabled")
-        config.display()
+        core.config.config_utils.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
 
     # Get port from config
-    port = config.get("server", "port", "8080")
+    port = core.config.config_utils.get("server", "port", "8080")
 
     # Check the processor
-    processor = config.get("platform", "processor", None)
+    processor = core.config.config_utils.get("platform", "processor", None)
     if not processor:
         logger.error("Processor not configured")
         sys.exit(1)
     else:
         if processor not in ["rk3588", "rk3576"]:
-            print_color(
-                "Error: Invalid processor. Please enter rk3588 or rk3576.", "red"
+            logger.error(
+                "Error: Invalid processor. Please enter rk3588 or rk3576."
             )
             sys.exit(1)
         logger.info(f"Setting the frequency for the {processor} platform...")
-        library_path = os.path.join(config.get_path("lib"), f"fix_freq_{processor}.sh")
+        library_path = os.path.join(core.config.config_utils.get_path("lib"), f"fix_freq_{processor}.sh")
 
         # Pass debug flag as parameter to the shell script
         debug_param = "1" if DEBUG_MODE else "0"
@@ -901,7 +896,7 @@ def main():
     ## app.run(host=config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
     uvicorn.run(
         app,
-        host=config.get("server", "host", "0.0.0.0"),
+        host=core.config.config_utils.get("server", "host", "0.0.0.0"),
         port=int(port),
         log_level="debug",
     )

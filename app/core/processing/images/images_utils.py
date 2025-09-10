@@ -4,6 +4,7 @@ import os
 import numpy as np
 import requests
 
+import core.config.config_utils
 from core import config
 from src.format_utils import logger
 
@@ -127,7 +128,7 @@ def get_encoder_model_path(model_name: str) -> Union[str, None]:
         The path to the vision encoder model or None if not found
     """
     # Get the models directory
-    models_dir = config.get_path("models")
+    models_dir = core.config.config_utils.get_path("models")
     model_path = os.path.join(models_dir, model_name)
 
     # check for the RKNN file

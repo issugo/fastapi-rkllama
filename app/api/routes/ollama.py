@@ -2,10 +2,8 @@ from fastapi import APIRouter
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from core import config
-from core.model.ModelFile import ModelFile, get_property_modelfile
-from main import DEBUG_MODE, logger
-from src import variables as variables
+import core.config.config_utils
+from api import logger
 from core.processing.json_utils import strtobool
 
 router = APIRouter(tags=["ollama"])
@@ -32,6 +30,8 @@ Advanced parameters (optional):
     raw: if true no formatting will be applied to the prompt. You may choose to use the raw parameter if you are specifying a full templated prompt in your request to the API
     keep_alive: controls how long the model will stay loaded into memory following the request (default: 5m)
 """
+    from core.model.ModelFile import ModelFile, get_property_modelfile
+    from  main import DEBUG_MODE
 
     lock_acquired = False  # Track lock status
     is_openai_request = request.path.startswith('/v1/completions')
@@ -44,17 +44,17 @@ Advanced parameters (optional):
                 logger.debug(f"API OpenAI completions request data: {data}")
             data = openai_to_ollama_generate_request(data)
 
-        model_name = data.get('model')
-        prompt = data.get('prompt')
-        system = data.get('system', '')
-        stream = data.get('stream', True)
-        enable_thinking = data.get('enable_thinking',
-                                   (data.get('think', None)))  # Ollama now uses 'think' in some versions
-        images = data.get('images', None)  # For multimodal inputs
+        model_name = core.config.config_utils.get('model')
+        prompt = core.config.config_utils.get('prompt')
+        system = core.config.config_utils.get('system', '')
+        stream = core.config.config_utils.get('stream', True)
+        enable_thinking = core.config.config_utils.get('enable_thinking',
+                                                       (core.config.config_utils.get('think', None)))  # Ollama now uses 'think' in some versions
+        images = core.config.config_utils.get('images', None)  # For multimodal inputs
 
         # Support format options for structured JSON output
-        format_spec = data.get('format')
-        options = data.get('options', {})
+        format_spec = core.config.config_utils.get('format')
+        options = core.config.config_utils.get('options', {})
 
         # Remove possible namespace in model name. Ollama API allows namespace/model
         model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
@@ -70,7 +70,7 @@ Advanced parameters (optional):
 
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
-            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', config.get_path("models"))
+            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', core.config.config_utils.get_path("models"))
             enable_thinking = strtobool(model_thinking_enabled) if bool(
                 model_thinking_enabled) else False  # Disabled by default
 

@@ -4,6 +4,7 @@ import time
 import threading
 from datetime import datetime, timedelta
 
+import core.config.config_utils
 from core.backends.rkllm.classes import RKLLMInferMode, RKLLMInputType
 from core.backends.rknn.classes import RKNN_NPU_CORE_ALL
 from core.model.ModelName import get_model_size
@@ -506,7 +507,7 @@ class WorkerManager:
             self.send_task(model_name, (WORKER_TASK_VISION_ENCODER, None, None, model_input))
 
             # Wait to confirm output of the image encoder
-            image_embed = self.workers[model_name].result_q.get()
+            image_embed = core.config.config_utils.get()
 
             if isinstance(image_embed, str) and image_embed == WORKER_TASK_ERROR:
                 # Error ENcoding the image. Return

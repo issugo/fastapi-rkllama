@@ -63,6 +63,18 @@ class RKLLAMAConfig(BaseModel):
         # Generate shell configuration for environment exports
         self._generate_shell_config()
 
+    def _update_dict(self, u: dict, model: BaseModel = None):
+        if model is None:
+            return self._update_dict(model=self, u=u)
+        else:
+            for k, v in u.items():
+                if isinstance(v, dict):
+                    model.__setattr__(k, self._update_dict(model=model.__getattr__(k), u=v))
+                else:
+                    if k in model.__dict__:
+                        model.__setattr__(k, v)
+            return model
+
     def _get_field_info(
         self, section: str, key: str
     ) -> Tuple[Optional[FieldType], Any]:

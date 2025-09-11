@@ -3,32 +3,54 @@ import configparser
 import datetime
 import os
 from pathlib import Path
-from typing import Tuple, Optional, Any, Union, List
+from typing import Tuple, Optional, Any, Union, List, Annotated
+
+from pydantic import BaseModel, Field
+from pydantic.v1 import validate_model
 
 from core.config import logger
 from core.config.FieldType import FieldType
-from core.config.ConfigSchema import create_rkllama_schema
+from core.config.ConfigSchema import create_rkllama_schema, ConfigSchema
+from core.config.ServerConfig import ServerConfig
+from core.config.PathsConfig import PathsConfig
+from core.config.ModelConfig import ModelConfig
+from core.config.PlatformConfig import PlatformConfig
 
 
-class RKLLAMAConfig:
+class RKLLAMAConfig(BaseModel):
     """Centralized configuration system for RKLLAMA"""
+    _app_root: Path = Path(os.getcwd())
+    _config_dir: Path = None
+    _path_cache: dict = None
+    _type_cache: dict = None
 
-    RKLLAMA_SCHEMA = create_rkllama_schema()
+    server: ServerConfig = ServerConfig()
+    paths: PathsConfig = PathsConfig()
+    model: ModelConfig = ModelConfig()
+    platform: PlatformConfig = PlatformConfig()
 
-    def __init__(self, app_root: Path = None):
+    @property
+    def config(self) -> dict:
+        return self.__dict__
+
+    _rkllama_schema: ConfigSchema = create_rkllama_schema()
+
+    def __init__(self, app_root: Path = None, /, **data: Any):
+        super().__init__(**data)
+
         if app_root is None:
             app_root = Path(os.getcwd())
-        self.app_root = app_root
-        logger.debug(f"app_root={self.app_root}")
-        self.config_dir = self.app_root / "config"
-        self.config = {}
+        self._app_root = app_root
+        logger.debug(f"app_root={self._app_root}")
+        self._config_dir = self._app_root / "config"
+
         # Path cache stores resolved paths to avoid filesystem operations
         self._path_cache = {}
         # Type cache stores schema information to avoid lookups
         self._type_cache = {}
 
         # Create config directory if it doesn't exist
-        os.makedirs(self.config_dir, exist_ok=True)
+        os.makedirs(self._config_dir, exist_ok=True)
 
         # Configuration loading follows priority order:
         self._load_defaults()  # Schema defaults (lowest priority)
@@ -56,7 +78,7 @@ class RKLLAMAConfig:
             return self._type_cache[cache_key]
 
         # Look up in schema
-        schema_section = RKLLAMAConfig.RKLLAMA_SCHEMA.get_section(section)
+        schema_section = RKLLAMAConfig._rkllama_schema.get_section(section)
         if schema_section and key in schema_section.fields:
             field = schema_section.fields[key]
             result = (field.field_type, field.default)
@@ -130,14 +152,14 @@ class RKLLAMAConfig:
         default_config = {}
 
         # Extract defaults from schema
-        for section_name, section_schema in RKLLAMAConfig.RKLLAMA_SCHEMA.sections.items():
+        for section_name, section_schema in self._rkllama_schema.sections.items():
             default_config[section_name] = {}
             for field_name, field in section_schema.fields.items():
                 # Store the typed default value directly
                 default_config[section_name][field_name] = field.default
 
         # Write default configuration to file if it doesn't exist
-        default_ini_path = self.config_dir / "default.ini"
+        default_ini_path = self._config_dir / "default.ini"
         if not default_ini_path.exists():
             config = configparser.ConfigParser()
             for section, values in default_config.items():
@@ -180,7 +202,7 @@ class RKLLAMAConfig:
             Path("/etc/rkllama/rkllama.ini"),
             Path("/etc/rkllama.ini"),
             Path("/usr/local/etc/rkllama.ini"),
-            self.app_root / "system" / "rkllama.ini",
+            self._app_root / "system" / "rkllama.ini",
         ]
 
         for path in system_config_paths:
@@ -204,8 +226,8 @@ class RKLLAMAConfig:
     def _load_project_ini(self):
         """Load project-specific configuration"""
         project_config_paths = [
-            self.app_root / "rkllama.ini",
-            self.app_root / "config" / "rkllama.ini",
+            self._app_root / "rkllama.ini",
+            self._app_root / "config" / "rkllama.ini",
         ]
 
         for path in project_config_paths:
@@ -319,10 +341,10 @@ class RKLLAMAConfig:
                 resolved = expanded_path
             else:
                 # Relative to app root after expansion
-                resolved = str(self.app_root / expanded_path)
+                resolved = str(self._app_root / expanded_path)
         else:
             # Relative to app root
-            resolved = str(self.app_root / path)
+            resolved = str(self._app_root / path)
 
         # Cache the result
         self._path_cache[path] = resolved
@@ -518,7 +540,7 @@ class RKLLAMAConfig:
         Creates a shell script with environment variables.
         Useful for sourcing in shell scripts or CI/CD pipelines.
         """
-        config_env_path = self.config_dir / "config.env"
+        config_env_path = self._config_dir / "config.env"
 
         lines = [
             "#!/bin/sh",
@@ -526,7 +548,7 @@ class RKLLAMAConfig:
             f"# Generated at: {datetime.datetime.now().isoformat()}",
             "",
             "# Application root",
-            f'RKLLAMA_ROOT="{self.app_root}"',
+            f'RKLLAMA_ROOT="{self._app_root}"',
             "",
         ]
 
@@ -579,7 +601,7 @@ class RKLLAMAConfig:
         errors = []
 
         # Use schema to validate all sections
-        for section_name, section_schema in RKLLAMAConfig.RKLLAMA_SCHEMA.sections.items():
+        for section_name, section_schema in RKLLAMAConfig._rkllama_schema.sections.items():
             if section_name in self.config:
                 try:
                     # Validate section values against schema
@@ -617,7 +639,7 @@ class RKLLAMAConfig:
         Saves current configuration to project INI file.
         Converts typed values back to strings.
         """
-        project_config_path = os.path.join(self.app_root, "rkllama.ini")
+        project_config_path = os.path.join(self._app_root, "rkllama.ini")
         config = configparser.ConfigParser()
 
         # Add all sections and keys

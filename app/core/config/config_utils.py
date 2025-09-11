@@ -1,10 +1,11 @@
 import argparse
+import os
 from typing import Any, Optional, Union
 
 from core.config import FieldType
 from core.config.RKLLAMAConfig import RKLLAMAConfig
 
-config = RKLLAMAConfig()
+config = RKLLAMAConfig(app_root=os.getenv("APP_ROOT"))
 
 def get(
     section: str,

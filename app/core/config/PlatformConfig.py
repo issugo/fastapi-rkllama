@@ -1,14 +1,12 @@
-from pydantic import BaseModel
+from enum import Enum
+from typing import Annotated
 
-from core.config import IncrementalConfigSchema
+from pydantic import BaseModel, Field
 
+class PlatformProcessor(str, Enum):
+    rk3588 = "rk3588"
+    rk3576 = "rk3576"
 
 class PlatformConfig(BaseModel):
-    processor: str = "rk3588"
+    processor: Annotated[PlatformProcessor, Field(default=PlatformProcessor.rk3588, description="Target processor")]
 
-    @staticmethod
-    def add_schema(schema: IncrementalConfigSchema):
-        platform = schema.add_section("platform", description="Platform configuration")
-        platform.string(
-            "processor", "rk3588", "Target processor", options=["rk3588", "rk3576"]
-        )

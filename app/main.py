@@ -15,11 +15,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-import core.config.config_utils
 import core.model.ModelFile
 from api import api_router
 from api.routes.rkllama import pull_model
-from loggers import setup
+from core.config import config_utils
+from core.config.RKLLAMAConfig import RKLLAMAConfig
+from loggers import logging_setup
 from core.model.ModelFile import ModelFile, get_property_modelfile
 
 # Local file
@@ -28,10 +29,8 @@ from core.model.ModelPath import find_rkllm_model_name, get_huggingface_model_in
 
 
 # Check for debug mode using the improved method
-DEBUG_MODE = core.config.config_utils.is_debug_mode()
-
-setup()
-logger = logging.getLogger("rkllama.server")
+DEBUG_MODE = None
+logger = None
 
 ## app = Flask(__name__)
 app = FastAPI()
@@ -851,23 +850,29 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     args = parser.parse_args()
 
-    # Load arguments into the config
-    core.config.config_utils.load_args(args)
+
+    config_utils.rkllama_config = RKLLAMAConfig(app_root=os.getenv("APP_ROOT"), args=args)
 
     # Set debug mode if specified in config - using the improved method
     global DEBUG_MODE
-    DEBUG_MODE = core.config.config_utils.is_debug_mode()
+    DEBUG_MODE = config_utils.rkllama_config.is_debug_mode()
+
+    logging_setup(config_utils.rkllama_config.get_path("logs"), DEBUG_MODE)
+
+    global logger
+    logger = logging.getLogger("rkllama.server")
+
     if DEBUG_MODE:
         logger.setLevel(logging.DEBUG)
         logger.warning("Debug mode enabled")
-        core.config.config_utils.display()
+        config_utils.rkllama_config.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
 
     # Get port from config
-    port = core.config.config_utils.get("server", "port", "8080")
+    port = config_utils.rkllama_config.server.port
 
     # Check the processor
-    processor = core.config.config_utils.get("platform", "processor", None)
+    processor = config_utils.rkllama_config.platform.processor
     if not processor:
         logger.error("Processor not configured")
         sys.exit(1)
@@ -878,7 +883,7 @@ def main():
             )
             sys.exit(1)
         logger.info(f"Setting the frequency for the {processor} platform...")
-        library_path = os.path.join(core.config.config_utils.get_path("lib"), f"fix_freq_{processor}.sh")
+        library_path = os.path.join(config_utils.rkllama_config.get_path("lib"), f"fix_freq_{processor}.sh")
 
         # Pass debug flag as parameter to the shell script
         debug_param = "1" if DEBUG_MODE else "0"
@@ -896,7 +901,7 @@ def main():
     ## app.run(host=config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
     uvicorn.run(
         app,
-        host=core.config.config_utils.get("server", "host", "0.0.0.0"),
+        host=config_utils.rkllama_config.server.host,
         port=int(port),
         log_level="debug",
     )

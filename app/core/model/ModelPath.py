@@ -6,7 +6,7 @@ from enum import Enum
 
 import requests
 
-import core.config.config_utils
+from core.config.RKLLAMAConfig import RKLLAMAConfig
 from core.model.ModelName import ModelName
 from core.model import logger
 
@@ -30,7 +30,7 @@ class ModelPath(ModelName):
     @property
     def model_dir(self):
         if not self._model_dir:
-            self._model_dir = os.path.join(core.config.config_utils.get_path("models"), self.model_name.replace('.rkllm', ''))
+            self._model_dir = os.path.join(RKLLAMAConfig.paths.models, self.model_name.replace('.rkllm', ''))
         return self._model_dir
 
     @property
@@ -85,9 +85,6 @@ def get_huggingface_model_info(model_path):
         if not model_path or "/" not in model_path:
             return None
 
-        # Get DEBUG_MODE from configuration
-        debug_mode = core.config.config_utils.is_debug_mode()
-
         # Extract repo_id from HUGGINGFACE_PATH
         url = f"https://huggingface.co/api/models/{model_path}"
         response = requests.get(url, timeout=5)
@@ -108,7 +105,7 @@ def get_huggingface_model_info(model_path):
                 # Look for patterns like "7b", "3B", "1.5B" in model name or description
                 param_pattern = re.search(
                     r"(\d+\.?\d*)([bB])",
-                    model_path + " " + (core.config.config_utils.get("description") or ""),
+                    model_path + " " + (core.rkllama_config.config_utils.get("description") or ""),
                 )
                 if param_pattern:
                     size_value = float(param_pattern.group(1))
@@ -118,7 +115,7 @@ def get_huggingface_model_info(model_path):
                         data["cardData"]["params"] = int(size_value * 1_000_000_000)
 
             # Extract important information from the description
-            description = core.config.config_utils.get("description", "")
+            description = core.rkllama_config.config_utils.get("description", "")
             if description:
                 # Look for model details in the description
                 quant_pattern = re.search(
@@ -171,7 +168,7 @@ def get_huggingface_model_info(model_path):
             # If we found languages, add them
             if languages:
                 data["languages"] = list(set(languages))  # Remove duplicates
-            elif "en" not in core.config.config_utils.get("languages", []):
+            elif "en" not in core.rkllama_config.config_utils.get("languages", []):
                 # Default to English if no languages detected
                 data["languages"] = ["en"]
 
@@ -190,8 +187,8 @@ def get_huggingface_model_info(model_path):
 
             # Add metadata about model capabilities
             if "sibling_models" in data:
-                for sibling in core.config.config_utils.get("sibling_models", []):
-                    if core.config.config_utils.get("rfilename", "").endswith(".rkllm"):
+                for sibling in core.rkllama_config.config_utils.get("sibling_models", []):
+                    if core.rkllama_config.config_utils.get("rfilename", "").endswith(".rkllm"):
                         data["has_rkllm"] = True
                         break
 
@@ -222,7 +219,7 @@ def get_huggingface_model_info(model_path):
                 logger.debug(f"Failed to get HF data: {response.status_code}")
             return None
     except Exception as e:
-        debug_mode = core.config.config_utils.is_debug_mode()
+        debug_mode = core.rkllama_config.config_utils.is_debug_mode()
         if debug_mode:
             logger.exception(f"Error fetching HF model info: {str(e)}")
         return None
@@ -231,7 +228,7 @@ def get_huggingface_model_info(model_path):
 def GetModels():
     print("Retrieving models...")
 
-    MODEL_PATH = os.path.join(core.config.config_utils.get_path("models"))
+    MODEL_PATH = os.path.join(core.rkllama_config.config_utils.get_path("models"))
 
     if not os.path.exists(MODEL_PATH):
         print("Models directory did not exist.\nCreating it now...")

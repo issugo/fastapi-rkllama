@@ -3,10 +3,9 @@ import os
 
 from pydantic.v1.json import pydantic_encoder
 
-import core.config.config_utils
+from core.config import config_utils
 from core.model.ModelPath import ModelPath
-from core import config
-from core.config.ModelConfig import get_model_default_options
+from core.config.ModelConfig import ModelConfig
 
 from core.model import logger
 
@@ -25,7 +24,7 @@ class ModelFile(ModelFileInfo):
         return os.path.join(self.model_dir, "Modelfile")
 
     @classmethod
-    def create_model(cls, model_file_info : ModelFileInfo):
+    def create_model(cls, model_file_info : ModelFileInfo, model_config: ModelConfig):
         model_file : ModelFile = ModelFile(**json.loads(json.dumps(model_file_info, default=pydantic_encoder)))
         struct_modelfile = f"""
 FROM="{model_file_info.endpoint_model_file}"
@@ -34,29 +33,29 @@ HUGGINGFACE_PATH="{model_file_info.huggingface_path}"
 
 SYSTEM="{model_file_info.system_prompt}"
 
-TEMPERATURE={core.config.config_utils.get("model", "default_temperature")}
+TEMPERATURE={model_config.default_temperature}
 
-ENABLE_THINKING={core.config.config_utils.get("model", "default_enable_thinking")}
+ENABLE_THINKING={model_config.default_enable_thinking}
 
-NUM_CTX={core.config.config_utils.get("model", "default_num_ctx")}
+NUM_CTX={model_config.default_num_ctx}
 
-MAX_NEW_TOKENS={core.config.config_utils.get("model", "default_max_new_tokens")}
+MAX_NEW_TOKENS={model_config.default_max_new_tokens}
 
-TOP_K={core.config.config_utils.get("model", "default_top_k")}
+TOP_K={model_config.default_top_k}
 
-TOP_P={core.config.config_utils.get("model", "default_top_p")}
+TOP_P={model_config.default_top_p}
 
-REPEAT_PENALTY={core.config.config_utils.get("model", "default_repeat_penalty")}
+REPEAT_PENALTY={model_config.default_repeat_penalty}
 
-FREQUENCY_PENALTY={core.config.config_utils.get("model", "default_frequency_penalty")}
+FREQUENCY_PENALTY={model_config.default_frequency_penalty}
 
-PRESENCE_PENALTY={core.config.config_utils.get("model", "default_presence_penalty")}
+PRESENCE_PENALTY={model_config.default_presence_penalty}
 
-MIROSTAT={core.config.config_utils.get("model", "default_mirostat")}
+MIROSTAT={model_config.default_mirostat}
 
-MIROSTAT_TAU={core.config.config_utils.get("model", "default_mirostat_tau")}
+MIROSTAT_TAU={model_config.default_mirostat_tau}
 
-MIROSTAT_ETA={core.config.config_utils.get("model", "default_mirostat_eta")}
+MIROSTAT_ETA={model_config.default_mirostat_eta}
 
 
 """
@@ -82,10 +81,10 @@ MIROSTAT_ETA={core.config.config_utils.get("model", "default_mirostat_eta")}
         if not self.options:
 
             # Define default options in case of error
-            self.options = get_model_default_options()
+            self.options = config_utils.rkllama_config.model.__dict__
 
             # Get the Modelfile of the model
-            self.file = os.path.join(core.config.config_utils.get_path("models"), self.model_name, "Modelfile")
+            self.file = os.path.join(self._model_dir, "Modelfile")
 
             # First overrride default values with the ModelFile Parameters
             if os.path.isfile(self.file):

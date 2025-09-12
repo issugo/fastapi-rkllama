@@ -1,22 +1,12 @@
-from pydantic import BaseModel
+from typing import Annotated
 
-from core.config import IncrementalConfigSchema
-
+from pydantic import BaseModel, Field
 
 class PathsConfig(BaseModel):
-    models: str = "models"
-    logs: str = "logs"
-    data: str = "data"
-    src: str = "src"
-    lib: str = "lib"
-    temp: str = "temp"
+    models: Annotated[str, Field(default="models", description="Path to model files")]
+    logs: Annotated[str, Field(default="logs", description="Path to log files")]
+    data: Annotated[str, Field(default="data", description="Path to data files")]
+    src: Annotated[str, Field(default="src", description="Path to source files")]
+    lib: Annotated[str, Field(default="lib", description="Path to library files")]
+    temp: Annotated[str, Field(default="temp", description="Path to temporary files")]
 
-    @staticmethod
-    def add_schema(schema: IncrementalConfigSchema):
-        paths = schema.add_section("paths", description="Path configuration")
-        paths.path("models", "models", "Path to model files")
-        paths.path("logs", "logs", "Path to log files")
-        paths.path("data", "data", "Path to data files")
-        paths.path("src", "src", "Path to source files")
-        paths.path("lib", "lib", "Path to library files")
-        paths.path("temp", "temp", "Path to temporary files")

@@ -1,6 +1,6 @@
 models/*/*.rkllm
 models/*/*
-src/__pycache__
+app/__pycache__
 *.log
 config/config.env
 config/default.yml

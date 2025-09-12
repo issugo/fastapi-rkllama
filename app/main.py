@@ -9,6 +9,7 @@ import datetime
 import re
 import sys
 import logging
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -857,7 +858,7 @@ def main():
     global DEBUG_MODE
     DEBUG_MODE = config_utils.rkllama_config.is_debug_mode()
 
-    logging_setup(config_utils.rkllama_config.get_path("logs"), DEBUG_MODE)
+    logging_setup(Path(config_utils.rkllama_config.get_path("logs")), DEBUG_MODE)
 
     global logger
     logger = logging.getLogger("rkllama.server")

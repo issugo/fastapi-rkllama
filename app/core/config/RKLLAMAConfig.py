@@ -66,7 +66,8 @@ class RKLLAMAConfig(BaseModel):
         """
         Get field type
         """
-        return get_type_hints(self.__getattribute__(section).__class__).get(key)
+        type_hints: dict = get_type_hints(self.__getattribute__(section).__class__)
+        return type_hints.get(key)
 
     def _infer_and_convert_type(self, section: str, key: str, value: str) -> Any:
         """
@@ -82,13 +83,17 @@ class RKLLAMAConfig(BaseModel):
         # Check if we already know the type from schema
         field_type = self._get_field_info(section, key)
         if field_type is not None:
-            # If we know the expected type, use schema validation
-            try:
-                return field_type.__init__(value)
-            except ValueError:
-                logger.warning(
-                    f"Conversion failed for {section}.{key}={value}."
-                )
+            match field_type:
+                case bool():
+                    return value.lower() in ["1", "true", "yes", "on"]
+                case int():
+                    return int(value)
+                case float():
+                    return float(value)
+                case list():
+                    return value.split(",")
+                case _:
+                    return value
         return None
 
     def _write_defaults(self):
@@ -189,7 +194,7 @@ class RKLLAMAConfig(BaseModel):
             # Convert environment variable value to appropriate type
             typed_value = self._infer_and_convert_type(section, key, value)
             if typed_value is None:
-                continue
+                logger.warning(f"Invalid value for {env_var}: {value}")
 
             # Environment variables take precedence over ini files
             self.__getattribute__(section).__setattr__(key, typed_value)

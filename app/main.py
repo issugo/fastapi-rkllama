@@ -852,7 +852,7 @@ def main():
     args = parser.parse_args()
 
 
-    config_utils.rkllama_config = RKLLAMAConfig(app_root=os.getenv("APP_ROOT"), args=args)
+    config_utils.rkllama_config = RKLLAMAConfig(app_root=os.getenv("RKLLAMA_ROOT"), args=args)
 
     # Set debug mode if specified in config - using the improved method
     global DEBUG_MODE

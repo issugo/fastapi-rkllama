@@ -872,7 +872,7 @@ def main():
     port = config_utils.rkllama_config.server.port
 
     # Check the processor
-    processor = config_utils.rkllama_config.platform.processor
+    processor = config_utils.rkllama_config.platform.processor.name
     if not processor:
         logger.error("Processor not configured")
         sys.exit(1)

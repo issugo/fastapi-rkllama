@@ -92,6 +92,8 @@ class RKLLAMAConfig(BaseModel):
                     return float(value)
                 case list():
                     return value.split(",")
+                case PlatformProcessor():
+                    return PlatformProcessor(value)
                 case _:
                     return value
         return None

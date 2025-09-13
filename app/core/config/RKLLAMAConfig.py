@@ -31,8 +31,11 @@ class RKLLAMAConfig(BaseModel):
     def config(self) -> dict:
         return self.__dict__
 
-    def __init__(self, app_root: Path = None, args: argparse.Namespace = None, /, **data: Any):
+    def __init__(self, **data: Any):
         super().__init__(**data)
+
+        app_root: Path = data.get("app_root")
+        args: argparse.Namespace = data.get("args")
 
         if app_root is None:
             app_root = Path(os.getcwd())
@@ -42,8 +45,9 @@ class RKLLAMAConfig(BaseModel):
 
         # store args
         self._args = args
+        logger.debug(f"args={self._args}")
 
-        # Create config directory if it doesn't exist
+        # Create the config directory if it doesn't exist
         os.makedirs(self._config_dir, exist_ok=True)
 
         self.reload_config()
@@ -221,7 +225,7 @@ class RKLLAMAConfig(BaseModel):
                 self.platform.processor = PlatformProcessor(args.processor)
 
             if hasattr(args, "config") and args.config:
-                # Load custom config file with highest priority
+                # Load a custom config file with the highest priority
                 custom_config = Path(args.config)
                 if custom_config.exists():
                     self._load_config_file(custom_config)

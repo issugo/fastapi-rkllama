@@ -19,6 +19,11 @@ class ModelFile(ModelFileInfo):
     request_options: dict = None
     options: dict = None
 
+    def __init__(self, **data):
+        super().__init__(**data)
+
+        self._model_dir = os.path.join(config_utils.rkllama_config.paths.models, self.model_name.replace('.rkllm', ''))
+
     @property
     def file(self):
         return os.path.join(self.model_dir, "Modelfile")

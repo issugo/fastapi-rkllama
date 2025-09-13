@@ -2,24 +2,11 @@ import os
 import re
 from typing import Union
 
-from enum import Enum
-
 import requests
 
-from core.config.RKLLAMAConfig import RKLLAMAConfig
-from core.model.ModelName import ModelName
+from core.config.config_utils import rkllama_config
+from core.model.ModelName import ModelName, ModelType
 from core.model import logger
-
-
-class ModelType(str, Enum):
-    RKLLM = "RKLLM"
-    RKNN = "RKNN"
-
-    def get_extension(self):
-        if self == ModelType.RKLLM:
-            return ".rkllm"
-        elif self == ModelType.RKNN:
-            return ".rknn"
 
 
 class ModelPath(ModelName):
@@ -30,7 +17,7 @@ class ModelPath(ModelName):
     @property
     def model_dir(self):
         if not self._model_dir:
-            self._model_dir = os.path.join(RKLLAMAConfig.paths.models, self.model_name.replace('.rkllm', ''))
+            self._model_dir = os.path.join(rkllama_config.paths.models, self.model_name.replace('.rkllm', ''))
         return self._model_dir
 
     @property
@@ -105,7 +92,7 @@ def get_huggingface_model_info(model_path):
                 # Look for patterns like "7b", "3B", "1.5B" in model name or description
                 param_pattern = re.search(
                     r"(\d+\.?\d*)([bB])",
-                    model_path + " " + (core.rkllama_config.config_utils.get("description") or ""),
+                    model_path + " " + (rkllama_config.config_utils.get("description") or ""),
                 )
                 if param_pattern:
                     size_value = float(param_pattern.group(1))
@@ -115,7 +102,7 @@ def get_huggingface_model_info(model_path):
                         data["cardData"]["params"] = int(size_value * 1_000_000_000)
 
             # Extract important information from the description
-            description = core.rkllama_config.config_utils.get("description", "")
+            description = rkllama_config.config_utils.get("description", "")
             if description:
                 # Look for model details in the description
                 quant_pattern = re.search(
@@ -168,7 +155,7 @@ def get_huggingface_model_info(model_path):
             # If we found languages, add them
             if languages:
                 data["languages"] = list(set(languages))  # Remove duplicates
-            elif "en" not in core.rkllama_config.config_utils.get("languages", []):
+            elif "en" not in rkllama_config.config_utils.get("languages", []):
                 # Default to English if no languages detected
                 data["languages"] = ["en"]
 

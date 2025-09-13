@@ -11,7 +11,7 @@ import core.config.config_utils
 from core.model.ModelFile import ModelFile
 from core.backends.backend import Backend
 from core.model.ModelInfo import ModelDetails
-from core.model.ModelPath import ModelType
+from core.model.ModelName import ModelType
 from core.model.converter.quantization_constants import quant_mapping, quant_patterns
 
 from core.model import logger

@@ -1,5 +1,7 @@
 import datetime
+import json
 import os
+import re
 import shutil
 import urllib.parse
 
@@ -10,10 +12,115 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
 import core.backends
+import core.config
 import core.config.config_utils
 from api import logger
+from core.api.parameters.rkllama_requests import RKPullRequest
+from core.model.ModelPath import find_rkllm_model_name, get_huggingface_model_info
+from core.model.ModelName import ModelType
 
 router = APIRouter(tags=["rkllama"])
+# Original RKLLAMA Routes:
+# GET    /models
+# POST   /load_model
+# POST   /unload_model
+# POST   /generate
+# POST   /pull
+# DELETE /rm
+
+@router.post("/pull")
+async def pull_model(request: Request, rk_pull_request: RKPullRequest):
+    from core.model.ModelFile import ModelFile, ModelFileInfo
+    from core.config import config_utils
+
+    async def generate_progress():
+        splitted = rk_pull_request.model.split("/")
+        if len(splitted) < 3:
+            yield f"Error: Invalid path '{rk_pull_request.model}'\n"
+            return
+
+        model_name = splitted[1] if rk_pull_request.model_name is None else rk_pull_request.model_name
+        file = splitted[2]
+        repo = rk_pull_request.model.replace(f"/{file}", "")
+
+        if rk_pull_request.model_type is None:
+            for mtype in ModelType:
+                if file.endswith(mtype.get_extension()):
+                    rk_pull_request.model_type = mtype
+                    break
+
+        if rk_pull_request.model_type is None:
+            yield f"Error: Invalid model type '{rk_pull_request.model_type}'\n"
+            return
+
+        try:
+            # Use Hugging Face HfFileSystem to get the file metadata
+            fs = HfFileSystem()
+            file_info = fs.info(repo + "/" + file)
+
+            total_size = file_info["size"]  # File size in bytes
+            if total_size == 0:
+                yield "Error: Unable to retrieve file size.\n"
+                return
+
+            # Create the configuration file for model
+            model_file: ModelFile = ModelFile.create(
+                ModelFileInfo(
+                    huggingface_path=repo,
+                    endpoint_model_file=file,
+                    model_name=model_name,
+                    model_type=rk_pull_request.model_type
+                ),
+                model_type=rk_pull_request.model_type, )
+
+            # Use config to get models path
+            # model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
+            model_dir = os.path.join(config_utils.rkllama_config.get_path("models"), model_name)
+            os.makedirs(model_dir, exist_ok=True)
+
+            # Define a file to download
+            local_filename = os.path.join(model_dir, file)
+
+
+            yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
+
+            try:
+                # Download the file with progress
+                url = hf_hub_url(repo_id=repo, filename=file)
+                with (
+                    requests.get(url, stream=True) as r,
+                    open(local_filename, "wb") as f,
+                ):
+                    downloaded_size = 0
+                    chunk_size = 8192  # 8KB
+
+                    for chunk in r.iter_content(chunk_size=chunk_size):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded_size += len(chunk)
+                            progress = int((downloaded_size / total_size) * 100)
+                            yield f"{progress}%\n"
+
+            except Exception as download_error:
+                # Remove the file if an error occurs during download
+                if os.path.exists(local_filename):
+                    os.remove(local_filename)
+                yield f"Error during download: {str(download_error)}\n"
+                return
+
+        except Exception as e:
+            yield f"Error: {str(e)}\n"
+
+    # Use the appropriate content type for streaming responses
+    ## is_ollama_request = request.path.startswith('/api/')
+    logger.debug(f"request.url={request.url}")
+    urlparsed_path = urllib.parse.urlparse(str(request.url)).path
+    logger.debug(f"urlparsed_path={urlparsed_path}")
+    is_ollama_request = urlparsed_path.startswith("/api/")
+    content_type = "application/x-ndjson" if is_ollama_request else "text/plain"
+    return StreamingResponse(
+        generate_progress(), headers={"Content-Type": content_type}
+    )
 
 
 @router.get("/")
@@ -154,88 +261,6 @@ async def Rm_model(request: Request):
     )
 
 
-@router.post("/pull")
-async def pull_model(request: Request):
-    from core.model.ModelFile import ModelFile, ModelFileInfo
-
-    data = await request.json()
-
-    ## @stream_with_context
-    async def generate_progress():
-        if "model" not in data:
-            yield "Error: Model not specified.\n"
-            return
-
-        splitted = data["model"].split("/")
-        model_name = splitted[1] if "model_name" not in data else data["model_name"]
-        if len(splitted) < 3:
-            yield f"Error: Invalid path '{data['model']}'\n"
-            return
-
-        file = splitted[2]
-        repo = data["model"].replace(f"/{file}", "")
-
-        try:
-            # Use Hugging Face HfFileSystem to get the file metadata
-            fs = HfFileSystem()
-            file_info = fs.info(repo + "/" + file)
-
-            total_size = file_info["size"]  # File size in bytes
-            if total_size == 0:
-                yield "Error: Unable to retrieve file size.\n"
-                return
-
-            # Use config to get models path
-            # model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
-            model_dir = os.path.join(core.config.config_utils.get_path("models"), model_name)
-            os.makedirs(model_dir, exist_ok=True)
-
-            # Define a file to download
-            local_filename = os.path.join(model_dir, file)
-
-            # Create fonfiguration file for model
-            #ModelFile.create_model(ModelFileInfo(huggingface_path=repo, model_file=file, model_name=model_name))
-            model_file: ModelFile = ModelFile.create(ModelFileInfo(huggingface_path=repo, endpoint_model_file=file, model_name=model_name))
-
-            yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
-
-            try:
-                # Download the file with progress
-                url = hf_hub_url(repo_id=repo, filename=file)
-                with (
-                    requests.get(url, stream=True) as r,
-                    open(local_filename, "wb") as f,
-                ):
-                    downloaded_size = 0
-                    chunk_size = 8192  # 8KB
-
-                    for chunk in r.iter_content(chunk_size=chunk_size):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded_size += len(chunk)
-                            progress = int((downloaded_size / total_size) * 100)
-                            yield f"{progress}%\n"
-
-            except Exception as download_error:
-                # Remove the file if an error occurs during download
-                if os.path.exists(local_filename):
-                    os.remove(local_filename)
-                yield f"Error during download: {str(download_error)}\n"
-                return
-
-        except Exception as e:
-            yield f"Error: {str(e)}\n"
-
-    # Use the appropriate content type for streaming responses
-    ## is_ollama_request = request.path.startswith('/api/')
-    logger.debug(f"request.url={request.url}")
-    urlparsed_path = urllib.parse.urlparse(str(request.url)).path
-    logger.debug(f"urlparsed_path={urlparsed_path}")
-    is_ollama_request = urlparsed_path.startswith("/api/")
-    content_type = "application/x-ndjson" if is_ollama_request else "text/plain"
-    return StreamingResponse(
-        generate_progress(), headers={"Content-Type": content_type}
-    )
 
 
 @router.get("/current_models")
@@ -339,3 +364,424 @@ async def create_model(request: Request):
 
     # For compatibility with existing implementation
     return JSONResponse({"status": "success", "model": model_name}, status_code=200)
+
+
+@router.post("/api/show")
+def show_model_info(request: Request):
+    ##### Github Copilot Start Workaround
+    request_data = request.get_data().decode("UTF-8")
+    request_data = request_data.replace("'", '"')
+    data = json.loads(request_data) if request_data else {}
+    model_name = data.get("name") if "name" in data else data.get("model")
+    ##### # Github Copilot End
+
+    if DEBUG_MODE:
+        logger.debug(f"API show request data: {data}")
+
+    if not model_name:
+        return JSONResponse({"error": "Missing model name"}, status_code=400)
+
+    model_dir = os.path.join(core.config.config_utils.get_path("models"), model_name)
+    model_rkllm = find_rkllm_model_name(model_dir)
+
+    if not os.path.exists(model_dir):
+        return JSONResponse(
+            {"error": f"Model '{model_name}' not found"}, status_code=404
+        )
+
+    # Read modelfile content if available
+    modelfile_path = os.path.join(model_dir, "Modelfile")
+    modelfile_content = ""
+    system_prompt = ""
+    template = "{{ .Prompt }}"
+    license_text = ""
+    huggingface_path = None
+
+    if os.path.exists(modelfile_path):
+        with open(modelfile_path, "r") as f:
+            modelfile_content = f.read()
+
+            # Extract system prompt if available
+            system_match = re.search(r'SYSTEM="(.*?)"', modelfile_content, re.DOTALL)
+            if system_match:
+                system_prompt = system_match.group(1).strip()
+
+            # Check for template pattern
+            template_match = re.search(
+                r'TEMPLATE="(.*?)"', modelfile_content, re.DOTALL
+            )
+            if template_match:
+                template = template_match.group(1).strip()
+
+            # Check for LICENSE pattern (some modelfiles have this)
+            license_match = re.search(r'LICENSE="(.*?)"', modelfile_content, re.DOTALL)
+            if license_match:
+                license_text = license_match.group(1).strip()
+
+            # Extract HuggingFace path for API access
+            hf_path_match = re.search(
+                r'HUGGINGFACE_PATH="(.*?)"', modelfile_content, re.DOTALL
+            )
+            if hf_path_match:
+                huggingface_path = hf_path_match.group(1).strip()
+
+            # Extract temperature if available
+            temp_match = re.search(r"TEMPERATURE=(\d+\.?\d*)", modelfile_content)
+            if temp_match:
+                try:
+                    temperature = float(temp_match.group(1))
+                except ValueError:
+                    pass
+
+    # Find the .rkllm file
+    model_file = None
+    for file in os.listdir(model_dir):
+        if file.endswith(".rkllm"):
+            model_file = file
+            break
+
+    if not model_file:
+        return JSONResponse(
+            {"error": f"Model file not found in '{model_name}' directory"},
+            status_code=404,
+        )
+
+    file_path = os.path.join(model_dir, model_file)
+    size = os.path.getsize(file_path)
+
+    # Extract model details
+    model_details = extract_model_details(model_rkllm)
+    parameter_size = core.config.config_utils.get("parameter_size", "Unknown")
+    quantization_level = core.config.config_utils.get("quantization_level", "Unknown")
+
+    # Determine model family based on name patterns
+    family = "llama"  # default family
+    families = ["llama"]
+
+    # Try to get enhanced information from Hugging Face API
+    hf_metadata = (
+        get_huggingface_model_info(huggingface_path) if huggingface_path else None
+    )
+
+    # Use HF metadata to improve model info if available
+    if hf_metadata:
+        # Extract tags from HF metadata
+        tags = hf_metadata.get("tags", [])
+
+        # Better determine model family based on HF tags or architecture field
+        if (
+                hf_metadata.get("architecture") == "qwen"
+                or "qwen" in tags
+                or "qwen2" in tags
+        ):
+            family = "qwen2"
+            families = ["qwen2"]
+        elif hf_metadata.get("architecture") == "mistral" or "mistral" in tags:
+            family = "mistral"
+            families = ["mistral"]
+        elif hf_metadata.get("architecture") == "deepseek" or "deepseek" in tags:
+            family = "deepseek"
+            families = ["deepseek"]
+        elif hf_metadata.get("architecture") == "phi" or "phi" in tags:
+            family = "phi"
+            families = ["phi"]
+        elif hf_metadata.get("architecture") == "gemma" or "gemma" in tags:
+            family = "gemma"
+            families = ["gemma"]
+        elif "tinyllama" in tags:
+            family = "tinyllama"
+            families = ["tinyllama", "llama"]
+        elif any("llama-3" in tag for tag in tags) or any(
+                "llama3" in tag for tag in tags
+        ):
+            family = "llama3"
+            families = ["llama3", "llama"]
+        elif any("llama-2" in tag for tag in tags) or any(
+                "llama2" in tag for tag in tags
+        ):
+            family = "llama2"
+            families = ["llama2", "llama"]
+
+        # Extract model card metadata
+        model_card = hf_metadata.get("cardData", {})
+
+        # Better parameter size from HF metadata
+        parameter_count = None
+        if "params" in model_card:
+            try:
+                params = int(model_card["params"])
+                if params >= 1_000_000_000:
+                    parameter_size = f"{params / 1_000_000_000:.1f}B".replace(
+                        ".0B", "B"
+                    )
+                    # Also store the raw parameter count for model_info
+                    parameter_count = params
+            except (ValueError, TypeError):
+                parameter_count = None
+        else:
+            parameter_count = None
+
+        # Extract quantization info
+        if "quantization" in hf_metadata:
+            quantization_level = hf_metadata["quantization"]
+
+        # Better license information
+        if "license" in hf_metadata and not license_text:
+            license_text = hf_metadata["license"]
+    else:
+        # Fallback to pattern matching if no HF metadata
+        if re.search(r"(?i)Qwen", model_name):
+            family = "qwen2"
+            families = ["qwen2"]
+        elif re.search(r"(?i)Mistral", model_name):
+            family = "mistral"
+            families = ["mistral"]
+        elif re.search(r"(?i)DeepSeek", model_name):
+            family = "deepseek"
+            families = ["deepseek"]
+        elif re.search(r"(?i)Phi", model_name):
+            family = "phi"
+            families = ["phi"]
+        elif re.search(r"(?i)Gemma", model_name):
+            family = "gemma"
+            families = ["gemma"]
+        elif re.search(r"(?i)TinyLlama", model_name):
+            family = "tinyllama"
+            families = ["tinyllama", "llama"]
+        elif re.search(r"(?i)Llama[-_]?3", model_name):
+            family = "llama3"
+            families = ["llama3", "llama"]
+        elif re.search(r"(?i)Llama[-_]?2", model_name):
+            family = "llama2"
+            families = ["llama2", "llama"]
+
+        parameter_count = None
+
+    # Convert modelfile to Ollama-compatible format
+    ollama_modelfile = '# Modelfile generated by "ollama show"\n'
+    ollama_modelfile += "# To build a new Modelfile based on this, replace FROM with:\n"
+    ollama_modelfile += f"# FROM {model_name}\n\n"
+
+    # Change this section to use a more compatible FROM format
+    # Instead of absolute paths, use the model file name which is more compatible with Ollama
+    # Original: model_blob_path = f"{model_dir}/{model_file}"
+
+    if DEBUG_MODE:
+        # In debug mode, use absolute paths to help with troubleshooting
+        model_blob_path = f"{model_dir}/{model_file}"
+        ollama_modelfile += f"FROM {model_blob_path}\n"
+    else:
+        # In normal mode, use the simplified name format that Ollama clients expect
+        ollama_modelfile += f"FROM {model_name}\n"
+
+    if template != "{{ .Prompt }}":
+        ollama_modelfile += f'TEMPLATE """{template}"""\n'
+
+    if system_prompt:
+        ollama_modelfile += f'SYSTEM "{system_prompt}"\n'
+
+    if license_text:
+        ollama_modelfile += f'LICENSE """{license_text}"""\n'
+
+    # Additional model info from HF
+    model_description = ""
+    repo_url = None
+    if hf_metadata:
+        model_description = hf_metadata.get("description", "").strip()
+
+        # Add description comment to modelfile if available
+        if model_description:
+            desc_lines = model_description.split("\n")
+            desc_comment = "\n".join(
+                [f"# {line}" for line in desc_lines[:5]]
+            )  # First 5 lines only
+            ollama_modelfile = desc_comment + "\n\n" + ollama_modelfile
+
+        # Extract repo URL if available
+        if huggingface_path:
+            repo_url = f"https://huggingface.co/{huggingface_path}"
+
+    # Parse parameter size into numeric format
+    numeric_param_size = None
+    if parameter_size != "Unknown":
+        param_match = re.search(r"(\d+\.?\d*)B", parameter_size)
+        if param_match:
+            try:
+                size_in_billions = float(param_match.group(1))
+                numeric_param_size = int(size_in_billions * 1_000_000_000)
+            except ValueError:
+                pass
+
+    # Use parameter_count from HF metadata if available, otherwise use parsed value
+    if parameter_count is None and numeric_param_size is not None:
+        parameter_count = numeric_param_size
+    elif parameter_count is None:
+        # Default fallback
+        if "7B" in model_name or "7b" in model_name:
+            parameter_count = 7000000000
+        elif "3B" in model_name or "3b" in model_name:
+            parameter_count = 3000000000
+        elif "1.5B" in model_name or "1.5b" in model_name:
+            parameter_count = 1500000000
+        else:
+            parameter_count = 0
+
+    # Extract base model name (without fine-tuning suffixes)
+    base_name = model_name.split("-")[0]
+
+    # Determine finetune type if present
+    finetune = None
+    if "instruct" in model_name.lower():
+        finetune = "Instruct"
+    elif "chat" in model_name.lower():
+        finetune = "Chat"
+
+    # Build a more complete model_info dict with architecture details
+    model_info = {
+        "general.architecture": family,
+        "general.base_model.0.name": f"{base_name} {parameter_size}",
+        "general.base_model.0.organization": family.capitalize(),
+        "general.basename": base_name,
+        "general.file_type": 15,  # RKLLM file type
+        "general.parameter_count": parameter_count,
+        "general.quantization_version": 2,
+        "general.size_label": parameter_size,
+        "general.tags": ["chat", "text-generation"],
+        "general.type": "model",
+        "tokenizer.ggml.pre": family,
+    }
+
+    # Add repo URL if available
+    if repo_url:
+        model_info["general.base_model.0.repo_url"] = repo_url
+        model_info["general.base_model.count"] = 1
+
+    # Add finetune info if available
+    if finetune:
+        model_info["general.finetune"] = finetune
+
+    # Add license info if available
+    if license_text:
+        license_name = "other"
+        license_link = ""
+
+        # Try to detect common licenses
+        if "apache" in license_text.lower():
+            license_name = "apache-2.0"
+        elif "mit" in license_text.lower():
+            license_name = "mit"
+        elif "qwen research" in license_text.lower():
+            license_name = "qwen-research"
+
+        if huggingface_path:
+            license_link = (
+                f"https://huggingface.co/{huggingface_path}/blob/main/LICENSE"
+            )
+
+        model_info["general.license"] = license_name
+        if license_link:
+            model_info["general.license.link"] = license_link
+        model_info["general.license.name"] = license_name
+
+    # Add language info if we can detect it
+    if hf_metadata and "languages" in hf_metadata:
+        model_info["general.languages"] = hf_metadata["languages"]
+    else:
+        # Default to English
+        model_info["general.languages"] = ["en"]
+
+    # Add architecture-specific parameters based on model family
+    if family == "qwen2":
+        model_info.update(
+            {
+                "qwen2.attention.head_count": 16,
+                "qwen2.attention.head_count_kv": 2,
+                "qwen2.attention.layer_norm_rms_epsilon": 0.000001,
+                "qwen2.block_count": 36 if "3B" in parameter_size else 24,
+                "qwen2.context_length": 32768,
+                "qwen2.embedding_length": 2048 if "3B" in parameter_size else 1536,
+                "qwen2.feed_forward_length": 11008 if "3B" in parameter_size else 8192,
+                "qwen2.rope.freq_base": 1000000,
+            }
+        )
+    elif family == "llama" or family == "llama2" or family == "llama3":
+        model_info.update(
+            {
+                f"{family}.attention.head_count": 32,
+                f"{family}.attention.head_count_kv": 4,
+                f"{family}.attention.layer_norm_rms_epsilon": 0.000001,
+                f"{family}.block_count": 32,
+                f"{family}.context_length": 4096,
+                f"{family}.embedding_length": 4096,
+                f"{family}.feed_forward_length": 11008,
+                f"{family}.rope.freq_base": 10000,
+            }
+        )
+    elif family == "mistral":
+        model_info.update(
+            {
+                "mistral.attention.head_count": 32,
+                "mistral.attention.head_count_kv": 8,
+                "mistral.attention.layer_norm_rms_epsilon": 0.000001,
+                "mistral.block_count": 32,
+                "mistral.context_length": 8192,
+                "mistral.embedding_length": 4096,
+                "mistral.feed_forward_length": 14336,
+            }
+        )
+
+    # Calculate modified timestamp
+    modified_at = datetime.datetime.fromtimestamp(os.path.getmtime(file_path)).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
+
+    # Format parameters string nicely
+    parameters_str = parameter_size
+    if parameters_str == "Unknown" and parameter_count:
+        if parameter_count >= 1_000_000_000:
+            parameters_str = f"{parameter_count / 1_000_000_000:.1f}B".replace(
+                ".0B", "B"
+            )
+        else:
+            parameters_str = f"{parameter_count / 1_000_000:.1f}M".replace(".0M", "M")
+
+    # Capabilities based on model family. ### Github Copilot requires this
+    capabilities = ["completion"]
+    if family in ["qwen2", "phi", "llama3", "mistral"]:
+        capabilities.append("tools")
+
+    # Prepare response with enhanced metadata
+    response = {
+        "license": license_text or "Unknown",
+        "modelfile": ollama_modelfile,
+        "parameters": parameters_str,
+        "template": template,
+        "system": system_prompt,
+        "name": model_name,
+        "details": {
+            "parent_model": huggingface_path or "",
+            "format": "rkllm",
+            "family": family,
+            "families": families,
+            "parameter_size": parameter_size,
+            "quantization_level": quantization_level,
+        },
+        "model_info": model_info,
+        "size": size,
+        "capabilities": capabilities,
+        "modified_at": modified_at,
+    }
+
+    # Add Hugging Face specific fields if available
+    if hf_metadata:
+        response["huggingface"] = {
+            "repo_id": huggingface_path,
+            "description": model_description[:500]
+            if model_description
+            else "",  # Truncate if too long
+            "tags": hf_metadata.get("tags", []),
+            "downloads": hf_metadata.get("downloads", 0),
+            "likes": hf_metadata.get("likes", 0),
+        }
+
+    return JSONResponse(response, status_code=200)

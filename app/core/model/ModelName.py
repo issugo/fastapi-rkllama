@@ -1,4 +1,6 @@
 import os
+from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -8,6 +10,7 @@ from core import config
 
 class ModelName(BaseModel):
     model_name: str
+    model_type: Optional[ModelType] = None
 
 
 def get_model_size(model_name) -> int:
@@ -31,3 +34,14 @@ def get_model_size(model_name) -> int:
                 return size
 
     return None
+
+
+class ModelType(str, Enum):
+    RKLLM = "RKLLM"
+    RKNN = "RKNN"
+
+    def get_extension(self):
+        if self == ModelType.RKLLM:
+            return ".rkllm"
+        elif self == ModelType.RKNN:
+            return ".rknn"

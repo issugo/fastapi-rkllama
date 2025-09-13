@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from core.model.ModelPath import ModelType
+from core.model.ModelName import ModelType
 
 
 class ModelDetails(BaseModel):

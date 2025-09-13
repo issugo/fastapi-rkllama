@@ -1,5 +1,9 @@
 import json
 
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+import core.config
 import core.config.config_utils
 
 
@@ -69,3 +73,28 @@ def check_response_format(response_text):
                 issues.append(f"Chunk {i + 1} missing 'message.content' field")
 
     return issues
+
+
+def add_debug_api(app):
+    @app.post("/api/debug")
+    async def debug_streaming(request: Request):
+        """Endpoint to diagnose streaming issues"""
+        data = await request.json()
+        stream_data = core.config.config_utils.get("stream_data", "")
+
+        issues = check_response_format(stream_data)
+
+        if issues:
+            return JSONResponse(
+                {
+                    "status": "error",
+                    "issues": issues,
+                    "recommendation": "Check server_utils.py implementation of streaming",
+                },
+                status_code=200,
+            )
+        else:
+            return JSONResponse(
+                {"status": "ok", "message": "No issues found in the response format"},
+                status_code=200,
+            )

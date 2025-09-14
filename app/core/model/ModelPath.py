@@ -5,7 +5,6 @@ from typing import Union
 import requests
 
 from core.config.config_utils import rkllama_config
-from core.model.ModelConfig import MODELFILE_NAME
 from core.model.ModelName import ModelName, ModelType
 from core.model import logger
 
@@ -266,3 +265,6 @@ def GetModels():
     print("Number of valid models:", len(models_list), "\n")
 
     return models_list
+
+
+MODELFILE_NAME:str = "Modelfile"

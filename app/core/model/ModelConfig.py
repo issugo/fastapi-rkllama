@@ -6,7 +6,6 @@ from core.config.DefaultModelConfig import DefaultModelConfig
 from core.model.ModelMetadata import SimpleModelMetadata
 from core.model.ModelPath import ModelPath
 
-MODELFILE_NAME:str = "Modelfile"
 
 class MinimalModelConfig(BaseModel):
     FROM: str

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from core.config import logger
 from core.config.ServerConfig import ServerConfig
 from core.config.PathsConfig import PathsConfig
-from core.config.ModelConfig import ModelConfig
+from core.config.DefaultModelConfig import DefaultModelConfig
 from core.config.PlatformConfig import PlatformConfig, PlatformProcessor
 
 
@@ -24,7 +24,7 @@ class RKLLAMAConfig(BaseModel):
 
     server: Annotated[ServerConfig, Field(description="Server configuration settings")] = ServerConfig()
     paths: Annotated[PathsConfig, Field(description="Path configuration")] = PathsConfig()
-    model: Annotated[ModelConfig, Field(description="Model configuration")] = ModelConfig()
+    model: Annotated[DefaultModelConfig, Field(description="Model configuration")] = DefaultModelConfig()
     platform: Annotated[PlatformConfig, Field(description="Platform configuration")] = PlatformConfig()
 
     @property

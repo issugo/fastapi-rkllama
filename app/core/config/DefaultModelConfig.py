@@ -2,7 +2,7 @@ from typing import Any, Optional, Annotated
 
 from pydantic import BaseModel, Field
 
-class ModelConfig(BaseModel):
+class DefaultModelConfig(BaseModel):
     default: Annotated[Optional[str], Field(default=None, description="Default model to use")] = None
     default_temperature: Annotated[float, Field(default=0.5, description="Default temperature for the model to use")]
     default_enable_thinking: Annotated[bool, Field(default=False, description="Default Enable Thinking for the model to use")]

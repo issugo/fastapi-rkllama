@@ -7,7 +7,7 @@ from transformers import AutoTokenizer, AutoProcessor, AutoModelForCausalLM
 
 from core.api.parameters.converter.ConversionConfig import ConversionConfig
 from core.model.converter.quantization import QuantizationConverter
-from core.model.converter import quantization_constants
+from core.model.converter import logger, quantization_constants
 
 
 class HuggingFaceToRKLLMConverter:

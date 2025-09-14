@@ -4,8 +4,11 @@ import os
 from pydantic.v1.json import pydantic_encoder
 
 from core.config import config_utils
+from core.config.config_utils import rkllama_config
+from core.model.ModelConfig import ModelConfig
+from core.model.ModelMetadata import SimpleModelMetadata, METADATA_FILENAME, ModelMetadataFormat, ModelMetadata
 from core.model.ModelPath import ModelPath
-from core.config.ModelConfig import ModelConfig
+from core.config.DefaultModelConfig import DefaultModelConfig
 
 from core.model import logger
 
@@ -14,56 +17,77 @@ DEFAULT_SYSTEM = "Tu es un assistant artificiel."
 
 class ModelFileInfo(ModelPath):
     system_prompt: str = ""
+    _simple_model_metadata: SimpleModelMetadata = None
+
+    @property
+    def simple_model_metadata(self) -> SimpleModelMetadata:
+        if self._simple_model_metadata:
+            return self._simple_model_metadata
+
+        # TODO: compute metadata from endpoint_model_file name
+        data={}
+        return SimpleModelMetadata(**data)
 
 class ModelFile(ModelFileInfo):
+    endpoint_model_config: ModelConfig
+    model_metadata: SimpleModelMetadata
     request_options: dict = None
     options: dict = None
 
-    def __init__(self, **data):
-        super().__init__(**data)
-
-        self._model_dir = os.path.join(config_utils.rkllama_config.paths.models, self.model_name.replace('.rkllm', ''))
-
     @property
-    def file(self):
-        return os.path.join(self.model_dir, "Modelfile")
+    def simple_model_metadata(self) -> SimpleModelMetadata:
+        return self.model_metadata
+
 
     @classmethod
-    def create_model(cls, model_file_info : ModelFileInfo, model_config: ModelConfig):
+    def create(cls, model_file_info : ModelFileInfo, model_config: DefaultModelConfig):
+        data = {}
+        for attr in model_file_info.__dict__:
+            match attr:
+                case "endpoint_model_file":
+                    data["FROM"] = model_file_info.__dict__[attr]
+                case "huggingface_path":
+                    data["HUGGINGFACE_PATH"] = model_file_info.__dict__[attr]
+                case "system_prompt":
+                    data["SYSTEM"] = model_file_info.__dict__[attr]
+                case _:
+                    data[attr] = model_config.__dict__[attr]
+
+        model_file_info = ModelFileInfo(**data)
+        if model_file_info.modelfile_match:
+            mf_data={
+                'endpoint_model_config': ModelConfig.load(model_file_info)
+            }
+            mf_data.update(model_file_info.__dict__)
+            return ModelFile(**mf_data)
+
+        if not model_file_info.system_prompt:
+            model_file_info.system_prompt = DEFAULT_SYSTEM
+
+        if not model_file_info.modelfile_exists:
+            metadata_path=os.path.join(model_file_info.model_dir, METADATA_FILENAME)
+            md_format = ModelMetadataFormat.get_format(metadata_path)
+            if md_format == ModelMetadataFormat.SIMPLE:
+                model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(metadata_path)
+            elif md_format is None:
+                model_metadata: SimpleModelMetadata = model_file_info.simple_model_metadata
+            else:
+                # from conversion
+                model_metadata: SimpleModelMetadata = SimpleModelMetadata.from_complete(
+                    metadata=ModelMetadata.load(metadata_path)
+                )
+            mf_data={
+                'endpoint_model_config': ModelConfig.create(
+                    model_path=model_file_info,
+                    model_metadata=model_metadata,
+                    default_model_config=rkllama_config.model),
+                'model_metadata': model_metadata
+            }
+            mf_data.update(model_file_info.__dict__)
+            return ModelFile(**mf_data)
+
+        struct_modelfile = model_config.struct_modelfile.format(**model_file_info.full_options)
         model_file : ModelFile = ModelFile(**json.loads(json.dumps(model_file_info, default=pydantic_encoder)))
-        struct_modelfile = f"""
-FROM="{model_file_info.endpoint_model_file}"
-
-HUGGINGFACE_PATH="{model_file_info.huggingface_path}"
-
-SYSTEM="{model_file_info.system_prompt}"
-
-TEMPERATURE={model_config.default_temperature}
-
-ENABLE_THINKING={model_config.default_enable_thinking}
-
-NUM_CTX={model_config.default_num_ctx}
-
-MAX_NEW_TOKENS={model_config.default_max_new_tokens}
-
-TOP_K={model_config.default_top_k}
-
-TOP_P={model_config.default_top_p}
-
-REPEAT_PENALTY={model_config.default_repeat_penalty}
-
-FREQUENCY_PENALTY={model_config.default_frequency_penalty}
-
-PRESENCE_PENALTY={model_config.default_presence_penalty}
-
-MIROSTAT={model_config.default_mirostat}
-
-MIROSTAT_TAU={model_config.default_mirostat_tau}
-
-MIROSTAT_ETA={model_config.default_mirostat_eta}
-
-
-"""
 
         # Create the directory if it doesn't exist
         if not os.path.exists(model_file.model_dir):

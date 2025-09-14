@@ -5,6 +5,7 @@ from typing import Union
 import requests
 
 from core.config.config_utils import rkllama_config
+from core.model.ModelConfig import MODELFILE_NAME
 from core.model.ModelName import ModelName, ModelType
 from core.model import logger
 
@@ -17,7 +18,12 @@ class ModelPath(ModelName):
     @property
     def model_dir(self):
         if not self._model_dir:
-            self._model_dir = os.path.join(rkllama_config.paths.models, self.model_name.replace('.rkllm', ''))
+            model_ext = self.model_type.get_extension()
+            if model_ext:
+                default_relative_dir = self.model_name.replace(model_ext, '')
+            else:
+                default_relative_dir = self.model_name
+            self._model_dir = os.path.join(rkllama_config.paths.models, default_relative_dir)
         return self._model_dir
 
     @property
@@ -27,6 +33,35 @@ class ModelPath(ModelName):
                 return mtype
         return None
 
+    @property
+    def model_exists(self) -> bool:
+        if os.path.exists(self.model_dir):
+            if os.path.isfile(os.path.join(self.model_dir, self.endpoint_model_file)):
+                if self.model_type is None:
+                    self.__setattr__("model_type", ModelType(self.endpoint_model_file.split(".")[-1].upper()))
+                return self.model_type.get_extension() == f".{self.endpoint_model_file.split(".")[-1]}"
+        return False
+
+    @property
+    def modelfile(self):
+        return os.path.join(self.model_dir, MODELFILE_NAME)
+
+    @property
+    def modelfile_exists(self) -> bool:
+        if os.path.exists(self.model_dir):
+            return os.path.isfile(self.modelfile)
+        return False
+
+    @property
+    def modelfile_match(self) -> bool:
+        if self.modelfile_exists:
+            with open(self.modelfile, "r") as f:
+                for line in f.readlines():
+                    if line.startswith("FROM="):
+                        mfile_endpoint_model_file = line.split("=")[1].strip()
+                        if mfile_endpoint_model_file.endswith(self.endpoint_model_file):
+                            return True
+        return False
 
 def ensure_directory(path: str) -> None:
     """Ensure a directory exists, create if it doesn't."""

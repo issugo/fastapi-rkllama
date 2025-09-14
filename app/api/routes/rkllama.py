@@ -196,7 +196,7 @@ async def load_model_route(request: Request):
         )
 
     model_file_info: ModelFileInfo = ModelFileInfo(**data)
-    model_file: ModelFile = ModelFile.create_model(model_file_info)
+    model_file: ModelFile = ModelFile.create(model_file_info, )
     GLOBAL_STATE.backend, error = model_file.load_model()
 
     if error:

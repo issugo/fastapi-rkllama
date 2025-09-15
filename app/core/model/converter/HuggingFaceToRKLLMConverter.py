@@ -6,6 +6,11 @@ import torch
 from transformers import AutoTokenizer, AutoProcessor, AutoModelForCausalLM
 
 from core.api.parameters.converter.ConversionConfig import ConversionConfig
+from core.model.Model import Model
+from core.model.ModelInfo import ModelDetails
+from core.model.ModelPath import ModelPath
+from core.model.ModelType import ModelType
+from core.model.converter.RKLLMConverter import RKLLMConverter, RKLLMConverterConfig
 from core.model.converter.quantization import QuantizationConverter
 from core.model.converter import logger, quantization_constants
 
@@ -14,6 +19,12 @@ class HuggingFaceToRKLLMConverter:
     """Converts Hugging Face models to RKLLM format."""
 
     OLLAMA_QUANTIZATION_MAPPING = quantization_constants.ollama_quant_mapping
+
+    MODEL_TYPE: ModelType = ModelType.RKLLM
+
+    @property
+    def model_type(self) -> ModelType:
+        return self.MODEL_TYPE
 
     def __init__(self, config: ConversionConfig):
         self.config = config
@@ -33,25 +44,47 @@ class HuggingFaceToRKLLMConverter:
         """Main conversion method."""
         logger.info(f"Starting conversion of {self.config.model_name}")
 
-        # Create output directory with model name
-        os.makedirs(self.config.output_path, exist_ok=True)
+        # TODO: fulfill model_details using self.config and model_id
+        model_details: ModelDetails =ModelDetails(**{
+            'format': '?'
+        })
 
-        # Step 1: Load model and tokenizer
-        self._load_model_and_tokenizer()
+        endpoint_model_file: str = ModelPath.gen_endpoint_model_file_name_using_model_details(
+            model_name=self.config.model_name,
+            model_type=self.model_type,
+            model_details=model_details
+        )
 
-        # Step 2: Convert weights
-        self._convert_weights()
+        model_path: ModelPath = ModelPath(**{
+            'model_name': self.config.model_name,
+            'model_type': self.model_type,
+            'huggingface_path': self.config.model_id,
+            'endpoint_model_file': endpoint_model_file
+        })
 
-        # Step 3: Generate RKLLM file
-        self._generate_rkllm_file()
+        lock_id = model_path.lock_model()
+        if lock_id >= 0:
+            # Step 1: Load model and tokenizer
+            self._load_model_and_tokenizer()
 
-        # Step 4: Create Modelfile
-        self._create_modelfile()
+            # Step 2: Convert weights
+            self._convert_weights()
 
-        # Step 5: Save metadata
-        self._save_metadata(self.config.output_path)
+            # Step 3: Generate RKLLM file
+            self._generate_rkllm_file()
 
-        logger.info("Conversion completed successfully")
+            # Step 4: Create Modelfile
+            self._create_modelfile()
+
+            # Step 5: Save metadata
+            self._save_metadata(self.config.output_path)
+
+            logger.info("Conversion completed successfully")
+
+            model_path.unlock_model(lock_id)
+        else:
+            logger.info("Model is already being converted, skipping conversion")
+            return
 
     def _load_model_and_tokenizer(self) -> None:
         """Load the model and tokenizer from Hugging Face."""
@@ -104,22 +137,21 @@ class HuggingFaceToRKLLMConverter:
             logger.error(f"Error converting weights: {str(e)}")
             raise
 
-    def _generate_rkllm_file(self) -> None:
+    def _generate_rkllm_file(self, endpoint_model_file: str) -> None:
         """Generate the RKLLM binary file."""
         logger.info("Generating RKLLM file...")
         try:
             # Initialize RKLLM converter
             self.rkllm_converter = RKLLMConverter(
                 model=self.model,
-                config={
+                config=RKLLMConverterConfig(**{
                     'quantization': self.config.quantization,
                     'max_context_len': self.config.max_context_len
-                }
+                })
             )
 
             # Convert and save RKLLM file with model name
-            model_name = self.config.model_id.split('/')[-1]
-            output_path = os.path.join(self.config.output_path, f'{model_name}.rkllm')
+            output_path = os.path.join(self.config.output_path, f'{endpoint_model_file}{self.MODEL_TYPE.get_extension()}')
             self.rkllm_converter.convert(output_path)
 
             logger.info(f"RKLLM file generated at {output_path}")

@@ -17,7 +17,7 @@ import core.config.config_utils
 from api import logger
 from core.api.parameters.rkllama_requests import RKPullRequest
 from core.model.ModelPath import find_rkllm_model_name, get_huggingface_model_info
-from core.model.ModelName import ModelType
+from core.model.ModelType import ModelType
 
 router = APIRouter(tags=["rkllama"])
 # Original RKLLAMA Routes:

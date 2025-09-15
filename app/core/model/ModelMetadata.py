@@ -7,7 +7,7 @@ from typing import Optional, List
 
 from pydantic import BaseModel
 
-from core.model.ModelName import ModelType
+from core.model.ModelType import ModelType
 from core.model import logger
 
 class ModelMetadataFormat(str, Enum):

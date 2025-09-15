@@ -5,8 +5,13 @@ from typing import Dict, Any
 import numpy as np
 import torch
 
-from converter.src.rkllm import logger
+from core.model.converter import logger
+from pydantic import BaseModel
 
+
+class RKLLMConverterConfig(BaseModel):
+    quantization: str
+    max_context_len: int
 
 @dataclass
 class RKLLMHeader:
@@ -50,7 +55,7 @@ class RKLLMHeader:
 class RKLLMConverter:
     """Converts quantized model weights to RKLLM format."""
 
-    def __init__(self, model: torch.nn.Module, config: Dict[str, Any]):
+    def __init__(self, model: torch.nn.Module, config: RKLLMConverterConfig):
         self.model = model
         self.config = config
 

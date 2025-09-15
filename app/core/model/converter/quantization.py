@@ -3,6 +3,7 @@ from typing import Any, Tuple, Dict
 import numpy as np
 import torch
 
+from core.model.converter import logger
 
 class QuantizationConverter:
     """Handles conversion of model weights to different quantization formats."""

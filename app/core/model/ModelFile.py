@@ -24,7 +24,7 @@ class ModelFileInfo(ModelPath):
         if self._simple_model_metadata:
             return self._simple_model_metadata
 
-        # TODO: compute metadata from endpoint_model_file name
+        # TODO: compute metadata from endpoint_model_file name using ModelPath.extract_model_details
         data={}
         return SimpleModelMetadata(**data)
 
@@ -136,6 +136,7 @@ class ModelFile(ModelFileInfo):
         # Return the options dictionary
         return self.options
 
+    # TODO: create a dump method
 
 def get_property_modelfile(model_name: str, property: str, models_path: str = "models"):
     """Get a specific property from the Modelfile of a model."""

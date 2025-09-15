@@ -8,6 +8,7 @@ from transformers import AutoTokenizer, AutoProcessor, AutoModelForCausalLM
 from core.api.parameters.converter.ConversionConfig import ConversionConfig
 from core.model.Model import Model
 from core.model.ModelInfo import ModelDetails
+from core.model.ModelMetadata import ModelMetadata, METADATA_FILENAME
 from core.model.ModelPath import ModelPath
 from core.model.ModelType import ModelType
 from core.model.converter.RKLLMConverter import RKLLMConverter, RKLLMConverterConfig
@@ -74,10 +75,10 @@ class HuggingFaceToRKLLMConverter:
             self._generate_rkllm_file()
 
             # Step 4: Create Modelfile
-            self._create_modelfile()
+            self._create_modelfile(model_path=model_path)
 
             # Step 5: Save metadata
-            self._save_metadata(self.config.output_path)
+            self._save_metadata(model_path=model_path, model_details=model_details)
 
             logger.info("Conversion completed successfully")
 
@@ -159,9 +160,11 @@ class HuggingFaceToRKLLMConverter:
             logger.error(f"Error generating RKLLM file: {str(e)}")
             raise
 
-    def _create_modelfile(self) -> None:
+    def _create_modelfile(self, model_path: ModelPath) -> None:
         """Create Modelfile for the converted model."""
         logger.info("Creating Modelfile...")
+
+        # TODO: use ModelFile.dump
 
         # Extract model name from model_id
         model_name = self.config.model_id.split('/')[-1]
@@ -178,9 +181,12 @@ TEMPERATURE=0.7
 
         logger.info(f"Modelfile created at {modelfile_path}")
 
-    def _save_metadata(self, output_dir: str) -> None:
+    def _save_metadata(self, model_path: ModelPath, model_details: ModelDetails) -> None:
         """Save metadata about the conversion to a JSON file."""
-        metadata = {
+        output_dir: str = model_path.model_dir
+
+        # TODO: use model_details instead of config when possible
+        model_metadata: ModelMetadata = ModelMetadata(**{
             "model_id": self.config.model_id,
             "quantization": self.config.quantization,
             "conversion_date": datetime.now().isoformat(),
@@ -190,10 +196,6 @@ TEMPERATURE=0.7
                 "max_tokens": 2048,
                 "stop_sequences": ["Human:", "Assistant:"]
             }
-        }
-
-        metadata_path = os.path.join(output_dir, "metadata.json")
-        with open(metadata_path, "w") as f:
-            json.dump(metadata, f, indent=2)
-
-        logger.info(f"Metadata saved to {metadata_path}")
+        })
+        metadata_path = os.path.join(output_dir, METADATA_FILENAME)
+        model_metadata.save(metadata_path)

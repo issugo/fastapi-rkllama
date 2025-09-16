@@ -100,10 +100,10 @@ class ModelConfig(MinimalTemperedModelConfig):
                 if line.startswith("#"):
                     continue
                 key, value = line.strip().split("=")
-                if key in ["TEMPERATURE"]:
-                    data[key.lower()] = float(value)
-                elif key.lower() in ["from", "huggingface_path", "system"]:
-                    data[key.upper()] = cls._infer_and_convert_type(key.upper(), value)
+                if key.strip() in ["TEMPERATURE"]:
+                    data[key.strip().lower()] = float(value)
+                elif key.strip().lower() in ["from", "huggingface_path", "system"]:
+                    data[key.strip().upper()] = cls._infer_and_convert_type(key.strip().upper(), value)
                 else:
-                    data[key.lower()] = cls._infer_and_convert_type(key.lower(), value)
+                    data[key.strip().lower()] = cls._infer_and_convert_type(key.strip().lower(), value)
         return cls(**data)

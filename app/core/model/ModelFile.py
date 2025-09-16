@@ -30,6 +30,7 @@ class ModelFileInfo(ModelPath):
 
 class ModelFile(ModelFileInfo):
     endpoint_model_config: ModelConfig
+    volatile_endpoint_model_config: bool = False
     model_metadata: SimpleModelMetadata
     request_options: dict = None
     options: dict = None
@@ -40,33 +41,49 @@ class ModelFile(ModelFileInfo):
 
 
     @classmethod
-    def create(cls, model_file_info : ModelFileInfo, model_config: DefaultModelConfig):
-        data = {}
-        for attr in model_file_info.__dict__:
-            match attr:
-                case "endpoint_model_file":
-                    data["FROM"] = model_file_info.__dict__[attr]
-                case "huggingface_path":
-                    data["HUGGINGFACE_PATH"] = model_file_info.__dict__[attr]
-                case "system_prompt":
-                    data["SYSTEM"] = model_file_info.__dict__[attr]
-                case _:
-                    data[attr] = model_config.__dict__[attr]
+    def create(cls, model_file_info: ModelFileInfo, default_model_config: DefaultModelConfig):
+        try:
+            logger.debug(f"Creating ModelFile: {model_file_info.model_name}/{model_file_info.endpoint_model_file}")
 
-        model_file_info = ModelFileInfo(**data)
-        if model_file_info.modelfile_match:
-            mf_data={
-                'endpoint_model_config': ModelConfig.load(model_file_info)
-            }
-            mf_data.update(model_file_info.__dict__)
-            return ModelFile(**mf_data)
+            config_data = {}
+            for attr in model_file_info.__dict__:
+                match attr:
+                    case "endpoint_model_file":
+                        config_data["FROM"] = model_file_info.__dict__[attr]
+                    case "huggingface_path":
+                        config_data["HUGGINGFACE_PATH"] = model_file_info.__dict__[attr]
+                    case "system_prompt":
+                        config_data["SYSTEM"] = model_file_info.__dict__[attr]
+                    case _:
+                        if attr in default_model_config.__dict__:
+                            config_data[attr] = default_model_config.__dict__[attr]
+                        else:
+                            config_data[attr] = model_file_info.__dict__[attr]
 
-        if not model_file_info.system_prompt:
-            model_file_info.system_prompt = DEFAULT_SYSTEM
+            if model_file_info.modelfile_match:
+                # ModelFile exists and matches
+                mf_data={
+                    'endpoint_model_config': ModelConfig.load(model_file_info)
+                }
+                mf_data.update(model_file_info.__dict__)
+                logger.debug(f"Using existing ModelFile: {mf_data['endpoint_model_file']}")
+                return ModelFile(**mf_data)
 
-        if not model_file_info.modelfile_exists:
+            if not model_file_info.system_prompt:
+                model_file_info.system_prompt = DEFAULT_SYSTEM
+                logger.debug(f"Using default system prompt: {model_file_info.system_prompt}")
+
+            mf_data={}
+            if model_file_info.modelfile_exists:
+                # ModelFile is existing but not matching
+                mf_data.update({
+                    'volatile_endpoint_model_config': True
+                })
+                logger.debug(f"ModelFile is existing but not matching: set {mf_data}")
+
             metadata_path=os.path.join(model_file_info.model_dir, METADATA_FILENAME)
             md_format = ModelMetadataFormat.get_format(metadata_path)
+            logger.debug(f"Searching for Metadata: get {md_format}")
             if md_format == ModelMetadataFormat.SIMPLE:
                 model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(metadata_path)
             elif md_format is None:
@@ -76,28 +93,25 @@ class ModelFile(ModelFileInfo):
                 model_metadata: SimpleModelMetadata = SimpleModelMetadata.from_complete(
                     metadata=ModelMetadata.load(metadata_path)
                 )
-            mf_data={
-                'endpoint_model_config': ModelConfig.create(
-                    model_path=model_file_info,
-                    model_metadata=model_metadata,
-                    default_model_config=rkllama_config.model),
-                'model_metadata': model_metadata
-            }
+            if model_metadata is None:
+                mf_data.update({
+                    'endpoint_model_config': ModelConfig(**config_data)
+                })
+            else:
+                mf_data.update({
+                    'endpoint_model_config': ModelConfig.create(
+                        model_path=model_file_info,
+                        model_metadata=model_metadata,
+                        default_model_config=default_model_config),
+                    'model_metadata': model_metadata
+                })
             mf_data.update(model_file_info.__dict__)
             return ModelFile(**mf_data)
 
-        struct_modelfile = model_config.struct_modelfile.format(**model_file_info.full_options)
-        model_file : ModelFile = ModelFile(**json.loads(json.dumps(model_file_info, default=pydantic_encoder)))
+        except Exception as e:
+            logger.error(f"Error creating ModelFile: {e}", exc_info=True)
+            raise e
 
-        # Create the directory if it doesn't exist
-        if not os.path.exists(model_file.model_dir):
-            os.makedirs(model_file.model_dir)
-    
-        # Create the Modelfile and write the content
-        with open(model_file.file, "w") as f:
-            f.write(struct_modelfile)
-
-        return model_file
 
     @property
     def full_options(self) -> dict:
@@ -125,13 +139,13 @@ class ModelFile(ModelFileInfo):
                         line = line.strip()
                         if "=" in line:
                             key, value = line.split("=", 1)
-                            self.options[key.lower().strip()] = str(value).strip()
+                            self.options[key.strip().lower()] = str(value).strip()
 
             # Override with request options if provided
             if self.request_options and isinstance(self.request_options, dict):
                 for option, value in self.request_options.items():
                     # Override modelfile options with request options
-                    self.options[option.lower().strip()] = str(value).strip()
+                    self.options[option.strip().lower()] = str(value).strip()
 
         # Return the options dictionary
         return self.options

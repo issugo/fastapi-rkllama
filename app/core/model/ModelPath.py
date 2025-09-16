@@ -4,7 +4,7 @@ from typing import Union
 
 import requests
 
-from core.config.config_utils import rkllama_config
+from core.config import config_utils
 from core.model.ModelInfo import ModelDetails
 from core.model.ModelName import ModelName
 from core.model.ModelType import ModelType
@@ -15,6 +15,7 @@ from core.model.converter.quantization_constants import quant_patterns, quant_ma
 class ModelPath(ModelName):
     huggingface_path: str
     endpoint_model_file: str
+    endpoint_model_file_size: int
     _model_dir: Union[str|None] = None
 
     @property
@@ -25,8 +26,12 @@ class ModelPath(ModelName):
                 default_relative_dir = self.model_name.replace(model_ext, '')
             else:
                 default_relative_dir = self.model_name
-            self._model_dir = os.path.join(rkllama_config.paths.models, default_relative_dir)
+            self._model_dir = os.path.join(config_utils.rkllama_config.paths.models, default_relative_dir)
         return self._model_dir
+
+    @property
+    def endpoint_model_file_path(self):
+        return os.path.join(self.model_dir, self.endpoint_model_file)
 
     @property
     def model_type(self) -> ModelType | None:
@@ -149,6 +154,11 @@ class ModelPath(ModelName):
             logger.info(f"Unlocked model {self.model_name} with lock ID {lock_id}")
         except Exception as e:
             logger.exception(f"Error unlocking model: {str(e)}")
+
+    def is_locked(self) -> bool:
+        """Check if the model is locked."""
+        lock_file = os.path.join(self.model_dir, "lock")
+        return os.path.exists(lock_file)
 
 
 def ensure_directory(path: str) -> None:

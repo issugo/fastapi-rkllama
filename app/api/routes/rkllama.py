@@ -43,6 +43,8 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
         file = splitted[2]
         repo = rk_pull_request.model.replace(f"/{file}", "")
 
+        logger.debug(f"model_name={model_name}, file={file}, repo={repo}")
+
         if rk_pull_request.model_type is None:
             for mtype in ModelType:
                 if file.endswith(mtype.get_extension()):
@@ -58,55 +60,71 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
             fs = HfFileSystem()
             file_info = fs.info(repo + "/" + file)
 
+            logger.debug(f"file_info={file_info}")
+
             total_size = file_info["size"]  # File size in bytes
             if total_size == 0:
                 yield "Error: Unable to retrieve file size.\n"
                 return
 
             # Create the configuration file for model
+            model_type = \
+                rk_pull_request.model_type if rk_pull_request.model_type is not None \
+                else ModelType.get_model_type_from_endpoint_model_file(file)
+            logger.debug(f"{model_type}")
+            model_file_info: ModelFileInfo = ModelFileInfo(
+                model_name=model_name,
+                model_type=model_type,
+                huggingface_path=repo,
+                endpoint_model_file=file,
+                endpoint_model_file_size=total_size,
+            )
+            logger.debug(f"{model_file_info.model_dump_json()}")
             model_file: ModelFile = ModelFile.create(
-                ModelFileInfo(
-                    huggingface_path=repo,
-                    endpoint_model_file=file,
-                    model_name=model_name,
-                    model_type=rk_pull_request.model_type
-                ),
-                model_type=rk_pull_request.model_type, )
+                model_file_info=model_file_info,
+                default_model_config=config_utils.rkllama_config.model )
+            logger.debug(f"{model_file.model_dump_json()}")
 
-            # Use config to get models path
-            # model_dir = os.path.join(config.get_path("models"), file.replace('.rkllm', ''))
-            model_dir = os.path.join(config_utils.rkllama_config.get_path("models"), model_name)
-            os.makedirs(model_dir, exist_ok=True)
+            logger.debug(f"{model_file.simple_model_metadata.model_dump_json()}")
 
-            # Define a file to download
-            local_filename = os.path.join(model_dir, file)
-
-
-            yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
-
-            try:
-                # Download the file with progress
-                url = hf_hub_url(repo_id=repo, filename=file)
-                with (
-                    requests.get(url, stream=True) as r,
-                    open(local_filename, "wb") as f,
-                ):
-                    downloaded_size = 0
-                    chunk_size = 8192  # 8KB
-
-                    for chunk in r.iter_content(chunk_size=chunk_size):
-                        if chunk:
-                            f.write(chunk)
-                            downloaded_size += len(chunk)
-                            progress = int((downloaded_size / total_size) * 100)
-                            yield f"{progress}%\n"
-
-            except Exception as download_error:
-                # Remove the file if an error occurs during download
-                if os.path.exists(local_filename):
-                    os.remove(local_filename)
-                yield f"Error during download: {str(download_error)}\n"
+            if model_file.is_locked():
+                yield "Error: Model is currently locked.\n"
                 return
+
+            lock_id = model_file.lock_model()
+            if lock_id > 0:
+
+                # Define a file to download
+                local_filename = model_file.endpoint_model_file_path
+
+                yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
+
+                try:
+                    # Download the file with progress
+                    url = hf_hub_url(repo_id=repo, filename=file)
+                    with (
+                        requests.get(url, stream=True) as r,
+                        open(local_filename, "wb") as f,
+                    ):
+                        downloaded_size = 0
+                        chunk_size = 8192  # 8KB
+
+                        for chunk in r.iter_content(chunk_size=chunk_size):
+                            if chunk:
+                                f.write(chunk)
+                                downloaded_size += len(chunk)
+                                progress = int((downloaded_size / total_size) * 100)
+                                yield f"{progress}%\n"
+
+                    model_file.unlock_model(lock_id)
+
+                except Exception as download_error:
+                    # Remove the file if an error occurs during download
+                    if os.path.exists(local_filename):
+                        os.remove(local_filename)
+                    yield f"Error during download: {str(download_error)}\n"
+                    model_file.unlock_model(lock_id)
+                    return
 
         except Exception as e:
             yield f"Error: {str(e)}\n"

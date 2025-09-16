@@ -23,42 +23,14 @@ CONFIG_DIR="${APP_ROOT}/config"
 # Create config directory if it doesn't exist
 mkdir -p "${CONFIG_DIR}"
 
-if test -z "${USE_UV:-}" -o -z "${USE_CONDA:-}" ; then
-  USE_UV=true
-  UV_ARG="--uv" # This will hold "--no-uv" if uv is disabled
-  USE_CONDA=false
-  CONDA_ARG="--no-conda" # This will hold "--no-conda" if conda is disabled
-  for arg in "$@"; do
-      if [[ "$arg" == "--no-uv" ]]; then
-          USE_UV=false
-          UV_ARG="--no-uv"
-          echo -e "${YELLOW}Uv is disabled for this installation.${RESET}"
-      elif [[ "$arg" == "--no-conda" ]]; then
-          USE_CONDA=false
-          CONDA_ARG="--no-conda"
-          echo -e "${YELLOW}Miniconda is disabled for this installation.${RESET}"
-      elif [[ "$arg" == "--uv" ]]; then
-          USE_UV=true
-          UV_ARG="--uv" # This will hold "--no-uv" if uv is disabled
-      elif [[ "$arg" == "--conda" ]]; then
-          USE_CONDA=true
-          CONDA_ARG="--conda" # This will hold "--no-conda" if conda is disabled
-      fi
-  done
-fi
-
+USE_UV=true
+UV_ARG="--uv" # This will hold "--no-uv" if uv is disabled
 
 if test -z "${UV_DIR:-}" ; then
   # Uv installation path
   UV_DIR=~/.local/bin
 fi
 UV_URL="https://astral.sh/uv/install.sh"
-
-if test -z "${MINICONDA_DIR:-}" ; then
-  # Miniconda installation path
-  MINICONDA_DIR=~/miniconda3
-fi
-MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
 
 # Install uv ro Miniconda (if enabled)
 if $USE_UV; then
@@ -69,16 +41,7 @@ if $USE_UV; then
     echo -e "${YELLOW}uv is not installed. Proceeding with installation...${RESET}"
     curl -LsSf "${UV_URL}" | sh
     echo -e "${GREEN}uv was successfully installed.${RESET}"
-  fi
-elif $USE_CONDA; then
-  if [ -d "$MINICONDA_DIR" ]; then
-    echo -e "${GREEN}Miniconda is already installed.${RESET}"
-  else
-    echo -e "${YELLOW}Miniconda is not installed. Proceeding with installation...${RESET}"
-    wget "$MINICONDA_URL" -O /tmp/miniconda.sh
-    bash /tmp/miniconda.sh -b -p "$MINICONDA_DIR"
-    rm /tmp/miniconda.sh
-    echo -e "${GREEN}Miniconda was successfully installed.${RESET}"
+    source $HOME/.local/bin/env
   fi
 fi
 
@@ -135,24 +98,7 @@ if $USE_UV; then
 
   test ! -s ./pyproject.toml && \
     uv init
-
-  uv run - <<EOF
-import config
-config.validate()
-EOF
-else
-  python3 -c "import config; config.validate()"
 fi
-
-# Create required directories based on configured paths
-echo -e "${CYAN}Creating required directories based on configuration...${RESET}"
-source "$INSTALL_DIR/config/config.env"
-mkdir -p "$RKLLAMA_PATHS_MODELS_RESOLVED"
-mkdir -p "$RKLLAMA_PATHS_LOGS_RESOLVED"
-mkdir -p "$RKLLAMA_PATHS_DATA_RESOLVED"
-mkdir -p "$RKLLAMA_PATHS_TEMP_RESOLVED"
-mkdir -p "$RKLLAMA_PATHS_SRC_RESOLVED"
-mkdir -p "$RKLLAMA_PATHS_LIB_RESOLVED"
 
 function install_reqs {
   PIP=$1
@@ -191,10 +137,6 @@ done
 if $USE_UV; then
   uv venv --allow-existing
   install_reqs pip uv
-elif $USE_CONDA; then
-  # Activate Miniconda and install dependencies (if enabled)
-  source "${MINICONDA_DIR}/bin/activate"
-  install_reqs pip3
 elif test -d .venv ; then
   source .venv/bin/activate
   install_reqs pip
@@ -214,7 +156,7 @@ chmod +x "$INSTALL_DIR/server.sh"
 chmod +x "$INSTALL_DIR/uninstall.sh"
 
 # Modify client.sh and server.sh to always use --no-conda if conda is disabled
-if $USE_UV && ! $USE_CONDA ; then
+if $USE_UV ; then
   echo -e "${CYAN}Ensuring client.sh and server.sh always run with --uv --no-conda${RESET}"
 
   # Add --no-uv to client.sh if not already present
@@ -225,18 +167,6 @@ if $USE_UV && ! $USE_CONDA ; then
   # Add --no-conda to server.sh if not already present
   if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
     sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --uv --no-conda "$@"|' "$INSTALL_DIR/server.sh"
-  fi
-elif ! $USE_UV && $USE_CONDA ; then
-  echo -e "${CYAN}Ensuring client.sh and server.sh always run with --conda --no-uv${RESET}"
-
-  # Add --no-uv to client.sh if not already present
-  if ! grep -q -- "--no-uv" "$INSTALL_DIR/client.sh"; then
-    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --conda --no-uv "$@"|' "$INSTALL_DIR/client.sh"
-  fi
-
-  # Add --no-conda to server.sh if not already present
-  if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
-    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --conda --no-uv "$@"|' "$INSTALL_DIR/server.sh"
   fi
 elif ! $USE_UV; then
   echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-uv${RESET}"
@@ -249,18 +179,6 @@ elif ! $USE_UV; then
   # Add --no-conda to server.sh if not already present
   if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
     sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-uv "$@"|' "$INSTALL_DIR/server.sh"
-  fi
-elif ! $USE_CONDA; then
-  echo -e "${CYAN}Ensuring client.sh and server.sh always run with --no-conda${RESET}"
-
-  # Add --no-conda to client.sh if not already present
-  if ! grep -q -- "--no-conda" "$INSTALL_DIR/client.sh"; then
-    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/client.sh"
-  fi
-
-  # Add --no-conda to server.sh if not already present
-  if ! grep -q -- "--no-conda" "$INSTALL_DIR/server.sh"; then
-    sed -i 's|#!/bin/bash|#!/bin/bash\nexec "$0" --no-conda "$@"|' "$INSTALL_DIR/server.sh"
   fi
 fi
 
@@ -289,9 +207,6 @@ for arg in "$@"; do
     if [[ "$arg" == "serve" ]]; then
         # Special handling for 'serve' command
         COMMAND="serve"
-    elif [[ "$arg" == "--no-conda" ]]; then
-        # Handle no-conda flag
-        USE_CONDA=false
     elif [[ "$arg" == "--no-uv" ]]; then
         # Handle no-uv flag
         USE_UV=false
@@ -318,11 +233,8 @@ if [[ -n "$COMMAND" && "$COMMAND" == "serve" ]]; then
     if [[ "$USE_UV" == false ]]; then
         FINAL_CMD="$FINAL_CMD --no-uv"
     fi
-    if [[ "$USE_CONDA" == false ]]; then
-        FINAL_CMD="$FINAL_CMD --no-conda"
-    fi
 
-    # Add any remaining args
+    #Add any remaining args
     FINAL_CMD="$FINAL_CMD $ARGS"
 else
     # For all other commands, use client.sh
@@ -337,9 +249,6 @@ else
     if [ "$USE_UV" == false ]; then
         FINAL_CMD="$FINAL_CMD --no-uv"
     fi
-    if [ "$USE_CONDA" == false ]; then
-        FINAL_CMD="$FINAL_CMD --no-conda"
-    fi
 
     # Add all other arguments
     FINAL_CMD="$FINAL_CMD $ARGS"
@@ -350,7 +259,6 @@ eval $FINAL_CMD
 EOF
 
 sudo sed -i "s|{{USE_UV}}|$USE_UV|" /usr/local/bin/rkllama
-sudo sed -i "s|{{USE_CONDA}}|$USE_CONDA|" /usr/local/bin/rkllama
 
 sudo chmod +x /usr/local/bin/rkllama
 echo -e "${CYAN}Executable created successfully: /usr/local/bin/rkllama${RESET}"
@@ -359,6 +267,6 @@ echo -e "${CYAN}Executable created successfully: /usr/local/bin/rkllama${RESET}"
 echo -e "${GREEN}+ Configuration: OK.${RESET}"
 echo -e "${GREEN}+ Installation : OK.${RESET}"
 
-echo -e "${BLUE}Server${GREEN}  : $INSTALL_DIR/server.sh ${UV_ARG} ${CONDA_ARG}${RESET}"
-echo -e "${BLUE}Client${GREEN}  : $INSTALL_DIR/client.sh ${UV_ARG} ${CONDA_ARG}${RESET}\n"
+echo -e "${BLUE}Server${GREEN}  : $INSTALL_DIR/server.sh ${UV_ARG} ${RESET}"
+echo -e "${BLUE}Client${GREEN}  : $INSTALL_DIR/client.sh ${UV_ARG} ${RESET}\n"
 echo -e "${BLUE}Global command  : ${RESET}rkllama"

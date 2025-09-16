@@ -4,8 +4,8 @@ import logging
 # Set up logger for this package
 logger = logging.getLogger("api")
 
-from app.api.routes import rkllama, ollama
-from app.api.routes.converter import rkllm_converter
+from api.routes import rkllama, ollama
+from api.routes.converter import rkllm_converter
 
 api_router = APIRouter()
 api_router.include_router(rkllama.router)

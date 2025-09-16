@@ -28,10 +28,13 @@ RUN chmod 755 /usr/lib/librkllmrt.so && ldconfig
 COPY ./lib /opt/rkllama/lib
 COPY ./src /opt/rkllama/src
 COPY ./models /opt/rkllama/models
-COPY requirements.txt README.md LICENSE *.sh *.py /opt/rkllama/
+COPY ./app /opt/rkllama/app
+COPY requirements.txt README.md LICENSE *.sh *.py pyproject.toml /opt/rkllama/
 RUN chmod +x setup.sh && ./setup.sh --no-conda
 
 EXPOSE 8080
+
+WORKDIR /opt/rkllama/app
 
 CMD ["/usr/local/bin/rkllama", "serve"]
 # If you want to change the port see

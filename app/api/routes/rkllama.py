@@ -7,7 +7,7 @@ import urllib.parse
 
 import requests
 from fastapi import APIRouter
-from huggingface_hub import HfFileSystem, hf_hub_url
+from huggingface_hub import HfFileSystem, hf_hub_url, HfApi
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
@@ -16,6 +16,8 @@ import core.config
 import core.config.config_utils
 from api import logger
 from core.api.parameters.rkllama_requests import RKPullRequest
+from core.model.HfFileInfo import HfFileInfo
+from core.model.ModelMetadata import METADATA_FILENAME
 from core.model.ModelPath import find_rkllm_model_name, get_huggingface_model_info
 from core.model.ModelType import ModelType
 
@@ -60,12 +62,21 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
             fs = HfFileSystem()
             file_info = fs.info(repo + "/" + file)
 
-            logger.debug(f"file_info={file_info}")
+            hf_file_info = HfFileInfo(**file_info)
+            logger.debug(f"file_info={hf_file_info}")
 
-            total_size = file_info["size"]  # File size in bytes
+            if (not hf_file_info.name == f"{repo}/{file}") or (not hf_file_info.size == hf_file_info.lfs.size):
+                yield "Error: incorrect HF file info.\n"
+                return
+
+            total_size = hf_file_info.size  # File size in bytes
             if total_size == 0:
                 yield "Error: Unable to retrieve file size.\n"
                 return
+
+            digest = hf_file_info.lfs.sha256
+            if not digest:
+                yield "Error: Unable to retrieve file digest.\n"
 
             # Create the configuration file for model
             model_type = \
@@ -94,8 +105,12 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
             lock_id = model_file.lock_model()
             if lock_id > 0:
 
+                # TODO: rename the method and remove the extension
+                manifest_filename = model_file.endpoint_model_file_path
+
                 # Define a file to download
-                local_filename = model_file.endpoint_model_file_path
+                # TODO: Use a blob storage (Ollama style) to store model
+                model_blob_filename = model_file.endpoint_model_file_path
 
                 yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
 
@@ -104,7 +119,7 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
                     url = hf_hub_url(repo_id=repo, filename=file)
                     with (
                         requests.get(url, stream=True) as r,
-                        open(local_filename, "wb") as f,
+                        open(model_blob_filename, "wb") as f,
                     ):
                         downloaded_size = 0
                         chunk_size = 8192  # 8KB
@@ -116,12 +131,32 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
                                 progress = int((downloaded_size / total_size) * 100)
                                 yield f"{progress}%\n"
 
+                    # create a '.'+model_name directory (if not existing) and make a link named 'model' to the stored model blob
+                    dotdir = os.path.join(model_file.model_dir, '.' + model_name)
+                    os.makedirs(dotdir, exist_ok=True)
+                    model_link = os.path.join(dotdir, 'model')
+                    if os.path.exists(model_link):
+                        os.remove(model_link)
+                    os.symlink(model_blob_filename, model_link)
+
+                    # search for metadata file in '.'+model_name directory, if not found, create one by dumping the model_file.simple_model_metadata object into the directory
+                    metadata_path = os.path.join(dotdir, METADATA_FILENAME)
+                    if not os.path.exists(metadata_path):
+                        model_file.simple_model_metadata.save(dotdir)
+
+                    # dump the model file into the '.'+model_name directory
+                    model_file.save(dotdir)
+
+                    # TODO: search for a system blob with the same content (parse blob links in .systems directory), if not found, create one in blobs, then create its link in .systems directory
+
+                    # TODO: generate an OllamaManifest using model blob and system blob, then dump it in manifest_filename
+
                     model_file.unlock_model(lock_id)
 
                 except Exception as download_error:
                     # Remove the file if an error occurs during download
-                    if os.path.exists(local_filename):
-                        os.remove(local_filename)
+                    if os.path.exists(model_blob_filename):
+                        os.remove(model_blob_filename)
                     yield f"Error during download: {str(download_error)}\n"
                     model_file.unlock_model(lock_id)
                     return

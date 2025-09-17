@@ -122,7 +122,7 @@ class SimpleModelMetadata(BaseModel):
         """
         try:
             # Save to JSON file
-            metadata_path = os.path.join(output_path, "metadata.json")
+            metadata_path = os.path.join(output_path, METADATA_FILENAME)
             with open(metadata_path, "w") as f:
                 json.dump(self.model_dump_json(), f, indent=2)
 

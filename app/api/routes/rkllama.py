@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import urllib.parse
+from typing import AsyncGenerator
 
 import requests
 from fastapi import APIRouter
@@ -17,9 +18,11 @@ import core.config.config_utils
 from api import logger
 from core.api.parameters.rkllama_requests import RKPullRequest
 from core.model.HfFileInfo import HfFileInfo
-from core.model.ModelMetadata import METADATA_FILENAME
-from core.model.ModelPath import find_rkllm_model_name, get_huggingface_model_info
+from core.model.ModelPath import find_rkllm_model_name
 from core.model.ModelType import ModelType
+from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
+from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
 
 router = APIRouter(tags=["rkllama"])
 # Original RKLLAMA Routes:
@@ -35,7 +38,7 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
     from core.model.ModelFile import ModelFile, ModelFileInfo
     from core.config import config_utils
 
-    async def generate_progress():
+    async def generate_progress() -> AsyncGenerator[str, None]:
         splitted = rk_pull_request.model.split("/")
         if len(splitted) < 3:
             yield f"Error: Invalid path '{rk_pull_request.model}'\n"
@@ -90,13 +93,28 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
                 endpoint_model_file=file,
                 endpoint_model_file_size=total_size,
             )
-            logger.debug(f"{model_file_info.model_dump_json()}")
+            logger.debug(f"model_file_info={model_file_info.model_dump_json()}")
+            logger.debug(f"hf_data={model_file_info.huggingface_model_info}")
+
+            ollama_model_storage_helper: OllamaModelStorageHelper = OllamaModelStorageHelper(
+                model_path=model_file_info,
+                sha256_digest=digest
+                )
             model_file: ModelFile = ModelFile.create(
                 model_file_info=model_file_info,
                 default_model_config=config_utils.rkllama_config.model )
-            logger.debug(f"{model_file.model_dump_json()}")
+            logger.debug(f"model_file={model_file.model_dump_json()}")
+            logger.debug(f"model_file.simple_model_metadata={model_file.simple_model_metadata.model_dump_json()}")
 
-            logger.debug(f"{model_file.simple_model_metadata.model_dump_json()}")
+            rkllama_storage_helper: RkllamaStorageHelper = RkllamaStorageHelper(
+                ollama_model_storage_helper=ollama_model_storage_helper,
+                model_file=model_file
+            )
+
+            ollama_storage_helper: OllamaStorageHelper = OllamaStorageHelper(
+                ollama_model_storage_helper=ollama_model_storage_helper,
+                model_file=model_file
+            )
 
             if model_file.is_locked():
                 yield "Error: Model is currently locked.\n"
@@ -105,12 +123,7 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
             lock_id = model_file.lock_model()
             if lock_id > 0:
 
-                # TODO: rename the method and remove the extension
-                manifest_filename = model_file.endpoint_model_file_path
-
-                # Define a file to download
-                # TODO: Use a blob storage (Ollama style) to store model
-                model_blob_filename = model_file.endpoint_model_file_path
+                model_blob_path = ollama_model_storage_helper.model_blob_path
 
                 yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
 
@@ -119,7 +132,7 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
                     url = hf_hub_url(repo_id=repo, filename=file)
                     with (
                         requests.get(url, stream=True) as r,
-                        open(model_blob_filename, "wb") as f,
+                        open(model_blob_path, "wb") as f,
                     ):
                         downloaded_size = 0
                         chunk_size = 8192  # 8KB
@@ -131,30 +144,19 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
                                 progress = int((downloaded_size / total_size) * 100)
                                 yield f"{progress}%\n"
 
-                    # create a '.'+model_name directory (if not existing) and make a link named 'model' to the stored model blob
-                    dotdir = os.path.join(model_file.model_dir, '.' + model_name)
-                    os.makedirs(dotdir, exist_ok=True)
-                    model_link = os.path.join(dotdir, 'model')
-                    if os.path.exists(model_link):
-                        os.remove(model_link)
-                    os.symlink(model_blob_filename, model_link)
+                    rkllama_storage_helper.store()
+                    ollama_storage_helper.store()
 
-                    # search for metadata file in '.'+model_name directory, if not found, create one by dumping the model_file.simple_model_metadata object into the directory
-                    metadata_path = os.path.join(dotdir, METADATA_FILENAME)
-                    if not os.path.exists(metadata_path):
-                        model_file.simple_model_metadata.save(dotdir)
 
-                    # dump the model file into the '.'+model_name directory
-                    model_file.save(dotdir)
 
-                    # TODO: search for a system blob with the same content (parse blob links in .systems directory), if not found, create one in blobs, then create its link in .systems directory
-
-                    # TODO: generate an OllamaManifest using model blob and system blob, then dump it in manifest_filename
 
                     model_file.unlock_model(lock_id)
 
                 except Exception as download_error:
                     # Remove the file if an error occurs during download
+                    ollama_storage_helper.clean()
+                    rkllama_storage_helper.clean()
+                    ollama_model_storage_helper.clean()
                     if os.path.exists(model_blob_filename):
                         os.remove(model_blob_filename)
                     yield f"Error during download: {str(download_error)}\n"

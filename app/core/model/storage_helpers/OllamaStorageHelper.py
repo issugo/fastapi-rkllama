@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 
 from core.model.ModelFile import ModelFile
+from core.model.ModelPath import ModelPath
+from core.model.storage_helpers import logger
 from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
 
 MANIFESTS = "manifests"
@@ -21,31 +23,64 @@ class OllamaStorageHelper(OllamaModelStorageHelper):
         from core.config import config_utils
         return os.path.join(config_utils.rkllama_config.paths.models, MANIFESTS)
 
+    @classmethod
+    def __model_name(cls, model_path: ModelPath):
+        return model_path.model_name
+
     @property
     def model_name(self):
-        return self.model_file.model_name
+        return self.__class__.__model_name(self.model_file)
+
+    @classmethod
+    def __model_tag(cls, model_path: ModelPath):
+        return model_path.endpoint_model_file.replace(model_path.model_type.get_extension(), "")
 
     @property
     def model_tag(self):
-        return self.model_file.endpoint_model_file.replace(self.model_file.model_type.get_extension(), "")
+        return self.__class__.__model_tag(self.model_file)
+
+    @classmethod
+    def __manifest_dir(cls, model_path: ModelPath):
+        return Path(os.path.join(OllamaStorageHelper.manifests_dir(), model_path.model_name))
 
     @property
     def manifest_dir(self) -> Path:
         if self._manifest_dir is None:
-            self._manifest_dir = Path(os.path.join(OllamaStorageHelper.manifests_dir(), self.model_file.model_name))
+            self._manifest_dir = self.__class__.__manifest_dir(self.model_file)
         return self._manifest_dir
+
+    @classmethod
+    def __manifest_filename(cls, model_path: ModelPath):
+        return cls.__model_tag(model_path)
 
     @property
     def manifest_filename(self) -> str:
         if self._manifest_filename is None:
-            self._manifest_filename = self.model_file.model_tag
+            self._manifest_filename = self.__class__.__manifest_filename(self.model_file)
         return self._manifest_filename
+
+    @classmethod
+    def __manifest_path(cls, model_path: ModelPath):
+        return cls.__manifest_dir(model_path) / cls.__manifest_filename(model_path)
 
     @property
     def manifest_path(self) -> Path:
         if self._manifest_path is None:
-            self._manifest_path = self.manifest_dir / self.manifest_filename
+            self._manifest_path = self.__class__._manifest_path(self.model_file)
         return self._manifest_path
+
+    @staticmethod
+    def ollama_model_info_path(model_path: ModelPath) -> Path | None:
+        from core.model.OllamaManifest import OllamaManifest
+        try:
+            ollama_manifest: OllamaManifest = OllamaManifest.load(
+                OllamaStorageHelper.__manifest_path(model_path=model_path))
+            ollama_model_info_digest = ollama_manifest.config.digest
+            return OllamaStorageHelper.__blob_path(ollama_model_info_digest)
+        except Exception as e:
+            logger.exception(f"Error fetching OLLAMA model info: {str(e)}")
+            return None
+
 
     @property
     def links_dir(self) -> Path:

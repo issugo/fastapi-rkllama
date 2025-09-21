@@ -162,3 +162,7 @@ class HFModelInfo(BaseModel):
     createdAt: str
     usedStorage: int
     languages: List[str]
+
+    def save(self, file_path: str):
+        with open(file_path, "w") as f:
+            f.write(self.model_dump_json(indent=2))

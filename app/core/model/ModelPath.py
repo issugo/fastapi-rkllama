@@ -6,7 +6,7 @@ import requests
 from pydantic import BaseModel
 
 from core.config import config_utils
-from core.model.ModelInfo import ModelDetails, HFModelInfo
+from core.model.ModelInfo import ModelDetails, HFModelInfo, OllamaModelInfo
 from core.model.ModelName import ModelName
 from core.model.ModelType import ModelType
 from core.model import logger
@@ -28,6 +28,7 @@ class ModelPath(ModelName):
 
     _model_dir: Union[str|None] = None
     _huggingface_model_info: Union[HFModelInfo|None] = None
+    _ollama_model_info: Union[OllamaModelInfo|None] = None
 
     @property
     def model_dir(self):
@@ -96,6 +97,14 @@ class ModelPath(ModelName):
                 return f"{size}B"
         return None
 
+    @staticmethod
+    def get_ollama_quant_level(model_name: str)-> str | None:
+        for quant_type, pattern in quant_patterns:
+            if re.search(pattern, model_name, re.IGNORECASE):
+                # Use Ollama-style quantization name if available
+                return quant_mapping.get(quant_type)
+        return None
+
     def extract_model_details(self) -> ModelDetails:
         """
         Extract model parameter size and quantization type from model name
@@ -119,11 +128,9 @@ class ModelPath(ModelName):
         if parameter_size:
             details["parameter_size"] = parameter_size
 
-        for quant_type, pattern in quant_patterns:
-            if re.search(pattern, basename, re.IGNORECASE):
-                # Use Ollama-style quantization name if available
-                details["quantization_level"] = quant_mapping.get(quant_type)
-                break
+        ollama_quant_level = ModelPath.get_ollama_quant_level(basename)
+        if ollama_quant_level:
+            details["quantization_level"] = ollama_quant_level
 
         return details
 
@@ -143,6 +150,15 @@ class ModelPath(ModelName):
         return f"{endpoint_model_file}.{model_type.get_extension()}"
 
     @property
+    def huggingface_model_info_exists(self) -> bool:
+        from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+        if self._huggingface_model_info:
+            return True
+        elif os.path.exists(RkllamaStorageHelper.huggingface_model_info_path(self)):
+            return self.huggingface_model_info is not None
+        return False
+
+    @property
     def huggingface_model_info(self) -> HFModelInfo | None:
         """
         Fetch model metadata from Hugging Face API if available.
@@ -157,6 +173,11 @@ class ModelPath(ModelName):
             raise ValueError("Invalid HuggingFace path")
 
         if self._huggingface_model_info:
+            return self._huggingface_model_info
+
+        from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+        if os.path.exists(RkllamaStorageHelper.huggingface_model_info_path(self)):
+            self._huggingface_model_info = HFModelInfo.load(RkllamaStorageHelper.huggingface_model_info_path(self))
             return self._huggingface_model_info
 
         # else...
@@ -259,12 +280,74 @@ class ModelPath(ModelName):
                 logger.debug(f"Enhanced model info from HF API: {self.huggingface_path}={hf_data}")
 
                 self._huggingface_model_info = HFModelInfo(**hf_data)
+                self._huggingface_model_info.save(RkllamaStorageHelper.huggingface_model_info_path(self))
                 return self._huggingface_model_info
             else:
                 logger.debug(f"Failed to get HF data: {response.status_code}")
                 return None
         except Exception as e:
             logger.exception(f"Error fetching HF model info: {str(e)}")
+            return None
+
+    @property
+    def ollama_model_info_exists(self) -> bool:
+        from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+        if self._ollama_model_info:
+            return True
+        ollama_model_info_path = OllamaStorageHelper.ollama_model_info_path(self)
+        if ollama_model_info_path is None:
+            return False
+        if os.path.exists(ollama_model_info_path):
+            return self.ollama_model_info is not None
+        return False
+
+    @property
+    def ollama_model_info(self) -> OllamaModelInfo | None:
+        """
+        Fetch model metadata from Hugging Face API if available.
+
+        Args:
+            model_path: ollama repository path (e.g., 'c01zaut/Qwen2.5-3B-Instruct-RK3588-1.1.4')
+
+        Returns:
+            Dictionary with enhanced model metadata or None if not available
+        """
+        if not self.ollama_path or "/" not in self.ollama_path:
+            raise ValueError("Invalid ollama path")
+
+        if self._ollama_model_info:
+            return self._ollama_model_info
+
+        from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+
+        ollama_model_info_path = OllamaStorageHelper.ollama_model_info_path(self)
+        if ollama_model_info_path is None:
+            return None
+
+        if os.path.exists(ollama_model_info_path):
+            self._ollama_model_info = OllamaModelInfo.load(ollama_model_info_path)
+            return self._ollama_model_info
+
+        # else...
+        try:
+            formatted_model_name = self.ollama_path.replace(':', '/')
+            url = f"https://ollama.com/api/registry/{formatted_model_name}/manifest"
+
+            response = requests.get(url, timeout=5)
+
+            if response.status_code == 200:
+                ollama_data = response.json()
+
+                logger.debug(f"Enhanced model info from OLLAMA API: {self.ollama_path}={ollama_data}")
+
+                self._ollama_model_info = OllamaModelInfo(**ollama_data)
+                self._ollama_model_info.save(OllamaStorageHelper.ollama_model_info_path(self))
+                return self._ollama_model_info
+            else:
+                logger.debug(f"Failed to get OLLAMA data: {response.status_code}")
+                return None
+        except Exception as e:
+            logger.exception(f"Error fetching OLLAMA model info: {str(e)}")
             return None
 
     def lock_model(self) -> int:

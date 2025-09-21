@@ -87,7 +87,19 @@ class ModelFile(ModelFileInfo):
             if md_format == ModelMetadataFormat.SIMPLE:
                 model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(metadata_path)
             elif md_format is None:
-                model_metadata: SimpleModelMetadata = model_file_info.simple_model_metadata
+                if model_file_info.huggingface_model_info_exists and model_file_info.ollama_model_info_exists:
+                    model_metadata: SimpleModelMetadata = SimpleModelMetadata.from_complete(
+                        metadata=ModelMetadata.build(
+                            hf_model_info=model_file_info.huggingface_model_info,
+                            ollama_model_info=model_file_info.ollama_model_info
+                        )
+                    )
+                else:
+                    model_metadata: SimpleModelMetadata = model_file_info.simple_model_metadata
+                    if model_file_info.huggingface_model_info_exists:
+                        model_metadata.update_using_huggingface_model_info(model_file_info.huggingface_model_info)
+                    elif model_file_info._ollama_model_info:
+                        model_metadata.update_using_ollama_model_info(model_file_info.ollama_model_info)
             else:
                 # from conversion
                 model_metadata: SimpleModelMetadata = SimpleModelMetadata.from_complete(

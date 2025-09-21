@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional, List
 
 from pydantic import BaseModel
@@ -85,9 +86,11 @@ class OllamaManifest(BaseModel):
         return cls(**{})
 
     @classmethod
-    def load(cls):
-        return cls(**{})
+    def load(cls, ollama_manifest_path: Path):
+        json_string = ollama_manifest_path.read_text()
+        return OllamaManifest.model_validate_json(json_string)
 
-    def dump(self):
-        """ write in <MODELS>/manifests/registry/library/<MOEL_NAME>:<TAG>"""
-        pass
+    def save(self, ollama_manifest_path: Path):
+        """ write in <MODELS>/manifests/registry/library/<MODEL_NAME>:<TAG>"""
+        with open(ollama_manifest_path, "w") as f:
+            f.write(self.model_dump_json(indent=2))

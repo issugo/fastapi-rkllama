@@ -1,11 +1,20 @@
+from pathlib import Path
+
 from core.model.ModelFile import ModelFile
+from core.model.ModelPath import ModelPath
 from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
 from core.model.storage_helpers.StorageHelper import StorageHelper
+
+HF_MODELINFO_FILENAME = "ModelInfo.json"
 
 
 class RkllamaStorageHelper(StorageHelper):
     ollama_model_storage_helper: OllamaModelStorageHelper
     model_file: ModelFile
+
+    @staticmethod
+    def huggingface_model_info_path(model_path: ModelPath) -> Path:
+        return Path(model_path.model_dir) / HF_MODELINFO_FILENAME
 
     def store(self):
 

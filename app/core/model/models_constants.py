@@ -1,15 +1,18 @@
 import re
 
 MODEL_SPECS = {
-    "qwen2": (4096, [r"(?i)qwen"]),
+    "qwen2": (4096, [r"(?i)qwen2"]),
+    "qwen3": (4096, [r"(?i)qwen3"]),
     "mistral": (4096, [r"(?i)mistral"]),
     "llama3": (4096, [r"(?i)llama[-_]?3"]),
     "llama2": (4096, [r"(?i)llama[-_]?2"]),
     "gemma": (4096, [r"(?i)gemma"]),
+    "deepseek": (4096, [r"(?i)deepseek"]),
     "phi": (2048, [r"(?i)phi"]),
+    "baichuan": (2048, [r"(?i)baichuan"]),
+    "yi": (2048, [r"(?i)yi"]),
     "llama": (4096, []),  # fallback
 }
-
 
 def detect_family(text: str) -> str:
     return next(
@@ -22,6 +25,34 @@ def detect_family(text: str) -> str:
         "llama",
     )
 
+MODEL_ARCHITECTURES = {
+    "llama": "llama",
+    "mistral": "mistral",
+    "qwen": "qwen",
+    "deepseek": "deepseek",
+    "phi": "phi",
+    "gemma": "gemma",
+    "baichuan": "baichuan",
+    "yi": "yi",
+}
+
+MODEL_ARCHITECTURE_MAPPING = {
+    "llama": ["llama", "llama2", "llama3"],
+    "mistral": ["mistral"],
+    "qwen": ["qwen2", "qwen3"],
+    "deepseek": ["deepseek"],
+    "phi": ["phi"],
+    "gemma": ["gemma"],
+    "baichuan": ["baichuan"],
+    "yi": ["yi"],
+}
+
+# validation process
+for model_family, model_list in MODEL_ARCHITECTURE_MAPPING.items():
+    assert model_family in MODEL_ARCHITECTURES, f"Missing {model_family} in MODEL_ARCHITECTURES"
+    for model in model_list:
+        assert model in MODEL_SPECS, f"Missing {model} in MODEL_SPECS"
+
 # HF license ID to readable name
 LICENSE_NAME_MAPPING = {
     "apache-2.0": "Apache 2.0",
@@ -32,7 +63,7 @@ LICENSE_NAME_MAPPING = {
     "cc-by-nc-sa-4.0": "Creative Commons Attribution-NonCommercial-ShareAlike 4.0",
 }
 
-RK_TAGS_LIST = ["rk3588", "rk3576", "rkllm", "rockchip"]
+RK_TAGS_LIST = ["rk3588", "rk3576", "rkllm", "rknn", "rockchip"]
 
 LANGUAGE_DEFAULT = ["en"]
 
@@ -48,15 +79,8 @@ LANGUAGE_PATTERNS = {
     "japanese": "ja",
 }
 
-MODEL_ARCHITECTURES = {
-    "llama": "llama",
-    "mistral": "mistral",
-    "qwen": "qwen",
-    "deepseek": "deepseek",
-    "phi": "phi",
-    "gemma": "gemma",
-    "baichuan": "baichuan",
-    "yi": "yi",
-}
-
 MODELFILE_NAME:str = "Modelfile"
+
+PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([bB])"
+
+

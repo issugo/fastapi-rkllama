@@ -12,7 +12,9 @@ from core.model.ModelType import ModelType
 from core.model import logger
 from core.model.converter.quantization_constants import quant_patterns, quant_mapping, ollama_quant_mapping
 from core.model.models_constants import LICENSE_NAME_MAPPING, RK_TAGS_LIST, LANGUAGE_DEFAULT, \
-    LANGUAGE_MULTILINGUAL_LIST, LANGUAGE_PATTERNS, MODEL_ARCHITECTURES, MODELFILE_NAME
+    LANGUAGE_MULTILINGUAL_LIST, LANGUAGE_PATTERNS, MODEL_ARCHITECTURES, MODELFILE_NAME, PARAM_SIZE_PATTERN
+
+
 
 
 class ModelLicense(BaseModel):
@@ -85,7 +87,7 @@ class ModelPath(ModelName):
     @staticmethod
     def get_parameter_size(model_name: str)-> str | None:
         # Extract parameter size (e.g., 3B, 7B, 13B)
-        param_size_match = re.search(r"(\d+\.?\d*)(b|B)", model_name)
+        param_size_match = re.search(PARAM_SIZE_PATTERN, model_name)
         if param_size_match:
             size = param_size_match.group(1)
             # Convert to standard format (3B, 7B, 13B, etc)
@@ -175,10 +177,14 @@ class ModelPath(ModelName):
         if self._huggingface_model_info:
             return self._huggingface_model_info
 
-        from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
-        if os.path.exists(RkllamaStorageHelper.huggingface_model_info_path(self)):
-            self._huggingface_model_info = HFModelInfo.load(RkllamaStorageHelper.huggingface_model_info_path(self))
-            return self._huggingface_model_info
+        try:
+            from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+            if os.path.exists(RkllamaStorageHelper.huggingface_model_info_path(self)):
+                self._huggingface_model_info = HFModelInfo.load(RkllamaStorageHelper.huggingface_model_info_path(self))
+                return self._huggingface_model_info
+        except Exception as e:
+            logger.exception(f"Error loading HF model info: {str(e)}")
+            return None
 
         # else...
         try:
@@ -201,7 +207,7 @@ class ModelPath(ModelName):
                 if "params" not in hf_data["cardData"]:
                     # Look for patterns like "7b", "3B", "1.5B" in model name or description
                     param_pattern = re.search(
-                        r"(\d+\.?\d*)([bB])",
+                        PARAM_SIZE_PATTERN,
                         self.huggingface_path + " " + (hf_data.get("description") or ""),
                     )
                     if param_pattern:
@@ -324,9 +330,13 @@ class ModelPath(ModelName):
         if ollama_model_info_path is None:
             return None
 
-        if os.path.exists(ollama_model_info_path):
-            self._ollama_model_info = OllamaModelInfo.load(ollama_model_info_path)
-            return self._ollama_model_info
+        try:
+            if os.path.exists(ollama_model_info_path):
+                self._ollama_model_info = OllamaModelInfo.load(ollama_model_info_path)
+                return self._ollama_model_info
+        except Exception as e:
+            logger.exception(f"Error loading Ollama model info: {str(e)}")
+            return None
 
         # else...
         try:

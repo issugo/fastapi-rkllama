@@ -1,10 +1,7 @@
-import json
 import os
 
-from pydantic.v1.json import pydantic_encoder
 
 from core.config import config_utils
-from core.config.config_utils import rkllama_config
 from core.model.ModelConfig import ModelConfig
 from core.model.ModelMetadata import SimpleModelMetadata, METADATA_FILENAME, ModelMetadataFormat, ModelMetadata
 from core.model.ModelPath import ModelPath
@@ -24,8 +21,11 @@ class ModelFileInfo(ModelPath):
         if self._simple_model_metadata:
             return self._simple_model_metadata
 
-        # TODO: compute metadata from endpoint_model_file name using ModelPath.extract_model_details
-        data={}
+        # ompute metadata from endpoint_model_file name using ModelPath.extract_model_details
+        data = SimpleModelMetadata.compute(
+            model_path=self,
+            model_details=self.extract_model_details(),
+            system_prompt=self.system_prompt)
         return SimpleModelMetadata(**data)
 
 class ModelFile(ModelFileInfo):

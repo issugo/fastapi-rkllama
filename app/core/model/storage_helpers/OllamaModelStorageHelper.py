@@ -16,7 +16,9 @@ class OllamaModelStorageHelper(StorageHelper):
     @staticmethod
     def blobs_dir():
         from core.config import config_utils
-        return os.path.join(config_utils.rkllama_config.paths.models, BLOBS)
+        blobs_dir = os.path.join(config_utils.rkllama_config.paths.models, BLOBS)
+        os.makedirs(blobs_dir, exist_ok=True)
+        return blobs_dir
 
     @classmethod
     def __blob_path(cls, digest: str):

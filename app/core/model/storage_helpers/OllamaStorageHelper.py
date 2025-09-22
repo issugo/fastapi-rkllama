@@ -21,7 +21,9 @@ class OllamaStorageHelper(OllamaModelStorageHelper):
     @staticmethod
     def manifests_dir():
         from core.config import config_utils
-        return os.path.join(config_utils.rkllama_config.paths.models, MANIFESTS)
+        manifests_dir = os.path.join(config_utils.rkllama_config.paths.models, MANIFESTS)
+        os.makedirs(manifests_dir, exist_ok=True)
+        return manifests_dir
 
     @classmethod
     def __model_name(cls, model_path: ModelPath):

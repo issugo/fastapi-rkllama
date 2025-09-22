@@ -1,6 +1,8 @@
+import json
 from typing import Optional, List, Dict, Any
 
 from pydantic import BaseModel
+from pydantic_core import from_json
 
 from core.model import OllamaManifest
 from core.model.ModelType import ModelType
@@ -28,47 +30,50 @@ config_data = {
 
 """
 
+
 class OllamaModelDetails(BaseModel):
-    model_format: Optional[str] # ex: gguf
-    model_family: Optional[str] # ex: llama, see
+    model_format: Optional[str] = None # ex: gguf
+    model_family: Optional[str] = None # ex: llama, see
+
 
 class OllamaRootfs(BaseModel):
     type: str
-    diff_ids: List[str] # list of sha256 to model, license & system files
+    diff_ids: List[str]  # list of sha256 to model, license & system files
 
 
 class ModelDetails(OllamaModelDetails):
-    parameter_size: str   # ex: 3B
+    parameter_size: str  # ex: 3B
     quantization_level: str
+
 
 class ModelInfo(BaseModel):
     name: str  # Use simplified name like qwen:3b
-    model: str # Match Ollama's format
+    model: str  # Match Ollama's format
     modified_at: str
     size: int
-    digest: str = "" # Ollama field (sha256 value) (not used but included for compatibility)
+    digest: str = ""  # Ollama field (sha256 value) (not used but included for compatibility)
     details: ModelDetails
     model_type: ModelType
 
+
 class OllamaModelInfo(OllamaModelDetails):
     model_families: List[str]
-    model_type: str # parameter size
-    file_type: str # quantization level
-    architecture: str # ex: amd64, from processor
+    model_type: str  # parameter size
+    file_type: str  # quantization level
+    architecture: str  # ex: amd64, from processor
     os: Optional[str] = "Linux"
     rootfs: OllamaRootfs
 
     @classmethod
-    def create(cls):
-        return cls(**{})
+    def load(cls, file_path: str):
+        with open(file_path, "r") as f:
+            return cls.model_validate_json(**from_json(json.load(f)))
 
-    @classmethod
-    def load(cls, ollama_manifest: OllamaManifest):
-        return cls(**{})
-
-    def dump(self):
+    def save(self, file_path: str):
         """ write in <MODELS>/blobs/sha256-<DIGEST>"""
-        pass
+        with open(file_path, "w") as f:
+            f.write(self.model_dump_json(indent=2))
+
 
 class HFModelConfig(BaseModel):
     architectures: List[str]
@@ -76,10 +81,12 @@ class HFModelConfig(BaseModel):
     tokenizer_config: Dict[str, Optional[str]]
     chat_template_jinja: Optional[str] = None
 
+
 class HFCardData(BaseModel):
     base_model: List[str]
     tags: List[str]
     params: int
+
 
 class HFSibling(BaseModel):
     rfilename: str
@@ -141,6 +148,7 @@ hf_modelinfo_sample: dict = {'_id': '6832397972750614b899eba5',
                              'languages': ['en']}
 """
 
+
 class HFModelInfo(BaseModel):
     _id: str
     id: str
@@ -162,6 +170,11 @@ class HFModelInfo(BaseModel):
     createdAt: str
     usedStorage: int
     languages: List[str]
+
+    @classmethod
+    def load(cls, file_path: str):
+        with open(file_path, "r") as f:
+            return cls.model_validate_json(**from_json(json.load(f)))
 
     def save(self, file_path: str):
         with open(file_path, "w") as f:

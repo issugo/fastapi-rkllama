@@ -9,12 +9,13 @@ from typing import Optional, List, Tuple
 from pydantic import BaseModel
 
 from core.backends.backend import BACKEND_SUPPORTED_LIB_VERSION
+from core.config.PlatformConfig import PlatformProcessor
 from core.model.ModelInfo import ModelDetails
-from core.model.ModelPath import ModelPath
+from core.model.ModelPath import ModelPath, int_parameters_size
 from core.model.ModelType import ModelType
 from core.model import logger
 from core.model.converter.quantization_constants import RK_QUANT_FORMAT, ollama_quant_mapping
-from core.model.models_constants import MODEL_SPECS, RK_TAGS_LIST
+from core.model.models_constants import MODEL_SPECS, RK_TAGS_LIST, default_context_length
 
 
 class ModelMetadataFormat(str, Enum):
@@ -186,6 +187,17 @@ class SimpleModelMetadata(BaseModel):
                     model_details.update({'context_length': context_length})
                     start_pos += 1
 
+        for rk_tag in RK_TAGS_LIST:
+            if rk_tag in splitted and rk_tag not in model_tags:
+                model_tags.append(rk_tag)
+
+        if 'architecture' not in model_details:
+            for rk_tag in model_tags:
+                for platform_processor in PlatformProcessor:
+                    if rk_tag == platform_processor.value:
+                        model_details.update({'architecture': rk_tag})
+                        break
+
         logger.debug(f"parse_model_name: Model metadata={model_metadata}")
         logger.debug(f"parse_model_name: Model details={model_details}")
         logger.debug(f"parse_model_name: Model tags={model_tags}")
@@ -235,7 +247,10 @@ class SimpleModelMetadata(BaseModel):
             for rk_tag in RK_TAGS_LIST:
                 if rk_tag in splitted[start_pos]:
                     model_tags.append(rk_tag)
-                    model_details.update({'architecture': rk_tag})
+                    for platform_processor in PlatformProcessor:
+                        if rk_tag == platform_processor.value:
+                            model_details.update({'architecture': rk_tag})
+                            break
                     start_pos += 1
                     break
 
@@ -262,6 +277,16 @@ class SimpleModelMetadata(BaseModel):
                         model_metadata.update({'quantization_hybrid_ratio': float(quant_hybrid_ratio)})
                         start_pos += 2
 
+        for rk_tag in RK_TAGS_LIST:
+            if rk_tag in splitted and rk_tag not in model_tags:
+                model_tags.append(rk_tag)
+
+        if 'architecture' not in model_details:
+            for rk_tag in model_tags:
+                for platform_processor in PlatformProcessor:
+                    if rk_tag == platform_processor.value:
+                        model_details.update({'architecture': rk_tag})
+                        break
 
         logger.debug(f"parse_file: Model metadata={model_metadata}")
         logger.debug(f"parse_file: Model details={model_details}")
@@ -269,7 +294,7 @@ class SimpleModelMetadata(BaseModel):
         return model_metadata, model_details, model_tags
 
     @classmethod
-    def compute(cls, model_path: ModelPath, model_details: ModelDetails, system_prompt: str) -> dict:
+    def compute(cls, model_path: ModelPath, model_details: ModelDetails, system_prompt: str, temperature: float = None) -> dict:
         model_metadata_from_name, model_details_from_name, model_tags_from_name = \
             SimpleModelMetadata.parse_model_name(model_path.model_name)
 
@@ -280,20 +305,39 @@ class SimpleModelMetadata(BaseModel):
         model_details_from_name.update(model_details_from_file)
         model_tags_from_name.extend(model_tags_from_file)
 
+        for attr in model_details_from_name:
+            try:
+                if attr not in model_details.__dict__:
+                    model_details.__setattr__(attr, model_details_from_name[attr])
+                elif model_details.__dict__[attr] == "Unknown":
+                    model_details.__setattr__(attr, model_details_from_name[attr])
+            except Exception as e:
+                logger.warning(f"Cannot set model details attribute {attr}: {str(e)}")
+
+        model_architecture = model_details.model_family \
+                if model_details.model_family is not None \
+                else get_model_architecture(model_path.endpoint_model_file)
+
+        if model_architecture is None and 'model_family' in model_details_from_name:
+            model_architecture = model_details_from_name['model_family']
+
+        _, _, int_size_value = int_parameters_size(model_metadata_from_name.get('parameters',
+                                                                                model_details.parameter_size))
+
         to_return = {
             "name": model_metadata_from_name['name'],
-            "architecture": model_metadata_from_name.get('architecture',
-                                                         get_model_architecture(model_path.model_file)),
+            "architecture": model_architecture,
             "quantization": model_metadata_from_name.get('quantization',
                                                          ollama_quant_mapping.get(model_details.quantization_level)),
-            "parameters": model_metadata_from_name.get('parameters',
-                                                       model_details.parameter_size),
-            "context_length": model_metadata_from_name.get('parameters',
-                                                           model_details.context_length),
+            "parameters": int_size_value,
+            "context_length": default_context_length(model_architecture),
             "system_prompt": system_prompt,
-            "temperature": model_details.temperature,
-            "model_type": model_details.model_type
+            "temperature": temperature if temperature is not None \
+                else ModelMetadataParameters().temperature,
+            "model_type": model_path.model_type
         }
+        if 'context_length' in model_metadata_from_name:
+            to_return.update({'context_length': model_metadata_from_name['context_length']})
         if 'quantization_opt' in model_metadata_from_name:
             to_return.update({'quantization_opt': model_metadata_from_name['quantization_opt']})
         if 'quantization_hybrid_ratio' in model_metadata_from_name:

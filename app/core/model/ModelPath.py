@@ -118,6 +118,7 @@ class ModelPath(ModelName):
             Dictionary with parameter_size and quantization_level
         """
         # Initialize default values
+        # TODO: set model_format and model_family, then remove Optionals from OllamaModelDetails
         details = ModelDetails(parameter_size="Unknown", quantization_level="Unknown")
 
         # Remove path and extension if present
@@ -128,11 +129,11 @@ class ModelPath(ModelName):
 
         parameter_size = ModelPath.get_parameter_size(basename)
         if parameter_size:
-            details["parameter_size"] = parameter_size
+            details.parameter_size = parameter_size
 
         ollama_quant_level = ModelPath.get_ollama_quant_level(basename)
         if ollama_quant_level:
-            details["quantization_level"] = ollama_quant_level
+            details.quantization_level = ollama_quant_level
 
         return details
 
@@ -206,16 +207,9 @@ class ModelPath(ModelName):
                 # Try to extract parameter size from model name if not in cardData
                 if "params" not in hf_data["cardData"]:
                     # Look for patterns like "7b", "3B", "1.5B" in model name or description
-                    param_pattern = re.search(
-                        PARAM_SIZE_PATTERN,
-                        self.huggingface_path + " " + (hf_data.get("description") or ""),
-                    )
-                    if param_pattern:
-                        size_value = float(param_pattern.group(1))
-                        size_unit = param_pattern.group(2).lower()
-                        # Convert to billions if needed
-                        if size_unit == "b":
-                            hf_data["cardData"]["params"] = int(size_value * 1_000_000_000)
+                    size_value, size_unit, int_size_value = \
+                        int_parameters_size(content=self.huggingface_path + " " + (hf_data.get("description") or ""))
+                    hf_data["cardData"]["params"] = int(int_size_value)
 
                 # Extract important information from the description
                 description = hf_data.get("description", "")
@@ -441,3 +435,18 @@ def GetModels():
     return models_list
 
 
+def int_parameters_size(content: str):
+    param_pattern = re.search(
+        PARAM_SIZE_PATTERN,
+        content,
+    )
+    if param_pattern:
+        int_size_value = None
+        size_value = float(param_pattern.group(1))
+        size_unit = param_pattern.group(2).lower()
+        # Convert to billions if needed
+        if size_unit == "b":
+            int_size_value = int(size_value * 1_000_000_000)
+        return size_value, size_unit, int_size_value
+    else:
+        return None, None, None

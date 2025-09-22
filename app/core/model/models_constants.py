@@ -25,6 +25,12 @@ def detect_family(text: str) -> str:
         "llama",
     )
 
+def default_context_length(family: str):
+    for name, (ctx_len, _) in MODEL_SPECS.items():
+        if name == family:
+            return ctx_len
+    return 4096
+
 MODEL_ARCHITECTURES = {
     "llama": "llama",
     "mistral": "mistral",

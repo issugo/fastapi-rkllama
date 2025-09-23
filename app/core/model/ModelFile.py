@@ -117,7 +117,10 @@ class ModelFile(ModelFileInfo):
                         default_model_config=default_model_config),
                     'model_metadata': model_metadata
                 })
+
+            logger.debug(f"computed mf_data={mf_data}")
             mf_data.update(model_file_info.__dict__)
+            logger.debug(f"completed mf_data={mf_data}")
             return ModelFile(**mf_data)
 
         except Exception as e:

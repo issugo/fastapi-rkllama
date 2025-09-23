@@ -1,7 +1,7 @@
 import json
 from typing import Optional, List, Dict, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_core import from_json
 
 from core.model import OllamaManifest
@@ -32,8 +32,8 @@ config_data = {
 
 
 class OllamaModelDetails(BaseModel):
-    model_format: Optional[str] = None # ex: gguf
-    model_family: Optional[str] = None # ex: llama, see
+    model_format: str = Field(description="ex: gguf")
+    model_family: str = Field(description="ex: llama")
 
 
 class OllamaRootfs(BaseModel):

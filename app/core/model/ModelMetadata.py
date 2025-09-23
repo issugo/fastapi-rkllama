@@ -123,26 +123,11 @@ class SimpleModelMetadata(BaseModel):
         model_tags: List[str] = []
         splitted = model_name.split("-")
         start_pos = 0
-        if MODEL_SPECS.get(splitted[0].lower()):
-            name = splitted[0].lower()
-            model_metadata.update({'name': name})
-            model_tags.append(name)
-            model_details.update({'model_family': name})
-            start_pos = 1
 
-        if start_pos == 0 and len(splitted) >= 2:
-            if MODEL_SPECS.get(f"{splitted[0]}-{splitted[1]}".lower()):
-                name = f"{splitted[0]}-{splitted[1]}".lower()
-                model_metadata.update({'name': name})
-                model_tags.append(name)
-                model_details.update({'model_family': name})
-                start_pos = 2
-            elif MODEL_SPECS.get(f"{splitted[0]}_{splitted[1]}".lower()):
-                name = f"{splitted[0]}_{splitted[1]}".lower()
-                model_metadata.update({'name': name})
-                model_tags.append(name)
-                model_details.update({'model_family': name})
-                start_pos = 2
+        model_metadata, model_details, model_tags, start_pos = \
+            SimpleModelMetadata.parse_splitted_for_model_family(
+                splitted=splitted, start_pos=start_pos,
+                model_metadata=model_metadata, model_details=model_details, model_tags=model_tags)
 
         if len(splitted) > start_pos:
             if ModelPath.get_parameter_size(splitted[start_pos]):
@@ -175,16 +160,18 @@ class SimpleModelMetadata(BaseModel):
             # unsloth-16k
             if re.search(r"(\d+k)", splitted[start_pos]):
                 context_length = re.search(r"(\d+k)", splitted[start_pos]).group(1)
-                model_metadata.update({'context_length': context_length})
-                model_details.update({'context_length': context_length})
+                int_context_length = int(context_length[:-1]) * 1024
+                model_metadata.update({'context_length': int_context_length})
+                model_details.update({'context_length': int_context_length})
                 start_pos += 1
             elif 'unsloth' in splitted[start_pos]:
                 model_tags.append('unsloth')
                 start_pos += 1
                 if re.search(r"(\d+k)", splitted[start_pos]):
                     context_length = re.search(r"(\d+k)", splitted[start_pos]).group(1)
-                    model_metadata.update({'context_length': context_length})
-                    model_details.update({'context_length': context_length})
+                    int_context_length = int(context_length[:-1]) * 1024
+                    model_metadata.update({'context_length': int_context_length})
+                    model_details.update({'context_length': int_context_length})
                     start_pos += 1
 
         for rk_tag in RK_TAGS_LIST:
@@ -203,6 +190,34 @@ class SimpleModelMetadata(BaseModel):
         logger.debug(f"parse_model_name: Model tags={model_tags}")
         return model_metadata, model_details, model_tags
 
+    @staticmethod
+    def parse_splitted_for_model_family(splitted: List[str], start_pos: int,
+            model_metadata: dict, model_details: dict, model_tags: List[str]) -> Tuple[dict, dict, List[str], int]:
+        new_pos = start_pos
+        if len(splitted) > start_pos:
+            if MODEL_SPECS.get(splitted[start_pos].lower()):
+                name = splitted[start_pos].lower()
+                model_metadata.update({'name': name})
+                model_tags.append(name)
+                model_details.update({'model_family': name})
+                new_pos += 1
+
+        if new_pos == start_pos and len(splitted) > start_pos+1:
+            if MODEL_SPECS.get(f"{splitted[start_pos]}-{splitted[start_pos+1]}".lower()):
+                name = f"{splitted[start_pos]}-{splitted[start_pos+1]}".lower()
+                model_metadata.update({'name': name})
+                model_tags.append(name)
+                model_details.update({'model_family': name})
+                new_pos += 2
+            elif MODEL_SPECS.get(f"{splitted[start_pos]}_{splitted[start_pos+1]}".lower()):
+                name = f"{splitted[start_pos]}_{splitted[start_pos+1]}".lower()
+                model_metadata.update({'name': name})
+                model_tags.append(name)
+                model_details.update({'model_family': name})
+                new_pos += 2
+
+        return model_metadata, model_details, model_tags, new_pos
+
     # file=Qwen3-1.7B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm,
     # repo=dulimov/Qwen3-1.7B-rk3588-1.2.1-unsloth-16k
     @staticmethod
@@ -210,29 +225,21 @@ class SimpleModelMetadata(BaseModel):
         model_metadata = {}
         model_details = {}
         model_tags: List[str] = []
+
+        for mtype in ModelType:
+            if file.endswith(mtype.get_extension()):
+                model_metadata.update({'model_type': mtype})
+                file = re.sub(f"{mtype.get_extension()}$", "", file)
+                logger.debug(f"parse_file: Model type={mtype}, file reduce to {file}")
+                break
+
         splitted = file.split("-")
         start_pos = 0
 
-        if MODEL_SPECS.get(splitted[0].lower()):
-            name = splitted[0].lower()
-            model_metadata.update({'name': name})
-            model_tags.append(name)
-            model_details.update({'model_family': name})
-            start_pos = 1
-
-        if start_pos == 0 and len(splitted) >= 2:
-            if MODEL_SPECS.get(f"{splitted[0]}-{splitted[1]}".lower()):
-                name = f"{splitted[0]}-{splitted[1]}".lower()
-                model_metadata.update({'name': name})
-                model_tags.append(name)
-                model_details.update({'model_family': name})
-                start_pos = 2
-            elif MODEL_SPECS.get(f"{splitted[0]}_{splitted[1]}".lower()):
-                name = f"{splitted[0]}_{splitted[1]}".lower()
-                model_metadata.update({'name': name})
-                model_tags.append(name)
-                model_details.update({'model_family': name})
-                start_pos = 2
+        model_metadata, model_details, model_tags, start_pos = \
+            SimpleModelMetadata.parse_splitted_for_model_family(
+                splitted=splitted, start_pos=start_pos,
+                model_metadata=model_metadata, model_details=model_details, model_tags=model_tags)
 
         if len(splitted) > start_pos:
             if ModelPath.get_parameter_size(splitted[start_pos]):
@@ -324,6 +331,10 @@ class SimpleModelMetadata(BaseModel):
         _, _, int_size_value = int_parameters_size(model_metadata_from_name.get('parameters',
                                                                                 model_details.parameter_size))
 
+        model_type = model_path.model_type
+        if model_type is None and 'model_type' in model_metadata_from_name:
+            model_type = model_metadata_from_name['model_type']
+
         to_return = {
             "name": model_metadata_from_name['name'],
             "architecture": model_architecture,
@@ -334,7 +345,7 @@ class SimpleModelMetadata(BaseModel):
             "system_prompt": system_prompt,
             "temperature": temperature if temperature is not None \
                 else ModelMetadataParameters().temperature,
-            "model_type": model_path.model_type
+            "model_type": model_type
         }
         if 'context_length' in model_metadata_from_name:
             to_return.update({'context_length': model_metadata_from_name['context_length']})

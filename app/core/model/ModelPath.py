@@ -12,9 +12,8 @@ from core.model.ModelType import ModelType
 from core.model import logger
 from core.model.converter.quantization_constants import quant_patterns, quant_mapping, ollama_quant_mapping
 from core.model.models_constants import LICENSE_NAME_MAPPING, RK_TAGS_LIST, LANGUAGE_DEFAULT, \
-    LANGUAGE_MULTILINGUAL_LIST, LANGUAGE_PATTERNS, MODEL_ARCHITECTURES, MODELFILE_NAME, PARAM_SIZE_PATTERN
-
-
+    LANGUAGE_MULTILINGUAL_LIST, LANGUAGE_PATTERNS, MODEL_ARCHITECTURES, MODELFILE_NAME, PARAM_SIZE_PATTERN, \
+    UNKNOWN_VAL_STR
 
 
 class ModelLicense(BaseModel):
@@ -52,6 +51,8 @@ class ModelPath(ModelName):
         for mtype in ModelType:
             if self.endpoint_model_file.endswith(mtype.get_extension()):
                 return mtype
+        if super().model_type is not None:
+            return super().model_type
         return None
 
     @property
@@ -83,6 +84,23 @@ class ModelPath(ModelName):
                         if mfile_endpoint_model_file.endswith(self.endpoint_model_file):
                             return True
         return False
+
+    def get_model_format(self) -> str:
+        model_type: ModelType = self.model_type
+        if model_type is None:
+            return UNKNOWN_VAL_STR
+        return model_type.value.lower()
+
+    def get_model_family(self) -> str:
+        from core.model.ModelMetadata import SimpleModelMetadata
+        model_metadata, _, _, _ = \
+            SimpleModelMetadata.parse_splitted_for_model_family(
+                splitted=self.model_name.split("-"), start_pos=0,
+                model_metadata={}, model_details={}, model_tags=[])
+        if model_metadata:
+            return model_metadata.get("model_family", UNKNOWN_VAL_STR)
+        return UNKNOWN_VAL_STR
+
 
     @staticmethod
     def get_parameter_size(model_name: str)-> str | None:
@@ -119,13 +137,23 @@ class ModelPath(ModelName):
         """
         # Initialize default values
         # TODO: set model_format and model_family, then remove Optionals from OllamaModelDetails
-        details = ModelDetails(parameter_size="Unknown", quantization_level="Unknown")
+        details = ModelDetails(
+            model_format=UNKNOWN_VAL_STR, model_family=UNKNOWN_VAL_STR,
+            parameter_size=UNKNOWN_VAL_STR, quantization_level=UNKNOWN_VAL_STR)
 
         # Remove path and extension if present
         if isinstance(self.model_name, str):
             basename = os.path.basename(self.model_name).replace(self.model_type.get_extension(), "")
         else:
             basename = str(model_name)
+
+        model_format = self.get_model_format()
+        if model_format:
+            details.model_format = model_format
+
+        model_family = self.get_model_family()
+        if model_family:
+            details.model_family = model_family
 
         parameter_size = ModelPath.get_parameter_size(basename)
         if parameter_size:

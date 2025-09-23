@@ -89,4 +89,4 @@ MODELFILE_NAME:str = "Modelfile"
 
 PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([bB])"
 
-
+UNKNOWN_VAL_STR = "Unknown"

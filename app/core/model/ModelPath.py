@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Union
+from typing import Union, Optional
 
 import requests
 from pydantic import BaseModel
@@ -25,7 +25,7 @@ class ModelPath(ModelName):
     huggingface_path: str
     endpoint_model_file: str
     endpoint_model_file_size: int
-    license: BaseModel = None
+    license: Optional[ModelLicense] = None
 
     _model_dir: Union[str|None] = None
     _huggingface_model_info: Union[HFModelInfo|None] = None

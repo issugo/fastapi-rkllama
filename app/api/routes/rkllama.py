@@ -3,10 +3,9 @@ import json
 import os
 import re
 import shutil
-import urllib.parse
-from typing import AsyncGenerator
+from logging import Logger
+from typing import AsyncGenerator, Any, Tuple
 
-import requests
 from fastapi import APIRouter
 from huggingface_hub import HfFileSystem, hf_hub_url, HfApi
 from starlette.requests import Request
@@ -20,9 +19,8 @@ from core.api.parameters.rkllama_requests import RKPullRequest
 from core.model.HfFileInfo import HfFileInfo
 from core.model.ModelPath import find_rkllm_model_name
 from core.model.ModelType import ModelType
-from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
-from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
-from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+
+DEFAULT_CONTENT_TYPE = "text/plain"
 
 router = APIRouter(tags=["rkllama"])
 # Original RKLLAMA Routes:
@@ -35,147 +33,92 @@ router = APIRouter(tags=["rkllama"])
 
 @router.post("/pull")
 async def pull_model(request: Request, rk_pull_request: RKPullRequest):
-    from core.model.ModelFile import ModelFile, ModelFileInfo
-    from core.config import config_utils
+    from core.model.storage_helpers.model_pull import PullSupplier, pull_model_stream
 
-    async def generate_progress() -> AsyncGenerator[str, None]:
-        splitted = rk_pull_request.model.split("/")
-        if len(splitted) < 3:
-            yield f"Error: Invalid path '{rk_pull_request.model}'\n"
-            return
+    splitted = rk_pull_request.model.split("/")
 
-        model_name = splitted[1] if rk_pull_request.model_name is None else rk_pull_request.model_name
-        file = splitted[2]
-        repo = rk_pull_request.model.replace(f"/{file}", "")
+    class RKPullSupplier(PullSupplier):
 
-        logger.debug(f"model_name={model_name}, file={file}, repo={repo}")
+        @property
+        def logger(self) -> Logger:
+            return logger
 
-        if rk_pull_request.model_type is None:
-            for mtype in ModelType:
-                if file.endswith(mtype.get_extension()):
-                    rk_pull_request.model_type = mtype
-                    break
+        def error(self, message: str) -> Any:
+            return f"Error: {message}\n"
 
-        if rk_pull_request.model_type is None:
-            yield f"Error: Invalid model type '{rk_pull_request.model_type}'\n"
-            return
+        def check_params(self) -> Any | None:
+            if len(splitted) < 3:
+                return f"Error: Invalid path '{rk_pull_request.model}'\n"
+            return None
 
-        try:
+        def model_data(self) -> Tuple[str, str, str]:
+            model_name = splitted[1] if rk_pull_request.model_name is None else rk_pull_request.model_name
+            file = splitted[2]
+            repo = rk_pull_request.model.replace(f"/{file}", "")
+            return model_name, file, repo
+
+        def model_type(self, model_name, file, repo) -> Tuple[ModelType | None, Any]:
+            if rk_pull_request.model_type is None:
+                for mtype in ModelType:
+                    if file.endswith(mtype.get_extension()):
+                        rk_pull_request.model_type = mtype
+                        break
+
+            if rk_pull_request.model_type is None:
+                return None, f"Error: Invalid model type '{rk_pull_request.model_type}'\n"
+
+            return rk_pull_request.model_type, None
+
+        def file_info(self, model_name, file, repo, model_type) -> Tuple[Any | None, Any]:
             # Use Hugging Face HfFileSystem to get the file metadata
-            fs = HfFileSystem()
-            file_info = fs.info(repo + "/" + file)
+            try:
+                fs = HfFileSystem()
+                file_info = fs.info(repo + "/" + file)
 
-            hf_file_info = HfFileInfo(**file_info)
-            logger.debug(f"file_info={hf_file_info}")
+                hf_file_info = HfFileInfo(**file_info)
+                logger.debug(f"file_info={hf_file_info}")
 
-            if (not hf_file_info.name == f"{repo}/{file}") or (not hf_file_info.size == hf_file_info.lfs.size):
-                yield "Error: incorrect HF file info.\n"
-                return
+                return hf_file_info, None
+            except Exception as e:
+                return None, f"Error: {str(e)}\n"
 
-            total_size = hf_file_info.size  # File size in bytes
+        def check_file_info(self, model_name, file, repo, model_type, file_info) -> Tuple[Any | None, Any]:
+            if (not file_info.name == f"{repo}/{file}") or (not file_info.size == file_info.lfs.size):
+                return None, "Error: incorrect HF file info.\n"
+
+            return file_info, None
+
+        def size_and_digest(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any , Any]:
+            total_size = file_info.size  # File size in bytes
             if total_size == 0:
-                yield "Error: Unable to retrieve file size.\n"
-                return
+                return None, None, "Error: Unable to retrieve file size.\n"
 
-            digest = hf_file_info.lfs.sha256
+            digest = file_info.lfs.sha256
             if not digest:
-                yield "Error: Unable to retrieve file digest.\n"
+                return None, None, "Error: Unable to retrieve file digest.\n"
 
-            # Create the configuration file for model
-            model_type = \
-                rk_pull_request.model_type if rk_pull_request.model_type is not None \
-                else ModelType.get_model_type_from_endpoint_model_file(file)
-            logger.debug(f"{model_type}")
-            model_file_info: ModelFileInfo = ModelFileInfo(
-                model_name=model_name,
-                model_type=model_type,
-                huggingface_path=repo,
-                endpoint_model_file=file,
-                endpoint_model_file_size=total_size,
-            )
-            logger.debug(f"model_file_info={model_file_info.model_dump_json()}")
-            logger.debug(f"hf_data={model_file_info.huggingface_model_info}")
+            return total_size, digest, None
 
-            ollama_model_storage_helper: OllamaModelStorageHelper = OllamaModelStorageHelper(
-                model_path=model_file_info,
-                sha256_digest=digest
-                )
-            model_file: ModelFile = ModelFile.create(
-                model_file_info=model_file_info,
-                default_model_config=config_utils.rkllama_config.model )
-            logger.debug(f"model_file={model_file.model_dump_json()}")
-            logger.debug(f"model_file.simple_model_metadata={model_file.simple_model_metadata.model_dump_json()}")
-
-            rkllama_storage_helper: RkllamaStorageHelper = RkllamaStorageHelper(
-                ollama_model_storage_helper=ollama_model_storage_helper,
-                model_file=model_file
-            )
-
-            ollama_storage_helper: OllamaStorageHelper = OllamaStorageHelper(
-                ollama_model_storage_helper=ollama_model_storage_helper,
-                model_file=model_file
-            )
-
+        def lock_model(self, model_file) -> Tuple[int | None, Any]:
             if model_file.is_locked():
-                yield "Error: Model is currently locked.\n"
-                return
+                return None, "Error: Model is currently locked.\n"
 
             lock_id = model_file.lock_model()
-            if lock_id > 0:
+            return lock_id, None
 
-                model_blob_path = ollama_model_storage_helper.model_blob_path
+        def model_download_url(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any]:
+            url = hf_hub_url(repo_id=repo, filename=file)
+            return url, None
 
-                yield f"Downloading {file} ({total_size / (1024**2):.2f} MB)...\n"
+        @property
+        def content_type(self) -> str:
+            return DEFAULT_CONTENT_TYPE
 
-                try:
-                    # Download the file with progress
-                    url = hf_hub_url(repo_id=repo, filename=file)
-                    with (
-                        requests.get(url, stream=True) as r,
-                        open(model_blob_path, "wb") as f,
-                    ):
-                        downloaded_size = 0
-                        chunk_size = 8192  # 8KB
+        def format_progress(self, progress: int) -> Any:
+            return f"{progress}%\n"
 
-                        for chunk in r.iter_content(chunk_size=chunk_size):
-                            if chunk:
-                                f.write(chunk)
-                                downloaded_size += len(chunk)
-                                progress = int((downloaded_size / total_size) * 100)
-                                yield f"{progress}%\n"
+    return pull_model_stream(request=request, pull_supplier=RKPullSupplier())
 
-                    rkllama_storage_helper.store()
-                    ollama_storage_helper.store()
-
-
-
-
-                    model_file.unlock_model(lock_id)
-
-                except Exception as download_error:
-                    # Remove the file if an error occurs during download
-                    ollama_storage_helper.clean()
-                    rkllama_storage_helper.clean()
-                    ollama_model_storage_helper.clean()
-                    if os.path.exists(model_blob_filename):
-                        os.remove(model_blob_filename)
-                    yield f"Error during download: {str(download_error)}\n"
-                    model_file.unlock_model(lock_id)
-                    return
-
-        except Exception as e:
-            yield f"Error: {str(e)}\n"
-
-    # Use the appropriate content type for streaming responses
-    ## is_ollama_request = request.path.startswith('/api/')
-    logger.debug(f"request.url={request.url}")
-    urlparsed_path = urllib.parse.urlparse(str(request.url)).path
-    logger.debug(f"urlparsed_path={urlparsed_path}")
-    is_ollama_request = urlparsed_path.startswith("/api/")
-    content_type = "application/x-ndjson" if is_ollama_request else "text/plain"
-    return StreamingResponse(
-        generate_progress(), headers={"Content-Type": content_type}
-    )
 
 
 @router.get("/")

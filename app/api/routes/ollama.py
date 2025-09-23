@@ -14,6 +14,9 @@ from api.routes.rkllama import pull_model
 from core.model.ModelFile import get_property_modelfile, ModelFile
 from core.processing.json_utils import strtobool
 
+DEFAULT_CONTENT_TYPE = "application/x-ndjson"
+
+
 router = APIRouter(tags=["ollama"])
 
 

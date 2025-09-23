@@ -27,6 +27,8 @@ from core.api.parameters.ollama_responses import (
     OllamaDeleteResponse,
 )
 
+DEFAULT_CONTENT_TYPE = "application/x-ndjson"
+
 router = APIRouter(tags=["ollama"])
 
 
@@ -198,7 +200,15 @@ async def pull_model(request: Request, data: OllamaPullRequest):
     Downloads a model from the Ollama library or a specified registry.
     If stream is set to true, it will return a streaming response with progress updates.
     """
+
+    from core.model.storage_helpers.model_pull import PullSupplier, pull_model, pull_model_stream
+
+    splitted = data.name.split(":")
+
+    # TODO: define class OllamaPullSupplier(PullSupplier)
+
     if data.stream:
+        # TODO: invoke pull_model_stream(request, pull_supplier)
         # Return a streaming response with progress updates
         async def pull_stream():
             yield OllamaPullResponse(
@@ -228,6 +238,9 @@ async def pull_model(request: Request, data: OllamaPullRequest):
             ).model_dump_json().encode() + b"\n"
 
         return StreamingResponse(pull_stream(), media_type="application/json")
+
+    # TODO: error=pull_model(request, pull_supplier)
+    # TODO: if error then response with error, else return succes response
 
     # Non-streaming response
     return OllamaPullResponse(

@@ -4,13 +4,13 @@ import re
 from enum import Enum
 
 from pydantic_core import from_json
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 from pydantic import BaseModel
 
 from core.backends.backend import BACKEND_SUPPORTED_LIB_VERSION
 from core.config.PlatformConfig import PlatformProcessor
-from core.model.ModelInfo import ModelDetails
+from core.model.ModelInfo import ModelDetails, HFModelInfo
 from core.model.ModelPath import ModelPath, int_parameters_size
 from core.model.ModelType import ModelType
 from core.model import logger
@@ -355,6 +355,11 @@ class SimpleModelMetadata(BaseModel):
             to_return.update({'quantization_hybrid_ratio': model_metadata_from_name['quantization_hybrid_ratio']})
 
         return to_return
+
+    def update_using_huggingface_model_info(self, huggingface_model_info: HFModelInfo) -> None:
+        # for all fields in HFModelInfo, check if they are in the model metadata and update them
+        raise Exception("not yet implemented")
+        
 
     @classmethod
     def from_complete(cls, metadata: ModelMetadata):

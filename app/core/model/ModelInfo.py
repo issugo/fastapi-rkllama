@@ -1,10 +1,10 @@
 import json
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, BeforeValidator
 from pydantic_core import from_json
 
-from core.model import OllamaManifest
+from core.model import OllamaManifest, logger
 from core.model.ModelType import ModelType
 
 """
@@ -67,7 +67,7 @@ class OllamaModelInfo(OllamaModelDetails):
     @classmethod
     def load(cls, file_path: str):
         with open(file_path, "r") as f:
-            return cls.model_validate_json(**from_json(json.load(f)))
+            return OllamaModelInfo(**json.load(f))
 
     def save(self, file_path: str):
         """ write in <MODELS>/blobs/sha256-<DIGEST>"""
@@ -146,11 +146,15 @@ hf_modelinfo_sample: dict = {'_id': '6832397972750614b899eba5',
                              'createdAt': '2025-05-24T21:26:17.000Z',
                              'usedStorage': 17308806896,
                              'languages': ['en']}
+
+test:HFModelInfo = HFModelInfo(**hf_modelinfo_sample)
+print(test)
 """
 
+PyObjectId = Annotated[str, BeforeValidator(str)]
 
 class HFModelInfo(BaseModel):
-    _id: str
+    hf_id: Optional[PyObjectId] = Field(alias='_id', default=None)
     id: str
     private: bool
     tags: List[str]
@@ -174,8 +178,9 @@ class HFModelInfo(BaseModel):
     @classmethod
     def load(cls, file_path: str):
         with open(file_path, "r") as f:
-            return cls.model_validate_json(**from_json(json.load(f)))
+            return HFModelInfo(**json.load(f))
 
     def save(self, file_path: str):
         with open(file_path, "w") as f:
-            f.write(self.model_dump_json(indent=2))
+            f.write(self.model_dump_json(indent=2, by_alias=True))
+

@@ -4,12 +4,11 @@ import os
 import re
 import shutil
 from logging import Logger
-from typing import AsyncGenerator, Any, Tuple
+from typing import Any, Tuple
 
 from fastapi import APIRouter
-from huggingface_hub import HfFileSystem, hf_hub_url, HfApi
 from starlette.requests import Request
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse
 
 import core.backends
 import core.config
@@ -17,10 +16,11 @@ import core.config.config_utils
 from api import logger
 from core.api.parameters.rkllama_requests import RKPullRequest
 from core.model.HfFileInfo import HfFileInfo
+from core.model.ModelFile import ModelFileInfo, ModelFile
+from core.model.ModelInfo import HFModelInfo
 from core.model.ModelPath import find_rkllm_model_name
 from core.model.ModelType import ModelType
-
-DEFAULT_CONTENT_TYPE = "text/plain"
+from core.model.storage_helpers.RKPullSupplier import RKPullSupplier
 
 router = APIRouter(tags=["rkllama"])
 # Original RKLLAMA Routes:
@@ -33,29 +33,20 @@ router = APIRouter(tags=["rkllama"])
 
 @router.post("/pull")
 async def pull_model(request: Request, rk_pull_request: RKPullRequest):
-    from core.model.storage_helpers.model_pull import PullSupplier, pull_model_stream
+    from core.model.storage_helpers.model_pull import Supplier, pull_model_stream
 
     splitted = rk_pull_request.model.split("/")
 
-    class RKPullSupplier(PullSupplier):
+    class LocalRKPullSupplier(RKPullSupplier):
 
         @property
         def logger(self) -> Logger:
             return logger
 
-        def error(self, message: str) -> Any:
-            return f"Error: {message}\n"
-
         def check_params(self) -> Any | None:
             if len(splitted) < 3:
-                return f"Error: Invalid path '{rk_pull_request.model}'\n"
+                return self.error(f"Invalid path '{rk_pull_request.model}'")
             return None
-
-        def model_data(self) -> Tuple[str, str, str]:
-            model_name = splitted[1] if rk_pull_request.model_name is None else rk_pull_request.model_name
-            file = splitted[2]
-            repo = rk_pull_request.model.replace(f"/{file}", "")
-            return model_name, file, repo
 
         def model_type(self, model_name, file, repo) -> Tuple[ModelType | None, Any]:
             if rk_pull_request.model_type is None:
@@ -69,55 +60,16 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
 
             return rk_pull_request.model_type, None
 
-        def file_info(self, model_name, file, repo, model_type) -> Tuple[Any | None, Any]:
-            # Use Hugging Face HfFileSystem to get the file metadata
-            try:
-                fs = HfFileSystem()
-                file_info = fs.info(repo + "/" + file)
+        def model_data(self) -> Tuple[str, str, str, Supplier]:
+            model_name, file, repo = HfFileInfo.model_data(
+                split_name=splitted,
+                model_name=rk_pull_request.model_name
+            )
+            repo = rk_pull_request.model.replace(f"/{file}", "")
+            return model_name, file, repo, Supplier.HUGGINGFACE
 
-                hf_file_info = HfFileInfo(**file_info)
-                logger.debug(f"file_info={hf_file_info}")
 
-                return hf_file_info, None
-            except Exception as e:
-                return None, f"Error: {str(e)}\n"
-
-        def check_file_info(self, model_name, file, repo, model_type, file_info) -> Tuple[Any | None, Any]:
-            if (not file_info.name == f"{repo}/{file}") or (not file_info.size == file_info.lfs.size):
-                return None, "Error: incorrect HF file info.\n"
-
-            return file_info, None
-
-        def size_and_digest(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any , Any]:
-            total_size = file_info.size  # File size in bytes
-            if total_size == 0:
-                return None, None, "Error: Unable to retrieve file size.\n"
-
-            digest = file_info.lfs.sha256
-            if not digest:
-                return None, None, "Error: Unable to retrieve file digest.\n"
-
-            return total_size, digest, None
-
-        def lock_model(self, model_file) -> Tuple[int | None, Any]:
-            if model_file.is_locked():
-                return None, "Error: Model is currently locked.\n"
-
-            lock_id = model_file.lock_model()
-            return lock_id, None
-
-        def model_download_url(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any]:
-            url = hf_hub_url(repo_id=repo, filename=file)
-            return url, None
-
-        @property
-        def content_type(self) -> str:
-            return DEFAULT_CONTENT_TYPE
-
-        def format_progress(self, progress: int) -> Any:
-            return f"{progress}%\n"
-
-    return pull_model_stream(request=request, pull_supplier=RKPullSupplier())
+    return pull_model_stream(request=request, pull_supplier=LocalRKPullSupplier())
 
 
 

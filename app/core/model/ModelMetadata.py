@@ -6,15 +6,15 @@ from enum import Enum
 from pydantic_core import from_json
 from typing import Optional, List, Tuple, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.backends.backend import BACKEND_SUPPORTED_LIB_VERSION
 from core.config.PlatformConfig import PlatformProcessor
-from core.model.ModelInfo import ModelDetails, HFModelInfo
+from core.model.ModelInfo import ModelDetails, HFModelInfo, OllamaModelInfo
 from core.model.ModelPath import ModelPath, int_parameters_size
 from core.model.ModelType import ModelType
 from core.model import logger
-from core.model.converter.quantization_constants import RK_QUANT_FORMAT, ollama_quant_mapping
+from core.model.converter.quantization_constants import RK_QUANT_FORMAT, ollama_quant_mapping, OLLAMA_QUANT_FORMAT
 from core.model.models_constants import MODEL_SPECS, RK_TAGS_LIST, default_context_length
 
 
@@ -100,11 +100,11 @@ class ModelMetadata(BasicModelMetadata):
 class SimpleModelMetadata(BaseModel):
     """Metadata for a converted model."""
     name: str
-    architecture: str
-    quantization: str
+    architecture: str = Field(description="Architecture of the model(like Qwen, OPT, etc.)")
+    quantization: str = Field(description="Quantization format of the model(like w8a8, opt, hybrid, etc.)")
     quantization_opt: Optional[int] = None
     quantization_hybrid_ratio: Optional[float] = None
-    parameters: int
+    parameters: int = Field(description="Number of parameters in the model (converted to int)")
     context_length: int
     system_prompt: str
     temperature: float
@@ -195,11 +195,11 @@ class SimpleModelMetadata(BaseModel):
             model_metadata: dict, model_details: dict, model_tags: List[str]) -> Tuple[dict, dict, List[str], int]:
         new_pos = start_pos
         if len(splitted) > start_pos:
-            if MODEL_SPECS.get(splitted[start_pos].lower()):
+            if MODEL_SPECS.get(splitted[start_pos].split('.')[0].lower()):
                 name = splitted[start_pos].lower()
                 model_metadata.update({'name': name})
                 model_tags.append(name)
-                model_details.update({'model_family': name})
+                model_details.update({'model_family': name.split('.')[0]})
                 new_pos += 1
 
         if new_pos == start_pos and len(splitted) > start_pos+1:
@@ -356,10 +356,168 @@ class SimpleModelMetadata(BaseModel):
 
         return to_return
 
-    def update_using_huggingface_model_info(self, huggingface_model_info: HFModelInfo) -> None:
-        # for all fields in HFModelInfo, check if they are in the model metadata and update them
-        raise Exception("not yet implemented")
-        
+    @staticmethod
+    def create_using_huggingface_model_info(model_metadata_data: dict, huggingface_model_info: HFModelInfo) -> Any:
+        """
+        for all fields in HFModelInfo, check if they are existing in the model metadata and if, then update them
+
+        huggingface_model_info = {
+            hf_id = None
+            id = 'dulimov/Qwen3-1.7B-rk3588-1.2.1-unsloth-16k'
+            private = False
+            tags = ['qwen3', 'unsloth', 'base_model:Qwen/Qwen3-1.7B', 'base_model:finetune:Qwen/Qwen3-1.7B', 'region:us',
+                    'rockchip', 'rk3588']
+            downloads = 3
+            likes = 1
+            modelId = 'dulimov/Qwen3-1.7B-rk3588-1.2.1-unsloth-16k'
+            author = 'dulimov'
+            sha = 'd2dfbce3a30f60b584734d4e06cf145ace54a578'
+            lastModified = '2025-05-24T21:37:33.000Z'
+            gated = False
+            disabled = False
+            model_index = None
+            config = HFModelConfig(architectures=['Qwen3ForCausalLM'], model_type='qwen3',
+                                   tokenizer_config={'bos_token': None, 'eos_token': '<|im_end|>',
+                                                     'pad_token': '<|vision_pad|>', 'unk_token': None},
+                                   chat_template_jinja='{%- if tools %}\n    {{- \'<|im_start|>system\\n\' }}\n    {%- if messages[0].role == \'system\' %}\n        {{- messages[0].content + \'\\n\\n\' }}\n    {%- endif %}\n    {{- "# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>" }}\n    {%- for tool in tools %}\n        {{- "\\n" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- "\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\"name\\": <function-name>, \\"arguments\\": <args-json-object>}\\n</tool_call><|im_end|>\\n" }}\n{%- else %}\n    {%- if messages[0].role == \'system\' %}\n        {{- \'<|im_start|>system\\n\' + messages[0].content + \'<|im_end|>\\n\' }}\n    {%- endif %}\n{%- endif %}\n{%- set ns = namespace(multi_step_tool=true, last_query_index=messages|length - 1) %}\n{%- for forward_message in messages %}\n    {%- set index = (messages|length - 1) - loop.index0 %}\n    {%- set message = messages[index] %}\n    {%- set current_content = message.content if message.content is not none else \'\' %}\n    {%- set tool_start = \'<tool_response>\' %}\n    {%- set tool_start_length = tool_start|length %}\n    {%- set start_of_message = current_content[:tool_start_length] %}\n    {%- set tool_end = \'</tool_response>\' %}\n    {%- set tool_end_length = tool_end|length %}\n    {%- set start_pos = (current_content|length) - tool_end_length %}\n    {%- if start_pos < 0 %}\n        {%- set start_pos = 0 %}\n    {%- endif %}\n    {%- set end_of_message = current_content[start_pos:] %}\n    {%- if ns.multi_step_tool and message.role == "user" and not(start_of_message == tool_start and end_of_message == tool_end) %}\n        {%- set ns.multi_step_tool = false %}\n        {%- set ns.last_query_index = index %}\n    {%- endif %}\n{%- endfor %}\n{%- for message in messages %}\n    {%- if (message.role == "user") or (message.role == "system" and not loop.first) %}\n        {{- \'<|im_start|>\' + message.role + \'\\n\' + message.content + \'<|im_end|>\' + \'\\n\' }}\n    {%- elif message.role == "assistant" %}\n        {%- set content = message.content %}\n        {%- set reasoning_content = \'\' %}\n        {%- if message.reasoning_content is defined and message.reasoning_content is not none %}\n            {%- set reasoning_content = message.reasoning_content %}\n        {%- else %}\n            {%- if \'</think>\' in message.content %}\n                {%- set content = (message.content.split(\'</think>\')|last).lstrip(\'\\n\') %}\n                {%- set reasoning_content = (message.content.split(\'</think>\')|first).rstrip(\'\\n\') %}\n                {%- set reasoning_content = (reasoning_content.split(\'<think>\')|last).lstrip(\'\\n\') %}\n            {%- endif %}\n        {%- endif %}\n        {%- if loop.index0 > ns.last_query_index %}\n            {%- if loop.last or (not loop.last and reasoning_content) %}\n                {{- \'<|im_start|>\' + message.role + \'\\n<think>\\n\' + reasoning_content.strip(\'\\n\') + \'\\n</think>\\n\\n\' + content.lstrip(\'\\n\') }}\n            {%- else %}\n                {{- \'<|im_start|>\' + message.role + \'\\n\' + content }}\n            {%- endif %}\n        {%- else %}\n            {{- \'<|im_start|>\' + message.role + \'\\n\' + content }}\n        {%- endif %}\n        {%- if message.tool_calls %}\n            {%- for tool_call in message.tool_calls %}\n                {%- if (loop.first and content) or (not loop.first) %}\n                    {{- \'\\n\' }}\n                {%- endif %}\n                {%- if tool_call.function %}\n                    {%- set tool_call = tool_call.function %}\n                {%- endif %}\n                {{- \'<tool_call>\\n{"name": "\' }}\n                {{- tool_call.name }}\n                {{- \'", "arguments": \' }}\n                {%- if tool_call.arguments is string %}\n                    {{- tool_call.arguments }}\n                {%- else %}\n                    {{- tool_call.arguments | tojson }}\n                {%- endif %}\n                {{- \'}\\n</tool_call>\' }}\n            {%- endfor %}\n        {%- endif %}\n        {{- \'<|im_end|>\\n\' }}\n    {%- elif message.role == "tool" %}\n        {%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}\n            {{- \'<|im_start|>user\' }}\n        {%- endif %}\n        {{- \'\\n<tool_response>\\n\' }}\n        {{- message.content }}\n        {{- \'\\n</tool_response>\' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != "tool") %}\n            {{- \'<|im_end|>\\n\' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- \'<|im_start|>assistant\\n\' }}\n    {%- if enable_thinking is defined and enable_thinking is false %}\n        {{- \'<think>\\n\\n</think>\\n\\n\' }}\n    {%- endif %}\n{%- endif %}')
+            cardData = HFCardData(base_model=['Qwen/Qwen3-1.7B'], tags=['unsloth'], params=1700000000)
+            siblings = [HFSibling(rfilename='.gitattributes'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8-opt-0-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8-opt-0-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8-opt-0-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8-opt-1-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8-opt-1-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8-opt-1-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g128-opt-0-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g128-opt-0-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g128-opt-0-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g128-opt-1-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g128-opt-1-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g128-opt-1-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g256-opt-0-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g256-opt-0-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g256-opt-0-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g256-opt-1-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g256-opt-1-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g256-opt-1-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g512-opt-0-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g512-opt-0-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g512-opt-0-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g512-opt-1-hybrid-ratio-0.0.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g512-opt-1-hybrid-ratio-0.5.rkllm'),
+                        HFSibling(rfilename='Qwen3-1.7B-rk3588-w8a8_g512-opt-1-hybrid-ratio-1.0.rkllm'),
+                        HFSibling(rfilename='README.md'), HFSibling(rfilename='added_tokens.json'),
+                        HFSibling(rfilename='chat_template.jinja'), HFSibling(rfilename='config.json'),
+                        HFSibling(rfilename='generation_config.json'), HFSibling(rfilename='merges.txt'),
+                        HFSibling(rfilename='special_tokens_map.json'), HFSibling(rfilename='tokenizer.json'),
+                        HFSibling(rfilename='tokenizer_config.json'), HFSibling(rfilename='vocab.json')]
+            spaces = []
+            createdAt = '2025-05-24T21:26:17.000Z'
+            usedStorage = 17308806896
+            languages = ['en']
+            }
+
+        converted to:
+            name: str
+            architecture: str
+            quantization: str
+            quantization_opt: Optional[int] = None
+            quantization_hybrid_ratio: Optional[float] = None
+            parameters: int
+            context_length: int
+            system_prompt: str
+            temperature: float
+            model_type: Optional[ModelType]
+
+        """
+
+        # architecture
+        if huggingface_model_info.config.model_type:
+            if MODEL_SPECS.get(huggingface_model_info.config.model_type):
+                model_metadata_data['architecture'] = huggingface_model_info.config.model_type
+            else:
+                raise Exception(f"model type {huggingface_model_info.config.model_type} not yet supported")
+        elif 'architecture' not in model_metadata_data:
+            # search from tag
+            for tag in huggingface_model_info.tags:
+                if tag in MODEL_SPECS:
+                    model_metadata_data['architecture'] = tag
+                    break
+
+        # parameters
+        if huggingface_model_info.cardData:
+            if huggingface_model_info.cardData.params > 0:
+                model_metadata_data['parameters'] = huggingface_model_info.cardData.params
+
+        logger.debug(f"model_metadata_data: {model_metadata_data}")
+
+        return SimpleModelMetadata(**model_metadata_data)
+
+    @staticmethod
+    def create_using_ollama_model_info(model_metadata_data: dict, ollama_model_info: OllamaModelInfo) -> Any:
+        """
+        for all fields in OllamaModelInfo, check if they are existing in the model metadata and if, then update them
+        ollama_model_info = {
+            model_format = 'gguf'
+            model_family = 'qwen2'
+            model_families = ['qwen2']
+            model_type = '494.03M'
+            file_type = 'Q4_K_M'
+            architecture = 'amd64'
+            os = 'linux'
+            rootfs = OllamaRootfs(type='layers',
+                                  diff_ids=['sha256:c5396e06af294bd101b30dce59131a76d2b773e76950acc870eda801d3ab0515',
+                                            'sha256:75357d685f238b6afd7738be9786fdafde641eb6ca9a3be7471939715a68a4de',
+                                            'sha256:9bebd78bf5bc92d41d5f3aab3ee66c891376b4eb4cf433edc2533c2f5f9c95a6',
+                                            'sha256:832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e'])
+            }
+
+        converted to:
+            name: str
+            architecture: str
+            quantization: str
+            quantization_opt: Optional[int] = None
+            quantization_hybrid_ratio: Optional[float] = None
+            parameters: int
+            context_length: int
+            system_prompt: str
+            temperature: float
+            model_type: Optional[ModelType]
+        """
+        # model_family = 'qwen2'
+        # architecture
+        if ollama_model_info.model_family:
+            if MODEL_SPECS.get(ollama_model_info.model_family):
+                model_metadata_data['architecture'] = ollama_model_info.model_family
+            else:
+                raise Exception(f"model type {ollama_model_info.model_type} not yet supported")
+
+        # file_type = 'Q4_K_M'
+        # quantization: str
+        if ollama_model_info.file_type:
+            if ollama_model_info.file_type in OLLAMA_QUANT_FORMAT:
+                model_metadata_data['quantization'] = ollama_model_info.file_type
+            else:
+                raise Exception(f"model quantization {ollama_model_info.file_type} not yet supported")
+
+        # model_type = '494.03M'
+        # parameters: int
+        if ollama_model_info.model_type:
+            size_value, size_unit, int_size_value = int_parameters_size(ModelPath.get_parameter_size(ollama_model_info.model_type))
+            if ollama_model_info.model_type.startswith(str(size_value)):
+                model_metadata_data['parameters'] = int_size_value
+
+        # model_format = 'gguf'
+        # model_type: Optional[ModelType]
+        if ollama_model_info.model_format:
+            for mt in ModelType:
+                if mt.value.lower() == ollama_model_info.model_format.lower():
+                    model_metadata_data['model_type'] = mt
+                    break
+
+        logger.debug(f"model_metadata_data: {model_metadata_data}")
+
+        return SimpleModelMetadata(**model_metadata_data)
 
     @classmethod
     def from_complete(cls, metadata: ModelMetadata):

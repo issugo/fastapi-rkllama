@@ -1,10 +1,12 @@
 import json
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Annotated
 
 from pydantic import BaseModel, Field, BeforeValidator
 from pydantic_core import from_json
 
-from core.model import OllamaManifest, logger
+from core.model import  logger
+from core.model.OllamaManifest import OllamaManifest
 from core.model.ModelType import ModelType
 
 """
@@ -64,12 +66,23 @@ class OllamaModelInfo(OllamaModelDetails):
     os: Optional[str] = "Linux"
     rootfs: OllamaRootfs
 
-    @classmethod
-    def load(cls, file_path: str):
-        with open(file_path, "r") as f:
-            return OllamaModelInfo(**json.load(f))
+    _ollama_manifest: Optional[OllamaManifest] = None
 
-    def save(self, file_path: str):
+    @property
+    def ollama_manifest(self):
+        return self._ollama_manifest
+
+    @ollama_manifest.setter
+    def ollama_manifest(self, ollama_manifest: OllamaManifest):
+        self._ollama_manifest = ollama_manifest
+
+    @classmethod
+    def load(cls, file_path: str | Path):
+        with open(file_path, "r") as f:
+            # return OllamaModelInfo(**json.load(f))
+            return cls.model_validate_json(from_json(json.load(f)))
+
+    def save(self, file_path: str | Path):
         """ write in <MODELS>/blobs/sha256-<DIGEST>"""
         with open(file_path, "w") as f:
             f.write(self.model_dump_json(indent=2))
@@ -176,11 +189,13 @@ class HFModelInfo(BaseModel):
     languages: List[str]
 
     @classmethod
-    def load(cls, file_path: str):
+    def load(cls, file_path: str | Path):
+        logger.debug(f"HFModelInfo.load(file_path={file_path})")
         with open(file_path, "r") as f:
             return HFModelInfo(**json.load(f))
 
-    def save(self, file_path: str):
+    def save(self, file_path: str| Path):
+        logger.debug(f"HFModelInfo.save(file_path={file_path})")
         with open(file_path, "w") as f:
             f.write(self.model_dump_json(indent=2, by_alias=True))
 

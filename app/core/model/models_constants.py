@@ -87,6 +87,7 @@ LANGUAGE_PATTERNS = {
 
 MODELFILE_NAME:str = "Modelfile"
 
-PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([bB])"
+B_PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([bB])"
+M_PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([mM])"
 
 UNKNOWN_VAL_STR = "Unknown"

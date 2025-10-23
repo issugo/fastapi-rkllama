@@ -1,19 +1,20 @@
 import os
 import re
+from pathlib import Path
 from typing import Union, Optional
 
-import requests
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.config import config_utils
+from core.model import logger
+from core.model.HfFileInfo import HfFileInfo
 from core.model.ModelInfo import ModelDetails, HFModelInfo, OllamaModelInfo
 from core.model.ModelName import ModelName
 from core.model.ModelType import ModelType
-from core.model import logger
+from core.model.OllamaManifest import OllamaManifest
 from core.model.converter.quantization_constants import quant_patterns, quant_mapping, ollama_quant_mapping
-from core.model.models_constants import LICENSE_NAME_MAPPING, RK_TAGS_LIST, LANGUAGE_DEFAULT, \
-    LANGUAGE_MULTILINGUAL_LIST, LANGUAGE_PATTERNS, MODEL_ARCHITECTURES, MODELFILE_NAME, PARAM_SIZE_PATTERN, \
-    UNKNOWN_VAL_STR
+from core.model.models_constants import MODELFILE_NAME, B_PARAM_SIZE_PATTERN, \
+    UNKNOWN_VAL_STR, M_PARAM_SIZE_PATTERN
 
 
 class ModelLicense(BaseModel):
@@ -21,15 +22,24 @@ class ModelLicense(BaseModel):
     license_url: str = None
     license_text: str = None
 
+
 class ModelPath(ModelName):
-    huggingface_path: str
     endpoint_model_file: str
     endpoint_model_file_size: int
     license: Optional[ModelLicense] = None
 
-    _model_dir: Union[str|None] = None
-    _huggingface_model_info: Union[HFModelInfo|None] = None
-    _ollama_model_info: Union[OllamaModelInfo|None] = None
+    huggingface_path: Optional[str] = Field(default=None, description="Hugging Face repository path")
+    ollama_path: Optional[str] = Field(default=None, description="Ollama repository path")
+
+    _model_dir: Union[str | None] = None
+    _huggingface_file_info: Union[HfFileInfo | None] = None
+    _huggingface_model_info: Union[HFModelInfo | None] = None
+    _ollama_file_info: Union[OllamaManifest | None] = None
+    _ollama_model_info: Union[OllamaModelInfo | None] = None
+
+    @staticmethod
+    def model_dir_using_model_name(model_name: str) -> str:
+        return os.path.join(config_utils.rkllama_config.paths.models, model_name)
 
     @property
     def model_dir(self):
@@ -39,7 +49,7 @@ class ModelPath(ModelName):
                 default_relative_dir = self.model_name.replace(model_ext, '')
             else:
                 default_relative_dir = self.model_name
-            self._model_dir = os.path.join(config_utils.rkllama_config.paths.models, default_relative_dir)
+            self._model_dir = ModelPath.model_dir_using_model_name(model_name=default_relative_dir)
         return self._model_dir
 
     @property
@@ -101,13 +111,12 @@ class ModelPath(ModelName):
             return model_metadata.get("model_family", UNKNOWN_VAL_STR)
         return UNKNOWN_VAL_STR
 
-
     @staticmethod
-    def get_parameter_size(model_name: str)-> str | None:
+    def get_parameter_size(model_name: str) -> str | None:
         # Extract parameter size (e.g., 3B, 7B, 13B)
-        param_size_match = re.search(PARAM_SIZE_PATTERN, model_name)
-        if param_size_match:
-            size = param_size_match.group(1)
+        b_param_size_match = re.search(B_PARAM_SIZE_PATTERN, model_name)
+        if b_param_size_match:
+            size = b_param_size_match.group(1)
             # Convert to standard format (3B, 7B, 13B, etc)
             if "." in size:
                 # For sizes like 1.1B, 2.7B
@@ -115,10 +124,20 @@ class ModelPath(ModelName):
             else:
                 # For sizes like 3B, 7B
                 return f"{size}B"
+        m_param_size_match = re.search(M_PARAM_SIZE_PATTERN, model_name)
+        if m_param_size_match:
+            size = m_param_size_match.group(1)
+            # Convert to standard format (3M, 7M, 13M, etc)
+            if "." in size:
+                # For sizes like 1.1M, 2.7M
+                return f"{size}M"
+            else:
+                # For sizes like 3M, 7M
+                return f"{size}M"
         return None
 
     @staticmethod
-    def get_ollama_quant_level(model_name: str)-> str | None:
+    def get_ollama_quant_level(model_name: str) -> str | None:
         for quant_type, pattern in quant_patterns:
             if re.search(pattern, model_name, re.IGNORECASE):
                 # Use Ollama-style quantization name if available
@@ -181,25 +200,80 @@ class ModelPath(ModelName):
         return f"{endpoint_model_file}.{model_type.get_extension()}"
 
     @property
+    def huggingface_file_info_exists(self) -> bool:
+        from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+        if self._huggingface_file_info:
+            return True
+        huggingface_file_info_path = RkllamaStorageHelper.huggingface_file_info_path(self)
+        if huggingface_file_info_path is None:
+            return False
+        if os.path.exists(huggingface_file_info_path):
+            return self.huggingface_file_info is not None
+        return False
+
+    @property
+    def huggingface_file_info(self) -> HfFileInfo | None:
+        if not self.huggingface_path or "/" not in self.huggingface_path:
+            raise ValueError("Invalid huggingface path")
+
+        if self._huggingface_file_info:
+            return self._huggingface_file_info
+
+        from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+
+        huggingface_file_info_path = RkllamaStorageHelper.huggingface_file_info_path(self)
+        if huggingface_file_info_path is None:
+            return None
+
+        try:
+            if os.path.exists(huggingface_file_info_path):
+                self._huggingface_file_info = HfFileInfo.load(huggingface_file_info_path)
+                return self._huggingface_file_info
+        except Exception as e:
+            logger.exception(f"Error loading Huggingface file info: {str(e)}")
+            return None
+
+        # else...
+        try:
+            from core.model.storage_helpers.PullSupplier import Supplier
+            from core.model.storage_helpers.RKPullSupplier import RKPullSupplier
+
+            huggingface_pull_supplier: RKPullSupplier = RKPullSupplier()
+
+            # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.HUGGINGFACE
+            file_info, repo, model_type, error = huggingface_pull_supplier.file_info(
+                model_name=self.model_name, file=self.endpoint_file_file,
+                repo=None, model_type=self.model_type, supplier=Supplier.HUGGINGFACE)
+
+            if error:
+                logger.debug(f"Failed to get HUGGINGFACE data: {error}")
+                return None
+
+            self._huggingface_file_info = file_info
+            self._huggingface_file_info.save(RkllamaStorageHelper.huggingface_file_info_path(self))
+            return self._huggingface_file_info
+        except Exception as e:
+            logger.exception(f"Error fetching HUGGINGFACE model info: {str(e)}")
+            return None
+
+    @huggingface_file_info.setter
+    def huggingface_file_info(self, value: HfFileInfo):
+        self._huggingface_file_info = value
+
+    @property
     def huggingface_model_info_exists(self) -> bool:
         from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
         if self._huggingface_model_info:
             return True
-        elif os.path.exists(RkllamaStorageHelper.huggingface_model_info_path(self)):
+        huggingface_model_info_path = RkllamaStorageHelper.huggingface_model_info_path(self)
+        if huggingface_model_info_path is None:
+            return False
+        if os.path.exists(huggingface_model_info_path):
             return self.huggingface_model_info is not None
         return False
 
     @property
     def huggingface_model_info(self) -> HFModelInfo | None:
-        """
-        Fetch model metadata from Hugging Face API if available.
-
-        Args:
-            model_path: HuggingFace repository path (e.g., 'c01zaut/Qwen2.5-3B-Instruct-RK3588-1.1.4')
-
-        Returns:
-            Dictionary with enhanced model metadata or None if not available
-        """
         if not self.huggingface_path or "/" not in self.huggingface_path:
             raise ValueError("Invalid HuggingFace path")
 
@@ -209,7 +283,8 @@ class ModelPath(ModelName):
         try:
             from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
             if os.path.exists(RkllamaStorageHelper.huggingface_model_info_path(self)):
-                self._huggingface_model_info = HFModelInfo.load(RkllamaStorageHelper.huggingface_model_info_path(self))
+                self._huggingface_model_info = HFModelInfo.load(
+                    file_path=RkllamaStorageHelper.huggingface_model_info_path(self))
                 return self._huggingface_model_info
         except Exception as e:
             logger.exception(f"Error loading HF model info: {str(e)}")
@@ -217,105 +292,94 @@ class ModelPath(ModelName):
 
         # else...
         try:
-        # Extract repo_id from HUGGINGFACE_PATH
-            url = f"https://huggingface.co/api/models/{self.huggingface_path}"
-            response = requests.get(url, timeout=5)
+            from core.model.storage_helpers.PullSupplier import Supplier
+            from core.model.storage_helpers.RKPullSupplier import RKPullSupplier
 
-            if response.status_code == 200:
-                hf_data = response.json()
+            rk_pull_supplier: RKPullSupplier = RKPullSupplier()
 
-                # Process and enhance the metadata
-                if "tags" not in hf_data:
-                    hf_data["tags"] = []
+            # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.OLLAMA
 
-                # Extract additional info from readme if available
-                if "cardData" not in hf_data:
-                    hf_data["cardData"] = {}
+            model_file_info, file_info, repo, model_type, error = rk_pull_supplier.model_file_info(
+                model_name=self.model_name, file=self.endpoint_model_file,
+                repo=None, model_type=self.model_type,
+                file_info=self.huggingface_file_info,
+                supplier=Supplier.HUGGINGFACE)
 
-                # Try to extract parameter size from model name if not in cardData
-                if "params" not in hf_data["cardData"]:
-                    # Look for patterns like "7b", "3B", "1.5B" in model name or description
-                    size_value, size_unit, int_size_value = \
-                        int_parameters_size(content=self.huggingface_path + " " + (hf_data.get("description") or ""))
-                    hf_data["cardData"]["params"] = int(int_size_value)
-
-                # Extract important information from the description
-                description = hf_data.get("description", "")
-                if description:
-                    # Look for model details in the description
-                    quant_pattern = re.search(
-                        r"([qQ]\d+_\d+|int4|int8|fp16|4bit|8bit)", description
-                    )
-                    if quant_pattern:
-                        hf_data["quantization"] = quant_pattern.group(1)
-
-                    for arch_name, arch_value in MODEL_ARCHITECTURES.items():
-                        if arch_name.lower() in description.lower():
-                            hf_data["architecture"] = arch_value
-                            if arch_name.lower() not in hf_data["tags"]:
-                                hf_data["tags"].append(arch_name.lower())
-
-                # Try to extract language information
-                languages = []
-
-                for lang_name, lang_code in LANGUAGE_PATTERNS.items():
-                    if (
-                            lang_name.lower() in description.lower()
-                            or lang_name.lower() in " ".join(hf_data["tags"]).lower()
-                    ):
-                        if lang_name == "multilingual":
-                            # For multilingual models, add common languages
-                            languages.extend(LANGUAGE_MULTILINGUAL_LIST)
-                        elif lang_code and lang_code not in languages:
-                            languages.append(lang_code)
-
-                # If we found languages, add them
-                if languages:
-                    hf_data["languages"] = list(set(languages))  # Remove duplicates
-                elif "en" not in hf_data.get("languages", []):
-                    # Default to English if no languages detected
-                    hf_data["languages"] = LANGUAGE_DEFAULT
-
-                # Add RK tags if they exist
-                rk_patterns = RK_TAGS_LIST
-                for pattern in rk_patterns:
-                    if (
-                            pattern in self.huggingface_path.lower()
-                            or pattern in " ".join(hf_data["tags"]).lower()
-                            or pattern in description.lower()
-                    ):
-                        if "rockchip" not in hf_data["tags"]:
-                            hf_data["tags"].append("rockchip")
-                        if pattern not in hf_data["tags"] and pattern != "rockchip":
-                            hf_data["tags"].append(pattern)
-
-                # Add metadata about model capabilities
-                if 'sibling_models' in hf_data:
-                    for sibling in hf_data.get('sibling_models', []):
-                        if sibling.get('rfilename', '').endswith('.rkllm'):
-                            hf_data['has_rkllm'] = True
-                            break
-
-                # Extract license information
-                if "license" in hf_data and hf_data["license"]:
-
-                    license_id = hf_data["license"].lower()
-                    hf_data["license_name"] = LICENSE_NAME_MAPPING.get(license_id, hf_data["license"])
-                    hf_data["license_url"] = (
-                        f"https://huggingface.co/{self.huggingface_path}/blob/main/LICENSE"
-                    )
-
-                logger.debug(f"Enhanced model info from HF API: {self.huggingface_path}={hf_data}")
-
-                self._huggingface_model_info = HFModelInfo(**hf_data)
-                self._huggingface_model_info.save(RkllamaStorageHelper.huggingface_model_info_path(self))
-                return self._huggingface_model_info
-            else:
-                logger.debug(f"Failed to get HF data: {response.status_code}")
+            if error:
+                logger.debug(f"Failed to get HUGGINGFACE data: {error}")
                 return None
+
+            self._huggingface_model_info = model_file_info
+            self._huggingface_model_info.save(RkllamaStorageHelper.huggingface_model_info_path(self))
+            return self._huggingface_model_info
         except Exception as e:
-            logger.exception(f"Error fetching HF model info: {str(e)}")
+            logger.exception(f"Error fetching HUGGINGFACE model info: {str(e)}")
             return None
+
+    @huggingface_model_info.setter
+    def huggingface_model_info(self, value: HFModelInfo):
+        self._huggingface_model_info = value
+
+    @property
+    def ollama_file_info_exists(self) -> bool:
+        from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+        if self._ollama_file_info:
+            return True
+        ollama_file_info_path = OllamaStorageHelper.ollama_file_info_path(self)
+        if ollama_file_info_path is None:
+            return False
+        if os.path.exists(ollama_file_info_path):
+            return self.ollama_file_info is not None
+        return False
+
+    @property
+    def ollama_file_info(self) -> OllamaManifest | None:
+        if not self.ollama_path or "/" not in self.ollama_path:
+            raise ValueError("Invalid ollama path")
+
+        if self._ollama_file_info:
+            return self._ollama_file_info
+
+        from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+
+        ollama_file_info_path = OllamaStorageHelper.ollama_file_info_path(self)
+        if ollama_file_info_path is None:
+            return None
+
+        try:
+            if os.path.exists(ollama_file_info_path):
+                self._ollama_file_info = OllamaManifest.load(ollama_file_info_path)
+                return self._ollama_file_info
+        except Exception as e:
+            logger.exception(f"Error loading Ollama file info: {str(e)}")
+            return None
+
+        # else...
+        try:
+            from core.model.storage_helpers.PullSupplier import Supplier
+            from core.model.storage_helpers.OllamaPullSupplier import OllamaPullSupplier
+
+            ollama_pull_supplier: OllamaPullSupplier = OllamaPullSupplier()
+
+            # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.OLLAMA
+            file_info, repo, model_type, error = ollama_pull_supplier.file_info(
+                model_name=self.model_name, file=self.endpoint_file_file,
+                repo=None, model_type=self.model_type, supplier=Supplier.OLLAMA)
+
+            if error:
+                logger.debug(f"Failed to get OLLAMA data: {error}")
+                return None
+
+            self._ollama_file_info = file_info
+            self._ollama_file_info.save(OllamaStorageHelper.ollama_file_info_path(self))
+            return self._ollama_file_info
+        except Exception as e:
+            logger.exception(f"Error fetching OLLAMA model info: {str(e)}")
+            return None
+
+    @ollama_file_info.setter
+    def ollama_file_info(self, value: OllamaManifest):
+        self._ollama_file_info = value
 
     @property
     def ollama_model_info_exists(self) -> bool:
@@ -325,21 +389,14 @@ class ModelPath(ModelName):
         ollama_model_info_path = OllamaStorageHelper.ollama_model_info_path(self)
         if ollama_model_info_path is None:
             return False
-        if os.path.exists(ollama_model_info_path):
+        if isinstance(ollama_model_info_path, str):
+            ollama_model_info_path = Path(ollama_model_info_path)
+        if ollama_model_info_path.exists():
             return self.ollama_model_info is not None
         return False
 
     @property
     def ollama_model_info(self) -> OllamaModelInfo | None:
-        """
-        Fetch model metadata from Hugging Face API if available.
-
-        Args:
-            model_path: ollama repository path (e.g., 'c01zaut/Qwen2.5-3B-Instruct-RK3588-1.1.4')
-
-        Returns:
-            Dictionary with enhanced model metadata or None if not available
-        """
         if not self.ollama_path or "/" not in self.ollama_path:
             raise ValueError("Invalid ollama path")
 
@@ -353,7 +410,9 @@ class ModelPath(ModelName):
             return None
 
         try:
-            if os.path.exists(ollama_model_info_path):
+            if isinstance(ollama_model_info_path, str):
+                ollama_model_info_path = Path(ollama_model_info_path)
+            if ollama_model_info_path.exists():
                 self._ollama_model_info = OllamaModelInfo.load(ollama_model_info_path)
                 return self._ollama_model_info
         except Exception as e:
@@ -362,25 +421,33 @@ class ModelPath(ModelName):
 
         # else...
         try:
-            formatted_model_name = self.ollama_path.replace(':', '/')
-            url = f"https://ollama.com/api/registry/{formatted_model_name}/manifest"
+            from core.model.storage_helpers.PullSupplier import Supplier
+            from core.model.storage_helpers.OllamaPullSupplier import OllamaPullSupplier
 
-            response = requests.get(url, timeout=5)
+            ollama_pull_supplier: OllamaPullSupplier = OllamaPullSupplier()
 
-            if response.status_code == 200:
-                ollama_data = response.json()
+            # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.OLLAMA
 
-                logger.debug(f"Enhanced model info from OLLAMA API: {self.ollama_path}={ollama_data}")
+            model_file_info, file_info, repo, model_type, error = ollama_pull_supplier.model_file_info(
+                model_name=self.model_name, file=self.endpoint_model_file,
+                repo=None, model_type=self.model_type,
+                file_info=self.ollama_file_info,
+                supplier=Supplier.OLLAMA)
 
-                self._ollama_model_info = OllamaModelInfo(**ollama_data)
-                self._ollama_model_info.save(OllamaStorageHelper.ollama_model_info_path(self))
-                return self._ollama_model_info
-            else:
-                logger.debug(f"Failed to get OLLAMA data: {response.status_code}")
+            if error:
+                logger.debug(f"Failed to get OLLAMA data: {error}")
                 return None
+
+            self._ollama_model_info = model_file_info
+            self._ollama_model_info.save(OllamaStorageHelper.ollama_model_info_path(self))
+            return self._ollama_model_info
         except Exception as e:
             logger.exception(f"Error fetching OLLAMA model info: {str(e)}")
             return None
+
+    @ollama_model_info.setter
+    def ollama_model_info(self, value: OllamaModelInfo):
+        self._ollama_model_info = value
 
     def lock_model(self) -> int:
         """Lock the model to prevent concurrent access."""
@@ -464,17 +531,29 @@ def GetModels():
 
 
 def int_parameters_size(content: str):
-    param_pattern = re.search(
-        PARAM_SIZE_PATTERN,
+    b_param_pattern = re.search(
+        B_PARAM_SIZE_PATTERN,
         content,
     )
-    if param_pattern:
+    if b_param_pattern:
         int_size_value = None
-        size_value = float(param_pattern.group(1))
-        size_unit = param_pattern.group(2).lower()
+        size_value = float(b_param_pattern.group(1))
+        size_unit = b_param_pattern.group(2).lower()
         # Convert to billions if needed
-        if size_unit == "b":
+        if size_unit == "b" or size_unit == "B":
             int_size_value = int(size_value * 1_000_000_000)
-        return size_value, size_unit, int_size_value
+        return size_value, size_unit.upper(), int_size_value
+    m_param_pattern = re.search(
+        M_PARAM_SIZE_PATTERN,
+        content,
+    )
+    if m_param_pattern:
+        int_size_value = None
+        size_value = float(m_param_pattern.group(1))
+        size_unit = m_param_pattern.group(2).lower()
+        # Convert to billions if needed
+        if size_unit == "m" or size_unit == "M":
+            int_size_value = int(size_value * 1_000_000)
+        return size_value, size_unit.upper(), int_size_value
     else:
         return None, None, None

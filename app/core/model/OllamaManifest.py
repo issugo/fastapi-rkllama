@@ -1,6 +1,9 @@
+import json
+import os.path
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Tuple, Any
 
+import requests
 from pydantic import BaseModel
 
 """
@@ -42,6 +45,10 @@ sample for devstrall:latest
 
 """
 
+VND_OLLAMA_IMAGE_SYSTEM = "application/vnd.ollama.image.system"
+VND_OLLAMA_IMAGE_MODEL = "application/vnd.ollama.image.model"
+
+
 class OllamaManifestLayer(BaseModel):
     mediaType: str
     digest: str
@@ -53,7 +60,7 @@ class OllamaManifestLayer(BaseModel):
             'from_': 'from'  # Map Python field 'from_' to JSON field 'from'
         }
 
-class OllamaManifestModelLayer:
+class OllamaManifestModelLayer(OllamaManifestLayer):
     pass
     # mediaType: str = "application/vnd.ollama.image.model"
     # with from
@@ -81,16 +88,52 @@ class OllamaManifest(BaseModel):
     config: OllamaManifestConfig
     layers: List[OllamaManifestLayer]
 
+    _ollama_manifest_model_layer: OllamaManifestModelLayer | None = None
+
+    @property
+    def ollama_manifest_model_layer(self):
+        if self._ollama_manifest_model_layer is None:
+            for layer in self.layers:
+                if layer.mediaType == VND_OLLAMA_IMAGE_MODEL:
+                    self._ollama_manifest_model_layer = OllamaManifestModelLayer.model_validate_json(layer.model_dump_json())
+                    break
+        return self._ollama_manifest_model_layer
+
+    @property
+    def size(self):
+        return int(self.ollama_manifest_model_layer.size)
+
+    @property
+    def lfs_sha256(self):
+        digest: str = self.ollama_manifest_model_layer.digest
+        if digest.startswith("sha256:"):
+            return digest[7:]
+        raise ValueError(f"digest={digest} is not a sha256 digest")
+
+    @property
+    def ollama_model_config_path(self) -> str:
+        if self.config:
+            from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+            return str(OllamaStorageHelper.ollama_model_info_path(
+                model_path=None,
+                ollama_manifest=self
+            ))
+        raise ValueError(f"missing config in manifest")
+
     @classmethod
     def create(cls):
         return cls(**{})
 
     @classmethod
-    def load(cls, ollama_manifest_path: Path):
+    def load(cls, ollama_manifest_path: str | Path):
+        if isinstance(ollama_manifest_path, str):
+            ollama_manifest_path = Path(ollama_manifest_path)
         json_string = ollama_manifest_path.read_text()
         return OllamaManifest.model_validate_json(json_string)
 
-    def save(self, ollama_manifest_path: Path):
+    def save(self, ollama_manifest_path: str | Path):
         """ write in <MODELS>/manifests/registry/library/<MODEL_NAME>:<TAG>"""
         with open(ollama_manifest_path, "w") as f:
             f.write(self.model_dump_json(indent=2))
+
+

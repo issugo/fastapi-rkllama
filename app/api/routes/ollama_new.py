@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends
-from starlette.requests import Request
-from fastapi.responses import StreamingResponse, JSONResponse
-from typing import Optional
+from logging import Logger
+from typing import Any, Tuple
 
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from starlette.requests import Request
+
+from api import logger
 from core.api.parameters.ollama_requests import (
     OllamaGenerateRequest,
     OllamaChatRequest,
@@ -13,7 +16,6 @@ from core.api.parameters.ollama_requests import (
     OllamaCopyRequest,
     OllamaDeleteRequest,
 )
-
 from core.api.parameters.ollama_responses import (
     OllamaGenerateResponse,
     OllamaChatResponse,
@@ -26,8 +28,11 @@ from core.api.parameters.ollama_responses import (
     OllamaCopyResponse,
     OllamaDeleteResponse,
 )
-
-DEFAULT_CONTENT_TYPE = "application/x-ndjson"
+from core.model.ModelFile import ModelFileInfo, ModelFile
+from core.model.ModelInfo import OllamaModelInfo
+from core.model.OllamaManifest import OllamaManifest
+from core.model.storage_helpers.OllamaPullSupplier import OllamaPullSupplier
+from core.model.storage_helpers.model_pull import Supplier
 
 router = APIRouter(tags=["ollama"])
 
@@ -193,60 +198,55 @@ async def show_model(request: Request, name: str):
 
 
 @router.post("/api/pull", response_model=OllamaPullResponse)
-async def pull_model(request: Request, data: OllamaPullRequest):
+async def pull_model(request: Request, oll_pull_request: OllamaPullRequest):
     """
     Pull a model from a registry.
 
     Downloads a model from the Ollama library or a specified registry.
-    If stream is set to true, it will return a streaming response with progress updates.
+    If stream parameter is set to true, it will return a streaming response with progress updates.
     """
 
-    from core.model.storage_helpers.model_pull import PullSupplier, pull_model, pull_model_stream
+    from core.model.storage_helpers.model_pull import pull_model, pull_model_stream
 
-    splitted = data.name.split(":")
+    splitted = oll_pull_request.name.split(":")
 
-    # TODO: define class OllamaPullSupplier(PullSupplier)
+    class LocalOllamaPullSupplier(OllamaPullSupplier):
 
-    if data.stream:
-        # TODO: invoke pull_model_stream(request, pull_supplier)
-        # Return a streaming response with progress updates
-        async def pull_stream():
-            yield OllamaPullResponse(
-                status="downloading model",
-                digest="sha256:abc123",
-                total=5_000_000_000,
-                completed=1_000_000_000,
-            ).model_dump_json().encode() + b"\n"
+        @property
+        def logger(self) -> Logger:
+            return logger
 
-            yield OllamaPullResponse(
-                status="downloading model",
-                digest="sha256:abc123",
-                total=5_000_000_000,
-                completed=3_000_000_000,
-            ).model_dump_json().encode() + b"\n"
+        def check_params(self) -> Any | None:
+            if len(splitted) < 2:
+                return self.error(f"Invalid path '{oll_pull_request.model}'")
+            return None
 
-            yield OllamaPullResponse(
-                status="verifying model",
-                digest="sha256:abc123",
-                total=5_000_000_000,
-                completed=5_000_000_000,
-            ).model_dump_json().encode() + b"\n"
+        def model_data(self) -> Tuple[str, str, str|None, Supplier]:
+            model_name = splitted[0]
+            # file contains the model tag when Ollama model
+            file = splitted[1]
+            # repo is None when Ollama model
+            repo = None
+            return model_name, file, repo, Supplier.OLLAMA
 
-            yield OllamaPullResponse(
+
+    if oll_pull_request.stream:
+        return pull_model_stream(request=request, pull_supplier=LocalOllamaPullSupplier())
+    else:
+        error_or_digest = pull_model(request=request, pull_supplier=LocalOllamaPullSupplier())
+        # Non-streaming response
+        if error_or_digest:
+            if error_or_digest.startswith("Error:"):
+                return OllamaPullResponse(
+                    status=f"{error_or_digest}",
+                )
+            return OllamaPullResponse(
+                    status="success",
+                    digest=f"sha256:{error_or_digest}",
+                )
+        return OllamaPullResponse(
                 status="success",
-                digest="sha256:abc123",
-            ).model_dump_json().encode() + b"\n"
-
-        return StreamingResponse(pull_stream(), media_type="application/json")
-
-    # TODO: error=pull_model(request, pull_supplier)
-    # TODO: if error then response with error, else return succes response
-
-    # Non-streaming response
-    return OllamaPullResponse(
-        status="success",
-        digest="sha256:abc123",
-    )
+            )
 
 
 @router.post("/api/push", response_model=OllamaPushResponse)

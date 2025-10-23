@@ -29,7 +29,7 @@ class RKLLAMAConfig(BaseModel):
 
     @property
     def config(self) -> dict:
-        return self.__dict__
+        return self.model_dump()
 
     def __init__(self, **data: Any):
         super().__init__(**data)
@@ -296,7 +296,7 @@ class RKLLAMAConfig(BaseModel):
         # Add all configuration values
         for section, values in self.config.items():
             lines.append(f"# {section.upper()} configuration")
-            for key, value in values.__dict__.items():
+            for key, value in (values if isinstance(values, dict) else values.__dict__).items():
                 # Convert to shell variable format
                 env_var = f"RKLLAMA_{section.upper()}_{key.upper()}"
                 # Convert typed values to string representation for shell

@@ -1,16 +1,20 @@
-from typing import get_type_hints, Any
+import re
+from typing import get_type_hints, Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from core.model import logger
 
 from core.config.DefaultModelConfig import DefaultModelConfig
 from core.model.ModelMetadata import SimpleModelMetadata
 from core.model.ModelPath import ModelPath
+from core.model.models_constants import B_PARAM_SIZE_PATTERN, M_PARAM_SIZE_PATTERN
 
 
 class MinimalModelConfig(BaseModel):
-    FROM: str
-    HUGGINGFACE_PATH: str
-    SYSTEM: str
+    FROM: str = Field(description="Path to the model file or docker image format (<name>:<tag>)")
+    HUGGINGFACE_PATH: Optional[str] = Field(default=None, description="Hugging Face repository path")
+    SYSTEM: str = Field(description="System prompt")
 
     def dump(self, backend_model_file: str):
         with open(backend_model_file, "w") as f:
@@ -18,7 +22,7 @@ class MinimalModelConfig(BaseModel):
                 f.write(f"{attr.upper()}={self.__dict__[attr]}")
 
 class MinimalTemperedModelConfig(MinimalModelConfig):
-    temperature: float
+    temperature: float = Field(description="model temperature as float")
 
 class ModelConfig(MinimalTemperedModelConfig):
     enable_thinking: bool
@@ -69,11 +73,24 @@ class ModelConfig(MinimalTemperedModelConfig):
         data: dict = model_path.__dict__
 
         if "endpoint_model_file" in data:
-            data["FROM"] = data["endpoint_model_file"]
-            del data["endpoint_model_file"]
-            from_ext = data["FROM"].split(".")[-1]
-            if f".{from_ext}" != model_path.model_type.get_extension():
-                raise ValueError(f"Model type mismatch: FROM extension {from_ext} != {model_path.model_type}")
+            b_param_pattern = re.search(
+                B_PARAM_SIZE_PATTERN,
+                data["endpoint_model_file"],
+            )
+            m_param_pattern = re.search(
+                M_PARAM_SIZE_PATTERN,
+                data["endpoint_model_file"],
+            )
+
+            if b_param_pattern or m_param_pattern:
+                logger.warning(f"Model {data["endpoint_model_file"]} does not have any extension (is a model param size).")
+                data["FROM"] = f"{data["model_name"]}:{data["endpoint_model_file"]}"
+            else:
+                data["FROM"] = data["endpoint_model_file"]
+                del data["endpoint_model_file"]
+                from_ext = data["FROM"].split(".")[-1]
+                if f".{from_ext}" != model_path.model_type.get_extension():
+                    raise ValueError(f"Model type mismatch: FROM extension {from_ext} != {model_path.model_type}")
 
         if "huggingface_path" in data:
             data["HUGGINGFACE_PATH"] = data["huggingface_path"]

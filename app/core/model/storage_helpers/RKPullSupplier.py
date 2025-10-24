@@ -4,8 +4,10 @@ from typing import Tuple, Any
 from huggingface_hub import HfFileSystem, hf_hub_url
 
 from core.config import config_utils
+from core.config.config_utils import get_settings
 from core.model.HfFileInfo import HfFileInfo
-from core.model.ModelFile import ModelFileInfo, ModelFile
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelInfo import HFModelInfo
 from core.model.ModelMetadata import SimpleModelMetadata
 from core.model.ModelType import ModelType
@@ -184,7 +186,7 @@ class RKPullSupplier(PullSupplier):
         self.logger.debug(f"generic_model_file_info_dump={generic_model_file_info_dump}")
         generic_model_file: ModelFile = ModelFile.create(
             model_file_info=generic_model_file_info,
-            default_model_config=config_utils.rkllama_config.model)
+            default_model_config=get_settings().model)
         self.logger.debug(f"generic_model_file={generic_model_file.model_dump_json()}")
         self.logger.debug(
             f"generic_model_file.simple_model_metadata={generic_model_file.simple_model_metadata.model_dump_json()}")

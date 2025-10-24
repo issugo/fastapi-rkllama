@@ -28,7 +28,8 @@ from core.api.parameters.ollama_responses import (
     OllamaCopyResponse,
     OllamaDeleteResponse,
 )
-from core.model.ModelFile import ModelFileInfo, ModelFile
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelInfo import OllamaModelInfo
 from core.model.OllamaManifest import OllamaManifest
 from core.model.storage_helpers.OllamaPullSupplier import OllamaPullSupplier

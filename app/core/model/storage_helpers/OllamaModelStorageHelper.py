@@ -2,7 +2,9 @@ import os
 from pathlib import Path
 from typing import Tuple
 
-from core.model.ModelFile import ModelFile, ModelFileInfo
+from core.config.config_utils import get_settings
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelPath import ModelPath
 from core.model.storage_helpers import logger as pkg_logger
 from core.model.storage_helpers.StorageHelper import StorageHelper
@@ -30,8 +32,7 @@ class OllamaModelStorageHelper(StorageHelper):
 
     @staticmethod
     def blobs_dir():
-        from core.config import config_utils
-        blobs_dir = os.path.join(config_utils.rkllama_config.paths.models, BLOBS)
+        blobs_dir = os.path.join(get_settings().paths.models, BLOBS)
         os.makedirs(blobs_dir, exist_ok=True)
         return blobs_dir
 

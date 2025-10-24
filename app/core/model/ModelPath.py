@@ -6,6 +6,8 @@ from typing import Union, Optional
 from pydantic import BaseModel, Field
 
 from core.config import config_utils
+from core.config.config_utils import get_settings
+from core.config.warnings import deprecated
 from core.model import logger
 from core.model.HfFileInfo import HfFileInfo
 from core.model.ModelInfo import ModelDetails, HFModelInfo, OllamaModelInfo
@@ -14,7 +16,7 @@ from core.model.ModelType import ModelType
 from core.model.OllamaManifest import OllamaManifest
 from core.model.converter.quantization_constants import quant_patterns, quant_mapping, ollama_quant_mapping
 from core.model.models_constants import MODELFILE_NAME, B_PARAM_SIZE_PATTERN, \
-    UNKNOWN_VAL_STR, M_PARAM_SIZE_PATTERN
+    UNKNOWN_VAL_STR, M_PARAM_SIZE_PATTERN, MODELS_STORAGE_DIR
 
 
 class ModelLicense(BaseModel):
@@ -39,10 +41,10 @@ class ModelPath(ModelName):
 
     @staticmethod
     def model_dir_using_model_name(model_name: str) -> str:
-        return os.path.join(config_utils.rkllama_config.paths.models, model_name)
+        return os.path.join(get_settings().paths.models, model_name)
 
     @property
-    def model_dir(self):
+    def model_dir(self) -> str:
         if not self._model_dir:
             model_ext = self.model_type.get_extension()
             if model_ext:
@@ -51,6 +53,10 @@ class ModelPath(ModelName):
                 default_relative_dir = self.model_name
             self._model_dir = ModelPath.model_dir_using_model_name(model_name=default_relative_dir)
         return self._model_dir
+
+    @property
+    def model_dir_path(self) -> Path:
+        return Path(self.model_dir)
 
     @property
     def endpoint_model_file_path(self):
@@ -65,6 +71,7 @@ class ModelPath(ModelName):
             return super().model_type
         return None
 
+    @deprecated("doesn't take care of new sha storage")
     @property
     def model_exists(self) -> bool:
         if os.path.exists(self.model_dir):
@@ -74,23 +81,33 @@ class ModelPath(ModelName):
                 return self.model_type.get_extension() == f".{self.endpoint_model_file.split(".")[-1]}"
         return False
 
+    @staticmethod
+    def __modelfile_path(model_name: str) -> Path:
+        return Path(ModelPath.model_dir_using_model_name(model_name)) / MODELFILE_NAME
+
     @property
-    def modelfile(self):
-        return os.path.join(self.model_dir, MODELFILE_NAME)
+    def modelfile_path(self) -> Path:
+        return self.model_dir_path / MODELFILE_NAME
+
+    @staticmethod
+    def __modelfile_exists(model_name: str) -> bool:
+        if Path(ModelPath.model_dir_using_model_name(model_name)).exists():
+            return ModelPath.__modelfile_path(model_name).exists()
+        return False
 
     @property
     def modelfile_exists(self) -> bool:
-        if os.path.exists(self.model_dir):
-            return os.path.isfile(self.modelfile)
+        if self.model_dir_path.exists():
+            return self.modelfile_path.is_file()
         return False
 
     @property
     def modelfile_match(self) -> bool:
         if self.modelfile_exists:
-            with open(self.modelfile, "r") as f:
+            with open(self.modelfile_path, "r") as f:
                 for line in f.readlines():
-                    if line.startswith("FROM="):
-                        mfile_endpoint_model_file = line.split("=")[1].strip()
+                    if line.startswith("FROM "):
+                        mfile_endpoint_model_file = line.split(" ", maxsplit=1)[1].strip()
                         if mfile_endpoint_model_file.endswith(self.endpoint_model_file):
                             return True
         return False

@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
 
-from core.model.ModelFile import ModelFile, ModelFileInfo
+from core.config.config_utils import get_settings
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelPath import ModelPath
 from core.model.storage_helpers import logger
 from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
@@ -28,8 +30,7 @@ class OllamaStorageHelper(StorageHelper):
 
     @staticmethod
     def manifests_dir():
-        from core.config import config_utils
-        manifests_dir = os.path.join(config_utils.rkllama_config.paths.models, MANIFESTS)
+        manifests_dir = os.path.join(get_settings().paths.models, MANIFESTS)
         os.makedirs(manifests_dir, exist_ok=True)
         return manifests_dir
 
@@ -43,7 +44,7 @@ class OllamaStorageHelper(StorageHelper):
 
     @property
     def model_name(self):
-        return self.__class__.__model_name(self.model_file)
+        return self.__class__.__model_name(self.model_file.model_file_info)
 
     @classmethod
     def __model_tag(cls, model_path: ModelPath):
@@ -51,7 +52,7 @@ class OllamaStorageHelper(StorageHelper):
 
     @property
     def model_tag(self):
-        return self.__class__.__model_tag(self.model_file)
+        return self.__class__.__model_tag(self.model_file.model_file_info)
 
     @classmethod
     def __manifest_dir(cls, model_path: ModelPath):
@@ -60,7 +61,7 @@ class OllamaStorageHelper(StorageHelper):
     @property
     def manifest_dir(self) -> Path:
         if self._manifest_dir is None:
-            self._manifest_dir = self.__class__.__manifest_dir(self.model_file)
+            self._manifest_dir = self.__class__.__manifest_dir(self.model_file.model_file_info)
         return self._manifest_dir
 
     @classmethod
@@ -70,7 +71,7 @@ class OllamaStorageHelper(StorageHelper):
     @property
     def manifest_filename(self) -> str:
         if self._manifest_filename is None:
-            self._manifest_filename = self.__class__.__manifest_filename(self.model_file)
+            self._manifest_filename = self.__class__.__manifest_filename(self.model_file.model_file_info)
         return self._manifest_filename
 
     @classmethod
@@ -83,7 +84,7 @@ class OllamaStorageHelper(StorageHelper):
     @property
     def manifest_path(self) -> Path:
         if self._manifest_path is None:
-            self._manifest_path = Path(self.__class__.__manifest_path(self.model_file))
+            self._manifest_path = Path(self.__class__.__manifest_path(self.model_file.model_file_info))
         return self._manifest_path
 
     @staticmethod
@@ -146,7 +147,7 @@ class OllamaStorageHelper(StorageHelper):
             self.logger.error(f"Error cleaning model link: {str(e)}")
 
         try:
-            ollama_file_info_file_path = OllamaStorageHelper.ollama_file_info_path(self.model_file)
+            ollama_file_info_file_path = OllamaStorageHelper.ollama_file_info_path(self.model_file.model_file_info)
             if ollama_file_info_file_path.exists():
                 ollama_file_info_file_path.unlink()
         except Exception as e:
@@ -154,7 +155,7 @@ class OllamaStorageHelper(StorageHelper):
 
         try:
             ollama_model_info_file_path=OllamaStorageHelper.ollama_model_info_path(
-                model_path=self.model_file,
+                model_path=self.model_file.model_file_info,
                 ollama_manifest=generic_model_file_info.ollama_file_info)
             if ollama_model_info_file_path.exists():
                 ollama_model_info_file_path.unlink()
@@ -165,13 +166,13 @@ class OllamaStorageHelper(StorageHelper):
     def store(self):
 
         if self.model_file.ollama_model_info_exists:
-            file_path: Path = OllamaStorageHelper.ollama_model_info_path(self.model_file)
+            file_path: Path = OllamaStorageHelper.ollama_model_info_path(self.model_file.model_file_info)
             if not file_path.parent.exists():
                 file_path.parent.mkdir(parents=True)
             self.model_file.ollama_model_info.save(file_path=file_path)
 
         if self.model_file.ollama_file_info_exists:
-            file_path: Path = OllamaStorageHelper.ollama_file_info_path(self.model_file)
+            file_path: Path = OllamaStorageHelper.ollama_file_info_path(self.model_file.model_file_info)
             if not file_path.parent.exists():
                 file_path.parent.mkdir(parents=True)
             self.model_file.ollama_file_info.save(ollama_manifest_path=file_path)

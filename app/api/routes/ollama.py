@@ -81,7 +81,7 @@ Advanced parameters (optional):
 
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
-            model_thinking_enabled = get_property_modelfile(model_name, 'ENABLE_THINKING', core.config.config_utils.get_path("models"))
+            model_thinking_enabled = ModelFile.get_property_modelfile(model_name, 'ENABLE_THINKING')
             enable_thinking = strtobool(model_thinking_enabled) if bool(
                 model_thinking_enabled) else False  # Disabled by default
 
@@ -261,8 +261,8 @@ async def chat_ollama(request: Request):
 
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
-            model_thinking_enabled = get_property_modelfile(
-                model_name, "ENABLE_THINKING", core.config.config_utils.get_path("models")
+            model_thinking_enabled = ModelFile.get_property_modelfile(
+                model_name, "ENABLE_THINKING"
             )
             enable_thinking = (
                 strtobool(model_thinking_enabled)

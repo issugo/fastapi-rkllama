@@ -43,23 +43,14 @@ app.include_router(api_router)
 
 # Launch function
 def main():
-    # Define the arguments for the launch function
-    parser = argparse.ArgumentParser(
-        description="RKLLM server initialization with configurable options."
-    )
-    parser.add_argument("--processor", type=str, help="Processor: rk3588/rk3576.")
-    parser.add_argument("--port", type=str, help="Port for the server")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--config", type=str, help="supplementary config file path")
-    args = parser.parse_args()
-
-    config_utils.rkllama_config = RKLLAMAConfig(app_root=os.getenv("RKLLAMA_ROOT"), args=args)
+    settings = config_utils.get_settings()
+    print(settings)
 
     # Set debug mode if specified in config - using the improved method
     global DEBUG_MODE
-    DEBUG_MODE = config_utils.rkllama_config.is_debug_mode()
+    DEBUG_MODE = settings.is_debug_mode()
 
-    logging_setup(Path(config_utils.rkllama_config.get_path("logs")), DEBUG_MODE)
+    logging_setup(Path(settings.get_path("logs")), DEBUG_MODE)
 
     # Only include debug endpoint if in debug mode
     if DEBUG_MODE:
@@ -71,14 +62,14 @@ def main():
     if DEBUG_MODE:
         logger.setLevel(logging.DEBUG)
         logger.warning("Debug mode enabled")
-        config_utils.rkllama_config.display()
+        settings.display()
         os.environ["RKLLAMA_DEBUG"] = "1"  # Explicitly set for subprocess consistency
 
     # Get port from config
-    port = config_utils.rkllama_config.server.port
+    port = settings.server.port
 
     # Check the processor
-    processor = config_utils.rkllama_config.platform.processor.name
+    processor = settings.platform.processor.name
     if not processor:
         logger.error("Processor not configured")
         sys.exit(1)
@@ -89,7 +80,7 @@ def main():
             )
             sys.exit(1)
         logger.info(f"Setting the frequency for the {processor} platform...")
-        library_path = os.path.join(config_utils.rkllama_config.get_path("lib"), f"fix_freq_{processor}.sh")
+        library_path = os.path.join(settings.get_path("lib"), f"fix_freq_{processor}.sh")
 
         # Pass debug flag as parameter to the shell script
         debug_param = "1" if DEBUG_MODE else "0"
@@ -101,13 +92,9 @@ def main():
 
     # Start the API server with the chosen port
     logger.info(f"Starting the API at http://localhost:{port}")
-
-    # Set Flask debug mode to match our debug flag
-    ## flask_debug = config.is_debug_mode()
-    ## app.run(host=config.get("server", "host", "0.0.0.0"), port=int(port), threaded=True, debug=flask_debug)
     uvicorn.run(
         app,
-        host=config_utils.rkllama_config.server.host,
+        host=settings.server.host,
         port=int(port),
         log_level="debug",
     )

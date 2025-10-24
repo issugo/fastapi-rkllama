@@ -2,6 +2,7 @@ import json
 import os
 import re
 from enum import Enum
+from pathlib import Path
 
 from pydantic_core import from_json
 from typing import Optional, List, Tuple, Any
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from core.backends.backend import BACKEND_SUPPORTED_LIB_VERSION
 from core.config.PlatformConfig import PlatformProcessor
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelInfo import ModelDetails, HFModelInfo, OllamaModelInfo
 from core.model.ModelPath import ModelPath, int_parameters_size
 from core.model.ModelType import ModelType
@@ -24,7 +26,12 @@ class ModelMetadataFormat(str, Enum):
     COMPLETE = "complete"
 
     @staticmethod
-    def get_format(metadata_path: str):
+    def get_format(metadata_path: str | Path):
+        if not metadata_path:
+            return None
+        if isinstance(metadata_path, Path):
+            metadata_path = str(metadata_path)
+
         if not os.path.isfile(metadata_path):
             return None
 
@@ -37,7 +44,9 @@ class ModelMetadataFormat(str, Enum):
             else:
                 return ModelMetadataFormat.SIMPLE
 
-METADATA_FILENAME="metadata.json"
+
+METADATA_FILENAME = "metadata.json"
+
 
 class ModelMetadataParameters(BaseModel):
     temperature: float = 0.7
@@ -75,7 +84,7 @@ class ModelMetadata(BasicModelMetadata):
             raise
 
     @classmethod
-    def load(cls, metadata_path: str):
+    def load(cls, metadata_path: str | Path):
         """
         Load model metadata from a JSON file.
 
@@ -89,7 +98,7 @@ class ModelMetadata(BasicModelMetadata):
             raise ValueError("Metadata file is not in the correct format (cannot be SIMPLE).")
 
         try:
-            with open(metadata_path, "r") as f:
+            with open(str(metadata_path), "r") as f:
                 return ModelMetadata.model_validate(from_json(json.load(f), allow_partial=True))
 
         except Exception as e:
@@ -110,10 +119,10 @@ class SimpleModelMetadata(BaseModel):
     temperature: float
     model_type: Optional[ModelType]
 
-
     @staticmethod
     def get_metadata_fields():
-        return ["name", "architecture", "quantization", "parameters", "context_length", "system_prompt", "temperature", "model_type"]
+        return ["name", "architecture", "quantization", "parameters", "context_length", "system_prompt", "temperature",
+                "model_type"]
 
     # model_name=Qwen3-1.7B-rk3588-1.2.1-unsloth-16k,
     @staticmethod
@@ -145,12 +154,13 @@ class SimpleModelMetadata(BaseModel):
                     model_tags.append(rk_tag)
                     model_details.update({'architecture': rk_tag})
                     start_pos += 1
-                    if len(splitted) > start_pos+1:
-                        lib_vers_match = re.search(r"(\d+\.\d+\.\d+)", splitted[start_pos+1])
+                    if len(splitted) > start_pos + 1:
+                        lib_vers_match = re.search(r"(\d+\.\d+\.\d+)", splitted[start_pos + 1])
                         if lib_vers_match:
                             lib_vers = lib_vers_match.group(1)
                             if lib_vers not in BACKEND_SUPPORTED_LIB_VERSION.get(founded_rk_tag, []):
-                                raise ValueError(f"Library version {lib_vers} is not supported for {founded_rk_tag} backend.")
+                                raise ValueError(
+                                    f"Library version {lib_vers} is not supported for {founded_rk_tag} backend.")
                             else:
                                 model_tags.append(lib_vers)
                             start_pos += 1
@@ -192,7 +202,8 @@ class SimpleModelMetadata(BaseModel):
 
     @staticmethod
     def parse_splitted_for_model_family(splitted: List[str], start_pos: int,
-            model_metadata: dict, model_details: dict, model_tags: List[str]) -> Tuple[dict, dict, List[str], int]:
+                                        model_metadata: dict, model_details: dict, model_tags: List[str]) -> Tuple[
+        dict, dict, List[str], int]:
         new_pos = start_pos
         if len(splitted) > start_pos:
             if MODEL_SPECS.get(splitted[start_pos].split('.')[0].lower()):
@@ -202,15 +213,15 @@ class SimpleModelMetadata(BaseModel):
                 model_details.update({'model_family': name.split('.')[0]})
                 new_pos += 1
 
-        if new_pos == start_pos and len(splitted) > start_pos+1:
-            if MODEL_SPECS.get(f"{splitted[start_pos]}-{splitted[start_pos+1]}".lower()):
-                name = f"{splitted[start_pos]}-{splitted[start_pos+1]}".lower()
+        if new_pos == start_pos and len(splitted) > start_pos + 1:
+            if MODEL_SPECS.get(f"{splitted[start_pos]}-{splitted[start_pos + 1]}".lower()):
+                name = f"{splitted[start_pos]}-{splitted[start_pos + 1]}".lower()
                 model_metadata.update({'name': name})
                 model_tags.append(name)
                 model_details.update({'model_family': name})
                 new_pos += 2
-            elif MODEL_SPECS.get(f"{splitted[start_pos]}_{splitted[start_pos+1]}".lower()):
-                name = f"{splitted[start_pos]}_{splitted[start_pos+1]}".lower()
+            elif MODEL_SPECS.get(f"{splitted[start_pos]}_{splitted[start_pos + 1]}".lower()):
+                name = f"{splitted[start_pos]}_{splitted[start_pos + 1]}".lower()
                 model_metadata.update({'name': name})
                 model_tags.append(name)
                 model_details.update({'model_family': name})
@@ -267,20 +278,21 @@ class SimpleModelMetadata(BaseModel):
                 rk_quant_format = splitted[start_pos].lower()
                 start_pos += 1
                 if len(splitted) > start_pos:
-                    if f"{splitted[start_pos-1]}_{splitted[start_pos]}".lower() in RK_QUANT_FORMAT:
-                        rk_quant_format = f"{splitted[start_pos-1]}_{splitted[start_pos]}".lower()
+                    if f"{splitted[start_pos - 1]}_{splitted[start_pos]}".lower() in RK_QUANT_FORMAT:
+                        rk_quant_format = f"{splitted[start_pos - 1]}_{splitted[start_pos]}".lower()
                         start_pos += 1
                 model_metadata.update({'quantization': rk_quant_format})
                 model_tags.append(rk_quant_format)
 
-                if len(splitted) > start_pos+1:
-                    if "opt" == splitted[start_pos] and re.search(r"(\d+)", splitted[start_pos+1]):
-                        quant_opt = re.search(r"(\d+)", splitted[start_pos+1]).group(1)
+                if len(splitted) > start_pos + 1:
+                    if "opt" == splitted[start_pos] and re.search(r"(\d+)", splitted[start_pos + 1]):
+                        quant_opt = re.search(r"(\d+)", splitted[start_pos + 1]).group(1)
                         model_metadata.update({'quantization_opt': int(quant_opt)})
                         start_pos += 2
-                if len(splitted) > start_pos+2:
-                    if "hybrid" == splitted[start_pos] and "ratio" == splitted[start_pos+1] and re.search(r"(\d+\.\d+)", splitted[start_pos+2]):
-                        quant_hybrid_ratio = re.search(r"(\d+\.\d+)", splitted[start_pos+2]).group(1)
+                if len(splitted) > start_pos + 2:
+                    if "hybrid" == splitted[start_pos] and "ratio" == splitted[start_pos + 1] and re.search(
+                            r"(\d+\.\d+)", splitted[start_pos + 2]):
+                        quant_hybrid_ratio = re.search(r"(\d+\.\d+)", splitted[start_pos + 2]).group(1)
                         model_metadata.update({'quantization_hybrid_ratio': float(quant_hybrid_ratio)})
                         start_pos += 2
 
@@ -301,7 +313,8 @@ class SimpleModelMetadata(BaseModel):
         return model_metadata, model_details, model_tags
 
     @classmethod
-    def compute(cls, model_path: ModelPath, model_details: ModelDetails, system_prompt: str, temperature: float = None) -> dict:
+    def compute(cls, model_path: ModelPath, model_details: ModelDetails, system_prompt: str,
+                temperature: float = None) -> dict:
         model_metadata_from_name, model_details_from_name, model_tags_from_name = \
             SimpleModelMetadata.parse_model_name(model_path.model_name)
 
@@ -322,8 +335,8 @@ class SimpleModelMetadata(BaseModel):
                 logger.warning(f"Cannot set model details attribute {attr}: {str(e)}")
 
         model_architecture = model_details.model_family \
-                if model_details.model_family is not None \
-                else get_model_architecture(model_path.endpoint_model_file)
+            if model_details.model_family is not None \
+            else get_model_architecture(model_path.endpoint_model_file)
 
         if model_architecture is None and 'model_family' in model_details_from_name:
             model_architecture = model_details_from_name['model_family']
@@ -503,7 +516,8 @@ class SimpleModelMetadata(BaseModel):
         # model_type = '494.03M'
         # parameters: int
         if ollama_model_info.model_type:
-            size_value, size_unit, int_size_value = int_parameters_size(ModelPath.get_parameter_size(ollama_model_info.model_type))
+            size_value, size_unit, int_size_value = int_parameters_size(
+                ModelPath.get_parameter_size(ollama_model_info.model_type))
             if ollama_model_info.model_type.startswith(str(size_value)):
                 model_metadata_data['parameters'] = int_size_value
 
@@ -531,43 +545,47 @@ class SimpleModelMetadata(BaseModel):
 
         return cls(**data)
 
-    def save(self, output_path: str) -> None:
-        """
-        Save model metadata to a JSON file.
+    def save(self, model_file_info: ModelFileInfo):
+        """Save model metadata to a JSON file."""
+        logger.debug(f"ModelConfig.save(model_file_info={model_file_info})")
+        metadata_path: Path = model_file_info.modelfile_metadata_path
+        logger.debug(f"ModelConfig.save(): metadata_path={metadata_path}")
 
-        Args:
-            metadata: The model metadata to save
-            output_path: The directory to save the metadata in
-        """
-        try:
-            # Save to JSON file
-            metadata_path = os.path.join(output_path, METADATA_FILENAME)
-            with open(metadata_path, "w") as f:
-                json.dump(self.model_dump_json(), f, indent=2)
+        model_metadata_format: ModelMetadataFormat | None = ModelMetadataFormat.get_format(metadata_path)
+        if model_metadata_format is None or model_metadata_format == ModelMetadataFormat.SIMPLE:
+            try:
+                # Save to JSON file
+                with open(str(metadata_path), "w") as f:
+                    f.write(self.model_dump_json(indent=2,
+                                                 exclude_unset=True,
+                                                 exclude_defaults=True,
+                                                 exclude_none=True,
+                                                 ))
 
-            logger.info(f"Metadata saved to {metadata_path}")
-        except Exception as e:
-            logger.error(f"Error saving metadata: {str(e)}")
-            raise
+                logger.info(f"Metadata saved to {metadata_path}")
+            except Exception as e:
+                logger.error(f"Error saving metadata: {str(e)}")
+                raise
+        else:
+            raise ValueError(
+                f"Metadata file is already in a different format (search for {ModelMetadataFormat.SIMPLE}, is {model_metadata_format}).")
 
     @classmethod
-    def load(cls, metadata_path: str):
-        """
-        Load model metadata from a JSON file.
+    def load(cls, model_file_info: ModelFileInfo):
+        """Load model metadata from a JSON file."""
+        logger.debug(f"ModelConfig.load(model_file_info={model_file_info})")
+        metadata_path: Path = model_file_info.modelfile_metadata_path
+        logger.debug(f"ModelConfig.load(): metadata_path={metadata_path}")
 
-        Args:
-            metadata_path: Path to the metadata JSON file
-
-        Returns:
-            The loaded model metadata
-        """
         if ModelMetadataFormat.get_format(metadata_path) != ModelMetadataFormat.SIMPLE:
             raise ValueError(
                 f"Metadata file is not in the correct format (search for SIMPLE, is {ModelMetadataFormat.get_format(metadata_path)}).")
 
         try:
-            with open(metadata_path, "r") as f:
-                return SimpleModelMetadata.model_validate(from_json(json.load(f), allow_partial=True))
+            with open(str(metadata_path), "r") as f:
+                json_data = json.load(f)
+                logger.debug(f"Metadata loaded from {metadata_path}: {json_data}")
+                return SimpleModelMetadata(**json_data)
 
         except Exception as e:
             logger.error(f"Error loading metadata: {str(e)}")

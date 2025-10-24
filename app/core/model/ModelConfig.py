@@ -1,29 +1,88 @@
+import json
 import re
+from pathlib import Path
 from typing import get_type_hints, Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic_core import from_json
+
+from core.config.config_utils import get_settings
+from core.config.warnings import deprecated
+
+from pydantic import Field, BaseModel
 
 from core.model import logger
 
-from core.config.DefaultModelConfig import DefaultModelConfig
+from core.config.DefaultModelConfig import DefaultModelConfig, DefaultConfig
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelMetadata import SimpleModelMetadata
 from core.model.ModelPath import ModelPath
 from core.model.models_constants import B_PARAM_SIZE_PATTERN, M_PARAM_SIZE_PATTERN
 
+class ModelParameters(BaseModel):
+    num_ctx: int = Field(default=4096, description="Sets the size of the context window used to generate the next token. (Default: 4096)")
+    repeat_last_n: int = Field(default=64,description="Sets how far back for the model to look back to prevent repetition. (Default: 64, 0 = disabled, -1 = num_ctx)")
+    repeat_penalty: float = Field(default=1.1,description="Sets how strongly to penalize repetitions. A higher value (e.g., 1.5) will penalize repetitions more strongly, while a lower value (e.g., 0.9) will be more lenient. (Default: 1.1)")
+    temperature: float = Field(default=0.7, description="The temperature of the model. Increasing the temperature will make the model answer more creatively. (Default: 0.8)")
+    seed: int = Field(default=42, description="Sets the random number seed to use for generation. Setting this to a specific number will make the model generate the same text for the same prompt. (Default: 0)")
+    stop: str = Field(default="AI assistant:", description="Sets the stop sequences to use. When this pattern is encountered the LLM will stop generating text and return. Multiple stop patterns may be set by specifying multiple separate stop parameters in a modelfile.")
+    num_predict: int = Field(default=42, description="Maximum number of tokens to predict when generating text. (Default: -1, infinite generation)")
+    top_k: int = Field(default=40, description="Reduces the probability of generating nonsense. A higher value (e.g. 100) will give more diverse answers, while a lower value (e.g. 10) will be more conservative. (Default: 40)")
+    top_p: float = Field(default=0.9, description="Works together with top-k. A higher value (e.g., 0.95) will lead to more diverse text, while a lower value (e.g., 0.5) will generate more focused and conservative text. (Default: 0.9)")
+    min_p: float = Field(default=0.05, description="Alternative to the top_p, and aims to ensure a balance of quality and variety. The parameter p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out. (Default: 0.0)")
 
-class MinimalModelConfig(BaseModel):
-    FROM: str = Field(description="Path to the model file or docker image format (<name>:<tag>)")
+class FullModelParameters(ModelParameters):
+    enable_thinking: bool
+    max_new_tokens: int
+    frequency_penalty: float
+    presence_penalty: float
+    mirostat: bool
+    mirostat_tau: float
+    mirostat_eta: float
+
+    @classmethod
+    def create(cls, model_file_info: ModelFileInfo):
+        raise NotImplementedError
+
+    @classmethod
+    def load(cls, model_file_info: ModelFileInfo):
+        raise NotImplementedError
+
+    def save(self, model_file_info: ModelFileInfo):
+        raise NotImplementedError
+
+
+
+class MinimalModelFileProperties(BaseModel):
+    FROM: str = Field(description="Defines the base model to use, can be path to the model file or docker image format (<name>:<tag>).")
+    SYSTEM: Optional[str] = Field(default=None, description="Specifies the system message that will be set in the template.")
+
+class ModelFileProperties(MinimalModelFileProperties):
+    Instruction: Optional[str] = Field(default=None, description="Description")
+    TEMPLATE: Optional[str] = Field(default=None, description="The full prompt template to be sent to the model.")
+    ADAPTER: Optional[str] = Field(default=None, description="Defines the (Q)LoRA adapters to apply to the model.")
+    LICENSE: Optional[str] = Field(default=None, description="Specifies the legal license.")
+    MESSAGE: Optional[str] = Field(default=None, description="Specify message history.")
+
+    # PARAMETER: Sets the parameters for how Ollama will run the model.
+    PARAMETER: Optional[ModelParameters] = Field(default=None, description="Sets the parameters for how Ollama will run the model.")
+
+
+class MinimalModelConfig(MinimalModelFileProperties):
     HUGGINGFACE_PATH: Optional[str] = Field(default=None, description="Hugging Face repository path")
-    SYSTEM: str = Field(description="System prompt")
+    OLLAMA_PATH: Optional[str] = Field(default=None, description="Ollama repository path")
 
-    def dump(self, backend_model_file: str):
-        with open(backend_model_file, "w") as f:
-            for attr in self.__dict__:
-                f.write(f"{attr.upper()}={self.__dict__[attr]}")
+    #@deprecated("use core.model.ModelFile.save instead.", category=DeprecationWarning, stacklevel=2)
+    #def save(self, backend_model_file: str):
+    #    with open(backend_model_file, "w") as f:
+    #        for attr in self.__dict__:
+    #            f.write(f"{attr.upper()}={self.__dict__[attr]}")
 
+
+@deprecated("use core.model.ModelFile.FullModelParameters instead.", category=DeprecationWarning, stacklevel=2)
 class MinimalTemperedModelConfig(MinimalModelConfig):
-    temperature: float = Field(description="model temperature as float")
+    temperature: Optional[float] = Field(default=get_settings().model.default_temperature, description="model temperature as float")
 
+@deprecated("use core.model.ModelConfig.FullModelParameters instead.", category=DeprecationWarning, stacklevel=2)
 class ModelConfig(MinimalTemperedModelConfig):
     enable_thinking: bool
     num_ctx: int
@@ -63,9 +122,9 @@ class ModelConfig(MinimalTemperedModelConfig):
                     return value
         return None
 
-
+    @deprecated("use core.model.ModelConfig.FullModelParameters.create instead.", category=DeprecationWarning, stacklevel=2)
     @classmethod
-    def create(cls, model_path: ModelPath, model_metadata: SimpleModelMetadata, default_model_config: DefaultModelConfig):
+    def create(cls, model_path: ModelPath, model_metadata: SimpleModelMetadata, default_model_config: DefaultConfig):
         if model_metadata.model_type is not None:
             if model_path.model_type != model_metadata.model_type:
                 raise ValueError(f"Model type mismatch: {model_path.model_type} != {model_metadata.model_type}")
@@ -109,18 +168,60 @@ class ModelConfig(MinimalTemperedModelConfig):
 
         return cls(**data)
 
+    @deprecated("use core.model.ModelConfig.FullModelParameters.load instead.", category=DeprecationWarning, stacklevel=2)
     @classmethod
-    def load(cls, model_path: ModelPath):
-        data = {}
-        with open(model_path.modelfile, "r") as f:
-            for line in f.readlines():
+    def load(cls, model_file_info: ModelFileInfo, modelfile_parameters: ModelParameters):
+        logger.debug(f"ModelConfig.load(model_file_info={model_file_info}, modelfile_parameters={modelfile_parameters})")
+        file_path: Path = model_file_info.modelfile_config_path
+        logger.debug(f"ModelConfig.load(): file_path={file_path}")
+
+        from_value = None
+        filtered_content= ""
+        with open(str(file_path), "r") as f:
+            while line := f.readline():
                 if line.startswith("#"):
-                    continue
-                key, value = line.strip().split("=")
-                if key.strip() in ["TEMPERATURE"]:
-                    data[key.strip().lower()] = float(value)
-                elif key.strip().lower() in ["from", "huggingface_path", "system"]:
-                    data[key.strip().upper()] = cls._infer_and_convert_type(key.strip().upper(), value)
+                    if line.startswith("# FROM="):
+                        endpoint_model_file = line.split('=')[1].strip()
+                        if model_file_info.endpoint_model_file is not None \
+                            and endpoint_model_file != model_file_info.endpoint_model_file \
+                            and endpoint_model_file != f"{model_file_info.model_name}:{model_file_info.endpoint_model_file}":
+                            raise ValueError(f"Model mismatch: {endpoint_model_file} != ({model_file_info.model_name}:){model_file_info.endpoint_model_file}")
+                        from_value = endpoint_model_file
                 else:
-                    data[key.strip().lower()] = cls._infer_and_convert_type(key.strip().lower(), value)
-        return cls(**data)
+                    filtered_content += line + "\n"
+            json_data = json.loads(filtered_content)
+
+        json_data['FROM'] = from_value or json_data['FROM']
+
+        json_data.update(modelfile_parameters.model_dump(
+                                         exclude_unset=True,
+                                         exclude_defaults=True,
+                                         exclude_none=True
+                                         ))
+        json_data.update(model_file_info.model_dump())
+
+        model: DefaultConfig = get_settings().model
+        for default_key, value in model.model_dump().items():
+            key = default_key.removeprefix("default_")
+            if key is not None and key != "" and key not in json_data:
+                json_data[key] = value
+
+        logger.debug(f"ModelConfig.load(): json_data={json_data}")
+        return ModelConfig(**json_data)
+
+    def save(self, model_file_info: ModelFileInfo, modelfile_parameters: ModelParameters):
+        logger.debug(f"ModelConfig.save(model_file_info={model_file_info}, modelfile_parameters={modelfile_parameters})")
+        file_path: Path = model_file_info.modelfile_config_path
+        logger.debug(f"ModelConfig.save(): file_path={file_path}")
+        exclude = {attr for attr, _ in
+                   list(ModelParameters.model_fields.items()) + list(MinimalTemperedModelConfig.model_fields.items())}
+        with open(str(file_path), "w") as f:
+            for attr, value in self.model_dump().items():
+                if attr in MinimalModelFileProperties.model_fields:
+                    f.write(f"# {attr.upper()}={value}\n")
+            f.write(self.model_dump_json(indent=2,
+                                         exclude_unset=True,
+                                         exclude_defaults=True,
+                                         exclude_none=True,
+                                         exclude=exclude,
+                                         ))

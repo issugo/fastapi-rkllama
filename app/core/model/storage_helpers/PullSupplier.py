@@ -2,7 +2,8 @@ from enum import Enum
 from logging import Logger
 from typing import AsyncGenerator, Any, Tuple
 
-from core.model.ModelFile import ModelFileInfo, ModelFile
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelType import ModelType
 
 

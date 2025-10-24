@@ -16,7 +16,8 @@ import core.config.config_utils
 from api import logger
 from core.api.parameters.rkllama_requests import RKPullRequest
 from core.model.HfFileInfo import HfFileInfo
-from core.model.ModelFile import ModelFileInfo, ModelFile
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelInfo import HFModelInfo
 from core.model.ModelPath import find_rkllm_model_name
 from core.model.ModelType import ModelType

@@ -6,7 +6,8 @@ import requests
 from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
-from core.model.ModelFile import ModelFile, ModelFileInfo
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelType import ModelType
 from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
 from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper

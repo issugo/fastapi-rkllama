@@ -91,3 +91,4 @@ B_PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([bB])"
 M_PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([mM])"
 
 UNKNOWN_VAL_STR = "Unknown"
+MODELS_STORAGE_DIR = "models"

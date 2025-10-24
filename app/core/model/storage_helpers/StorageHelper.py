@@ -1,7 +1,9 @@
 import os.path
 from pathlib import Path
 
-from core.model.ModelFile import ModelFile, ModelFileInfo
+from core.config.config_utils import get_settings
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.storage_helpers import logger as pkg_logger
 
 
@@ -50,8 +52,7 @@ class StorageHelper:
             if not os.path.islink(model_link):
                 raise Exception(f"Model link {model_link} exists but is not a symlink")
         else:
-            from core.config import config_utils
-            root_common_path = Path(config_utils.rkllama_config.paths.models)
+            root_common_path = Path(get_settings().paths.models)
             if not root_common_path.exists():
                 root_common_path.mkdir(parents=True)
             if not model_link.parent.exists():

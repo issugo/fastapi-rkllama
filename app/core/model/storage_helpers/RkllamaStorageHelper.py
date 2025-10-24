@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from core.model.ModelFile import ModelFile, ModelFileInfo
+from core.model.ModelFile import ModelFile
+from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelPath import ModelPath
 from core.model.storage_helpers.StorageHelper import StorageHelper
 
@@ -42,7 +43,7 @@ class RkllamaStorageHelper(StorageHelper):
 
     @property
     def model_link(self) -> Path:
-        return Path(ModelPath.model_dir_using_model_name(self.model_file.model_name)) / self.model_file.endpoint_model_file
+        return Path(ModelPath.model_dir_using_model_name(self.model_file.model_file_info.model_name)) / self.model_file.model_file_info.endpoint_model_file
 
 
     def clean(self, generic_model_file: ModelFile, generic_model_file_info: ModelFileInfo):
@@ -54,14 +55,14 @@ class RkllamaStorageHelper(StorageHelper):
             self.logger.error(f"Error cleaning model link: {str(e)}")
 
         try:
-            huggingface_file_info_file_path = RkllamaStorageHelper.huggingface_file_info_path(self.model_file)
+            huggingface_file_info_file_path = RkllamaStorageHelper.huggingface_file_info_path(self.model_file.model_file_info)
             if huggingface_file_info_file_path.exists():
                 huggingface_file_info_file_path.unlink()
         except Exception as e:
             self.logger.error(f"Error cleaning huggingface_file_info: {str(e)}")
 
         try:
-            huggingface_model_info_file_path=RkllamaStorageHelper.huggingface_model_info_path(self.model_file)
+            huggingface_model_info_file_path=RkllamaStorageHelper.huggingface_model_info_path(self.model_file.model_file_info)
             if huggingface_model_info_file_path.exists():
                 huggingface_model_info_file_path.unlink()
         except Exception as e:
@@ -71,13 +72,13 @@ class RkllamaStorageHelper(StorageHelper):
     def store(self):
 
         if self.model_file.huggingface_model_info_exists:
-            file_path = RkllamaStorageHelper.huggingface_model_info_path(self.model_file)
+            file_path = RkllamaStorageHelper.huggingface_model_info_path(self.model_file.model_file_info)
             if not file_path.parent.exists():
                 file_path.parent.mkdir(parents=True)
             self.model_file.huggingface_model_info.save(file_path=file_path)
 
         if self.model_file.huggingface_file_info_exists:
-            file_path = RkllamaStorageHelper.huggingface_file_info_path(self.model_file)
+            file_path = RkllamaStorageHelper.huggingface_file_info_path(self.model_file.model_file_info)
             if not file_path.parent.exists():
                 file_path.parent.mkdir(parents=True)
             self.model_file.huggingface_file_info.save(file_path=file_path)

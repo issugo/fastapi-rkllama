@@ -3,17 +3,174 @@ import datetime
 import os
 from pathlib import Path
 from typing import Tuple, Optional, Any, Union, List, Annotated, get_type_hints
+from core.config.warnings import deprecated
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, json
+from pydantic.fields import FieldInfo
+from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource
 
 from core.config import logger
-from core.config.ServerConfig import ServerConfig
-from core.config.PathsConfig import PathsConfig
-from core.config.DefaultModelConfig import DefaultModelConfig
-from core.config.PlatformConfig import PlatformConfig, PlatformProcessor
+from core.config.ServerConfig import ServerConfig, Server
+from core.config.PathsConfig import PathsConfig, Paths
+from core.config.DefaultModelConfig import DefaultModelConfig, DefaultConfig
+from core.config.PlatformConfig import PlatformConfig, PlatformProcessor, Platform
+
+def system_config_paths():
+    return [
+        Path("/etc/rkllama/rkllama.yml"),
+        Path("/etc/rkllama.yml"),
+        Path("/usr/local/etc/rkllama.yml"),
+        Path.cwd() / "system" / "rkllama.yml",
+    ]
+
+def user_config_paths():
+    return [
+        Path.home() / ".config" / "rkllama" / "rkllama.yml",
+        Path.home() / ".config" / "rkllama.yml",
+        Path.home() / ".rkllama.yml",
+    ]
+
+def project_config_paths():
+    return [
+        Path.cwd() / "rkllama.yml",
+        Path.cwd() / "config" / "rkllama.yml",
+    ]
 
 
+class YamlConfigSettingsSource(PydanticBaseSettingsSource):
+    """
+    A simple settings source class that loads variables from a JSON file
+    at the project's root.
+
+    Here we happen to choose to use the `env_file_encoding` from Config
+    when reading `config.json`
+    """
+
+    path_content_map: dict[Path, dict] = {}
+
+    def get_field_value(
+        self, field: FieldInfo, field_name: str
+    ) -> tuple[Any, str, bool]:
+        file_content_yaml = {}
+        encoding = self.config.get('env_file_encoding')
+        for paths_getter in [system_config_paths, user_config_paths, project_config_paths]:
+            file_paths = paths_getter()
+            for file_path in file_paths:
+                if file_path not in self.path_content_map:
+                    if file_path.exists():
+                        with open(file_path, encoding=encoding) as f:
+                            file_content_yaml = yaml.load(f, Loader=yaml.SafeLoader)
+                            self.path_content_map[file_path] = file_content_yaml
+                else:
+                    file_content_yaml = self.path_content_map[file_path]
+        field_value = file_content_yaml.get(field_name)
+        return field_value, field_name, False
+
+    def prepare_field_value(
+        self, field_name: str, field: FieldInfo, value: Any, value_is_complex: bool
+    ) -> Any:
+        return value
+
+    def __call__(self) -> dict[str, Any]:
+        d: dict[str, Any] = {}
+
+        for field_name, field in self.settings_cls.model_fields.items():
+            field_value, field_key, value_is_complex = self.get_field_value(
+                field, field_name
+            )
+            field_value = self.prepare_field_value(
+                field_name, field, field_value, value_is_complex
+            )
+            if field_value is not None:
+                d[field_key] = field_value
+
+        return d
+
+
+
+class RKLLAMASettings(BaseSettings):
+    model_config = SettingsConfigDict(cli_parse_args=True, env_prefix='RKLLAMA_', env_nested_delimiter='__', env_file=('.env', '.env.prod'), env_file_encoding='utf-8')
+
+    app_root: Path = Field(default=Path(os.getcwd()), description="Application root directory")
+    server: Server = Field(default=Server(), description="Server configuration settings")
+    paths: Paths = Field(default=Paths(), description="Paths configuration settings")
+    model: DefaultConfig = Field(default=DefaultConfig(), description="DefaultConfig configuration settings")
+    platform: Platform = Field(default=Platform(), description="Platform configuration settings")
+
+    _path_cache: dict = {}
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            YamlConfigSettingsSource(settings_cls),
+            file_secret_settings,
+        )
+
+    @property
+    def settings(self) -> dict:
+        return self.model_dump()
+
+    def resolve_path(self, path: str) -> str | None:
+        """Resolve a path relative to the application root"""
+        if not path:
+            return None
+
+        # Check if we have this path in the cache
+        if path in self._path_cache:
+            return self._path_cache[path]
+
+        path_obj = Path(path)
+
+        if path_obj.is_absolute():
+            resolved = str(path_obj)
+        elif "$" in path or "~" in path:
+            # Check if path contains environment variables and expand them
+            expanded_path = os.path.expanduser(os.path.expandvars(path))
+            if os.path.isabs(expanded_path):
+                resolved = expanded_path
+            else:
+                # Relative to app root after expansion
+                resolved = str(self.app_root / expanded_path)
+        else:
+            # Relative to app root
+            resolved = str(self.app_root / path)
+
+        # Cache the result
+        self._path_cache[path] = resolved
+        return resolved
+
+    def get_path(self, key: str, default: Any = None) -> str:
+        """
+        Retrieves a path configuration and resolves it.
+        Path resolution includes app_root and environment variable expansion.
+        """
+        path = self.paths.__getattribute__(key)
+        if path is None:
+            path = default
+        return self.resolve_path(path) if path else None
+
+    def display(self):
+        """Logs the current configuration values"""
+        logger.info("Current RKLLAMA Configuration:")
+        logger.info("\n" + yaml.dump(self.settings))
+
+    def is_debug_mode(self) -> bool:
+        """Checks if debug mode is enabled"""
+        return self.server.debug
+
+
+@deprecated("use core.config.RKLLAMASettings instead.", category=DeprecationWarning, stacklevel=2)
 class RKLLAMAConfig(BaseModel):
     """Centralized configuration system for RKLLAMA"""
     _app_root: Path = Path(os.getcwd())
@@ -27,6 +184,7 @@ class RKLLAMAConfig(BaseModel):
     model: Annotated[DefaultModelConfig, Field(description="Model configuration")] = DefaultModelConfig()
     platform: Annotated[PlatformConfig, Field(description="Platform configuration")] = PlatformConfig()
 
+    @deprecated("use core.config.RKLLAMASettings.settings instead.", category=DeprecationWarning, stacklevel=2)
     @property
     def config(self) -> dict:
         return self.model_dump()
@@ -206,6 +364,7 @@ class RKLLAMAConfig(BaseModel):
             self.__getattribute__(section).__setattr__(key, typed_value)
             logger.debug(f"Loaded config from environment: {env_var}={typed_value}")
 
+    @deprecated("use core.config.RKLLAMASettings as pydantic settings instead.", category=DeprecationWarning, stacklevel=2)
     def load_args(self, args: argparse.Namespace):
         """
         Load configuration from command-line arguments.
@@ -232,6 +391,7 @@ class RKLLAMAConfig(BaseModel):
                 else:
                     logger.warning(f"Specified config file not found: {args.config}")
 
+    @deprecated("use core.config.RKLLAMASettings.resolve_path instead.", category=DeprecationWarning, stacklevel=2)
     def resolve_path(self, path: str) -> str:
         """Resolve a path relative to the application root"""
         if not path:
@@ -266,6 +426,7 @@ class RKLLAMAConfig(BaseModel):
         self._path_cache = {}
 
 
+    @deprecated("use core.config.RKLLAMASettings.get_path instead.", category=DeprecationWarning, stacklevel=2)
     def get_path(self, key: str, default: Any = None) -> str:
         """
         Retrieves a path configuration and resolves it.
@@ -326,15 +487,18 @@ class RKLLAMAConfig(BaseModel):
 
         logger.debug(f"Generated shell configuration: {config_env_path}")
 
+    @deprecated("use core.config.RKLLAMASettings.display instead.", category=DeprecationWarning, stacklevel=2)
     def display(self):
         """Logs the current configuration values"""
         logger.info("Current RKLLAMA Configuration:")
         logger.info(yaml.dump(self.config))
 
+    @deprecated("use core.config.RKLLAMASettings.is_debug_mode instead.", category=DeprecationWarning, stacklevel=2)
     def is_debug_mode(self) -> bool:
         """Checks if debug mode is enabled"""
         return self.server.debug
 
+    @deprecated("reload_config is inefficient using docker.", category=DeprecationWarning, stacklevel=2)
     def reload_config(self):
         """
         Reloads all configuration from all sources.

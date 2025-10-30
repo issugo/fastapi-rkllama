@@ -65,3 +65,7 @@ class OllamaCopyRequest(BaseModel):
 class OllamaDeleteRequest(BaseModel):
     """Request to delete a model."""
     name: str = Field(..., description="Name of the model to delete")
+
+class OllamaShowRequest(BaseModel):
+    """Request to delete a model."""
+    name: str = Field(..., description="Name of the model to show")

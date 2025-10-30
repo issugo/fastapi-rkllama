@@ -1,5 +1,6 @@
-from fastapi import APIRouter
 import logging
+
+from fastapi import APIRouter
 
 # Set up logger for this package
 logger = logging.getLogger("api")

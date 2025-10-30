@@ -41,6 +41,12 @@ class OllamaOptions(BaseModel):
     rope_frequency_scale: Optional[float] = Field(None, description="RoPE frequency scale")
     format: Optional[Union[str, OllamaFormatOption]] = Field(None, description="Format for response")
 
+class OllamaModelInfoDetails(BaseModel):
+    """Details about an Ollama model."""
+    format: str = Field(..., description="Model format")
+    family: str = Field(..., description="Model family")
+    parameter_size: str = Field(..., description="Model parameter size")
+    quantization_level: str = Field(..., description="Model quantization level")
 
 class OllamaModelInfo(BaseModel):
     """Information about an Ollama model."""
@@ -48,4 +54,24 @@ class OllamaModelInfo(BaseModel):
     modified_at: str = Field(..., description="Last modification time")
     size: int = Field(..., description="Model size in bytes")
     digest: str = Field(..., description="Model digest")
-    details: Dict[str, Any] = Field(..., description="Model details")
+    #details: Dict[str, Any] = Field(..., description="Model details")
+    details: OllamaModelInfoDetails = Field(..., description="Model details")
+
+    @staticmethod
+    def from_model(model):
+        from core.model.Model import Model
+        if not isinstance(model, Model):
+            raise ValueError("Invalid model")
+        return OllamaModelInfo(
+                    name=model.id,
+                    modified_at=model.model_info.modified_at_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    size=model.model_path.endpoint_model_file_size,
+                    digest=f"sha256:{model.digest}",
+                    details=OllamaModelInfoDetails(
+                        format=model.model_info.details.model_format,
+                        family=model.model_info.details.model_family,
+                        parameter_size=model.model_info.details.parameter_size,
+                        quantization_level=model.model_info.details.quantization_level,
+                    ),
+                )
+

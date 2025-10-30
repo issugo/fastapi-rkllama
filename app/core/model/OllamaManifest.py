@@ -1,10 +1,9 @@
-import json
-import os.path
 from pathlib import Path
-from typing import Optional, List, Tuple, Any
+from typing import Optional, List
 
-import requests
 from pydantic import BaseModel
+
+from core.model.storage_helpers.SupplierFileInfo import Supplier, SupplierFileInfo
 
 """
 sample for devstrall:latest
@@ -46,7 +45,9 @@ sample for devstrall:latest
 """
 
 VND_OLLAMA_IMAGE_SYSTEM = "application/vnd.ollama.image.system"
+VND_OLLAMA_IMAGE_TEMPLATE = "application/vnd.ollama.image.template"
 VND_OLLAMA_IMAGE_MODEL = "application/vnd.ollama.image.model"
+VND_OLLAMA_IMAGE_LICENSE = "application/vnd.ollama.image.license"
 
 
 class OllamaManifestLayer(BaseModel):
@@ -65,12 +66,17 @@ class OllamaManifestModelLayer(OllamaManifestLayer):
     # mediaType: str = "application/vnd.ollama.image.model"
     # with from
 
-class OllamaManifestLicenseLayer:
+class OllamaManifestLicenseLayer(OllamaManifestLayer):
     pass
     # mediaType: str = "application/vnd.ollama.image.license"
     # with from
 
-class OllamaManifestSystemLayer:
+class OllamaManifestSystemLayer(OllamaManifestLayer):
+    pass
+    # mediaType: str = "application/vnd.ollama.image.system"
+    # no from
+
+class OllamaManifestTemplateLayer(OllamaManifestLayer):
     pass
     # mediaType: str = "application/vnd.ollama.image.system"
     # no from
@@ -82,13 +88,23 @@ class OllamaManifestConfig(BaseModel):
     size: int
 
 
-class OllamaManifest(BaseModel):
+class OllamaManifest(SupplierFileInfo):
     schemaVersion: int = 2
     mediaType: str = "application/vnd.docker.distribution.manifest.v2+json"
     config: OllamaManifestConfig
     layers: List[OllamaManifestLayer]
 
     _ollama_manifest_model_layer: OllamaManifestModelLayer | None = None
+    _ollama_manifest_license_layer: OllamaManifestLicenseLayer | None = None
+    _ollama_manifest_system_layer: OllamaManifestSystemLayer | None = None
+    _ollama_manifest_template_layer: OllamaManifestTemplateLayer | None = None
+
+    _template: Optional[str] = None
+    _system: Optional[str] = None
+
+    @property
+    def supplier(self):
+        return Supplier.OLLAMA
 
     @property
     def ollama_manifest_model_layer(self):
@@ -98,6 +114,67 @@ class OllamaManifest(BaseModel):
                     self._ollama_manifest_model_layer = OllamaManifestModelLayer.model_validate_json(layer.model_dump_json())
                     break
         return self._ollama_manifest_model_layer
+
+    @property
+    def ollama_manifest_license_layer(self):
+        if self._ollama_manifest_model_layer is None:
+            for layer in self.layers:
+                if layer.mediaType == VND_OLLAMA_IMAGE_LICENSE:
+                    self._ollama_manifest_license_layer = OllamaManifestLicenseLayer.model_validate_json(layer.model_dump_json())
+                    break
+        return self._ollama_manifest_license_layer
+
+    @property
+    def ollama_manifest_system_layer(self):
+        if self._ollama_manifest_system_layer is None:
+            for layer in self.layers:
+                if layer.mediaType == VND_OLLAMA_IMAGE_SYSTEM:
+                    self._ollama_manifest_system_layer = OllamaManifestSystemLayer.model_validate_json(layer.model_dump_json())
+                    break
+        return self._ollama_manifest_system_layer
+
+    @property
+    def ollama_manifest_template_layer(self):
+        if self._ollama_manifest_template_layer is None:
+            for layer in self.layers:
+                if layer.mediaType == VND_OLLAMA_IMAGE_TEMPLATE:
+                    self._ollama_manifest_template_layer = OllamaManifestTemplateLayer.model_validate_json(layer.model_dump_json())
+                    break
+        return self._ollama_manifest_template_layer
+
+    @property
+    def template(self):
+        if self._template:
+            return self._template
+        if self.ollama_manifest_template_layer:
+            from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
+            local_filename = OllamaModelStorageHelper.blob_path(self.ollama_manifest_template_layer.digest)
+            if Path(local_filename).exists():
+                with open(local_filename, 'r') as f:
+                    self._template = f.read()
+            return self._template
+        return None
+
+    @template.setter
+    def template(self, value: str):
+        self._template = value
+
+    @property
+    def system(self):
+        if self._system:
+            return self._system
+        if self.ollama_manifest_system_layer:
+            from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
+            local_filename = OllamaModelStorageHelper.blob_path(self.ollama_manifest_system_layer.digest)
+            if Path(local_filename).exists():
+                with open(local_filename, 'r') as f:
+                    self._system = f.read()
+            return self._system
+        return None
+
+    @system.setter
+    def system(self, value: str):
+        self._system = value
 
     @property
     def size(self):

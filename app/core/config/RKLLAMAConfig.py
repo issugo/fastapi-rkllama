@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSett
 
 from core.config import logger
 from core.config.ServerConfig import ServerConfig, Server
-from core.config.PathsConfig import PathsConfig, Paths
+from core.config.PathsConfig import PathsConfig, Paths, PATH_KEY
 from core.config.DefaultModelConfig import DefaultModelConfig, DefaultConfig
 from core.config.PlatformConfig import PlatformConfig, PlatformProcessor, Platform
 
@@ -150,11 +150,13 @@ class RKLLAMASettings(BaseSettings):
         self._path_cache[path] = resolved
         return resolved
 
-    def get_path(self, key: str, default: Any = None) -> str:
+    def get_path(self, key: str | PATH_KEY, default: Any = None) -> str:
         """
         Retrieves a path configuration and resolves it.
         Path resolution includes app_root and environment variable expansion.
         """
+        if isinstance(key, PATH_KEY):
+            key = key.value
         path = self.paths.__getattribute__(key)
         if path is None:
             path = default

@@ -3,9 +3,8 @@ from pydantic import BaseModel, Field
 
 from core.api.parameters.commons import Message, Usage
 from core.api.parameters.openai_commons import (
-    OpenAIChoice, OpenAIContentFilter
+    OpenAIChoice, OpenAIContentFilter, OpenAIModel
 )
-
 
 class ChatCompletionChoice(OpenAIChoice):
     """Choice in a chat completion response."""

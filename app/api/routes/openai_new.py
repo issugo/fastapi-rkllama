@@ -5,11 +5,12 @@ import uuid
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.encoders import jsonable_encoder
 from starlette.requests import Request
 from starlette.responses import Response, StreamingResponse, JSONResponse
 
 from core.api.parameters.commons import Usage
-from core.api.parameters.openai_commons import OpenAIFinishReason, OpenAIImageDetail
+from core.api.parameters.openai_commons import OpenAIFinishReason, OpenAIImageDetail, OpenAIModel
 from core.api.parameters.openai_requests import (
     ChatCompletionRequest,
     CompletionRequest,
@@ -35,9 +36,43 @@ from core.api.parameters.openai_responses import (
     ModerationResult,
     ImageData
 )
+from core.model.Model import Model
+from core.model.ModelPath import ModelDirException, ModelPath, ModelException
 
 # Create router with "openai" tag
 router = APIRouter(tags=["openai"])
+
+
+@router.get("/v1/models", response_model=List[OpenAIModel])
+async def list_models(request: Request):
+    """
+    List available models that can be used with the API.
+
+    The model object has OpenAIModel type.
+    """
+
+    try:
+        model_list: List[Model] = Model.list()
+
+        # Return a sample list of models
+        return [OpenAIModel.from_model(model) for model in model_list]
+    except ModelDirException as mde:
+        return JSONResponse(
+            jsonable_encoder({"error": f"{str(mde)}."}),
+            status_code=500,
+        )
+
+@router.get("/v1/models/{model_id}", response_model=OpenAIModel)
+def get_model(model_id: str):
+    try:
+        model:Model = Model.load(model_path=ModelPath.from_model_id(model_id))
+        return OpenAIModel.from_model(model)
+    except ModelException as me:
+        return JSONResponse(
+            jsonable_encoder({"error": f"{str(me)}."}),
+            status_code=500,
+        )
+
 
 
 @router.post("/v1/chat/completions", response_model=ChatCompletionResponse)
@@ -263,35 +298,6 @@ async def create_embeddings(request: Request, embedding_request: EmbeddingReques
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-@router.get("/v1/models")
-async def list_models(request: Request):
-    """
-    List available models that can be used with the API.
-    """
-    return JSONResponse({
-        "object": "list",
-        "data": [
-            {
-                "id": "gpt-3.5-turbo",
-                "object": "model",
-                "created": 1677610602,
-                "owned_by": "openai"
-            },
-            {
-                "id": "gpt-4",
-                "object": "model",
-                "created": 1687882411,
-                "owned_by": "openai"
-            },
-            {
-                "id": "text-embedding-ada-002",
-                "object": "model",
-                "created": 1671217299,
-                "owned_by": "openai"
-            }
-        ]
-    })
 
 
 @router.post("/v1/moderations", response_model=ModerationResponse)

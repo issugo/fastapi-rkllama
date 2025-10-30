@@ -2,7 +2,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from core.api.parameters.commons import Message
-from core.api.parameters.ollama_commons import OllamaModelInfo
+from core.api.parameters.ollama_commons import OllamaModelInfo, OllamaModelInfoDetails
 
 
 class OllamaGenerateResponse(BaseModel):
@@ -42,10 +42,29 @@ class OllamaListResponse(BaseModel):
     """Response from a list models request."""
     models: List[OllamaModelInfo] = Field(..., description="List of models")
 
+class OllamaModelShowDetails(OllamaModelInfoDetails):
+    parent_model: str = Field(default="", description="huggingface_path")
+    families: List[str] = Field(description="list of families")
+
+class OllamaHFModelShow(BaseModel):
+    """Response from a show model request."""
+    repo_id: str = Field(..., description="huggingface_path")
+    description: str = Field(default="", description="huggingface_description")
+    tags: list[str] = Field(default=[], description="huggingface_tags")
+    downloads: int = Field(default=0, description="huggingface download count")
+    likes: int = Field(default=0, description="huggingface download count")
 
 class OllamaShowResponse(OllamaModelInfo):
     """Response from a show model request."""
-    pass
+    license: str = Field(default="Unknown")
+    modelfile: str = Field(default="", description="Contents of the Modelfile")
+    parameters: str = Field(description="Parameters of the model")
+    template: str = Field(default="", description="Template of the model")
+    system: str = Field(default="", description="System prompt of the model")
+    details: OllamaModelShowDetails = Field(..., description="Model details")
+    model_info: dict = Field(..., description="Model details")
+    capabilities: list[str] = Field(..., description="Model capabilities, like completion, tools, ...")
+    huggingface: Optional[OllamaHFModelShow] = Field(None, description="Huggingface metadata")
 
 
 class OllamaPullResponse(BaseModel):

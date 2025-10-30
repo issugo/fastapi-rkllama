@@ -1,6 +1,4 @@
-import json
 import re
-from typing import Tuple, Any
 import requests
 
 from core.model.storage_helpers import logger
@@ -9,13 +7,31 @@ from core.model.ModelPath import int_parameters_size
 from core.model.models_constants import MODEL_ARCHITECTURES, LANGUAGE_PATTERNS, LANGUAGE_MULTILINGUAL_LIST, \
     LANGUAGE_DEFAULT, RK_TAGS_LIST, LICENSE_NAME_MAPPING
 
+HUGGINGFACE_ROOT_URL = "https://huggingface.co/"
 
 class HuggingfaceFileSystem:
+    @staticmethod
+    def validate_huggingface_path(huggingface_path: str, author: str = None):
+        if not (2 <= len(huggingface_path.split("/")) <= 3):
+            raise ValueError(f"huggingface_path must be a valid repo path, like <author>/<model_name>[/model_file], but is {huggingface_path}.")
+        if author:
+            if not huggingface_path.startswith(f"{author}/"):
+                raise ValueError(f"huggingface_path must start with author {author}, like <author>/<model_name>[/model_file], but huggingface_path is {huggingface_path}.")
+        return huggingface_path
+
+    @staticmethod
+    def model_path(huggingface_path: str):
+        return f"{HUGGINGFACE_ROOT_URL}/{HuggingfaceFileSystem.validate_huggingface_path(huggingface_path)}"
+
+    @staticmethod
+    def sibling_url(huggingface_path: str, rfilename_sibling: str):
+        return f"{HuggingfaceFileSystem.model_path(huggingface_path)}/blob/main/{rfilename_sibling}"
+
     @staticmethod
     def load_model_info(huggingface_path : str):
         try:
         # Extract repo_id from HUGGINGFACE_PATH
-            url = f"https://huggingface.co/api/models/{huggingface_path}"
+            url = f"{HUGGINGFACE_ROOT_URL}api/models/{huggingface_path}"
             response = requests.get(url, timeout=5)
 
             if response.status_code == 200:
@@ -96,12 +112,9 @@ class HuggingfaceFileSystem:
 
                 # Extract license information
                 if "license" in hf_data and hf_data["license"]:
-
                     license_id = hf_data["license"].lower()
                     hf_data["license_name"] = LICENSE_NAME_MAPPING.get(license_id, hf_data["license"])
-                    hf_data["license_url"] = (
-                        f"https://huggingface.co/{huggingface_path}/blob/main/LICENSE"
-                    )
+                    hf_data["license_url"] = HuggingfaceFileSystem.sibling_url(huggingface_path, "LICENSE")
 
                 logger.debug(f"Enhanced model info from HF API: {huggingface_path}={hf_data}")
 

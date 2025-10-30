@@ -5,6 +5,7 @@ from typing import Tuple, List
 from pydantic import BaseModel
 
 from core.model import logger
+from core.model.storage_helpers.SupplierFileInfo import Supplier, SupplierFileInfo
 
 """
 sample
@@ -27,7 +28,7 @@ class BlobLfsInfo(BaseModel):
     pointer_size: int
 
 
-class HfFileInfo(BaseModel):
+class HfFileInfo(SupplierFileInfo):
     name: str
     size: int
     type: str
@@ -35,6 +36,10 @@ class HfFileInfo(BaseModel):
     lfs: BlobLfsInfo
     last_commit: None
     security: None
+
+    @property
+    def supplier(self):
+        return Supplier.HUGGINGFACE
 
     @staticmethod
     def model_data(split_name: List[str], model_name: str | None = None) -> Tuple[str, str, str]:
@@ -51,6 +56,18 @@ class HfFileInfo(BaseModel):
         return RkllamaStorageHelper.huggingface_model_info_path_using_model_dir(
             model_dir=ModelPath.model_dir_using_model_name(model_name)
         )
+
+    @property
+    def size(self):
+        return self.lfs.size
+
+    @property
+    def lfs_sha256(self):
+        return self.lfs.sha256
+
+    @staticmethod
+    def last_commit_to_last_modified(last_commit):
+        raise Exception("not implemented")
 
     @classmethod
     def load(cls, file_path: str | Path):

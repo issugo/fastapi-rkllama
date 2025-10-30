@@ -138,6 +138,15 @@ class OllamaStorageHelper(StorageHelper):
     def model_link(self) -> Path:
         return self.links_dir / 'model'
 
+    @property
+    def template_link(self) -> Path:
+        return self.links_dir / 'template'
+
+    @property
+    def system_link(self) -> Path:
+        return self.links_dir / 'system'
+
+
     def clean(self, generic_model_file: ModelFile, generic_model_file_info: ModelFileInfo):
         try:
             model_link = Path(self.model_link)
@@ -162,6 +171,18 @@ class OllamaStorageHelper(StorageHelper):
         except Exception as e:
             self.logger.error(f"Error cleaning ollama_model_info: {str(e)}")
 
+    def _store_template_link(self):
+        self.ollama_model_storage_helper.store_blob_link(
+            blob_link=self.template_link,
+            digest=self.model_file.ollama_file_info.ollama_manifest_template_layer.digest
+        )
+
+    def _store_system_link(self):
+        self.ollama_model_storage_helper.store_blob_link(
+            blob_link=self.system_link,
+            digest=self.model_file.ollama_file_info.ollama_manifest_system_layer.digest
+        )
+
 
     def store(self):
 
@@ -177,4 +198,23 @@ class OllamaStorageHelper(StorageHelper):
                 file_path.parent.mkdir(parents=True)
             self.model_file.ollama_file_info.save(ollama_manifest_path=file_path)
 
+            if self.model_file.ollama_model_info_exists:
+                template = self.model_file.ollama_file_info.template
+                if template:
+                    local_filename = OllamaModelStorageHelper.blob_path(self.model_file.ollama_file_info.ollama_manifest_template_layer.digest)
+                    if not Path(local_filename).exists():
+                        with open(local_filename, 'wb') as f:
+                            f.write(template)
+                    self._store_template_link()
+
+                system = self.model_file.ollama_file_info.system
+                if system:
+                    local_filename = OllamaModelStorageHelper.blob_path(self.model_file.ollama_file_info.ollama_manifest_system_layer.digest)
+                    if not Path(local_filename).exists():
+                        with open(local_filename, 'wb') as f:
+                            f.write(system)
+                    self._store_system_link()
+
+
         self._store_model_link()
+

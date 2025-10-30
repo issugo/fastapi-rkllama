@@ -1,21 +1,28 @@
+import datetime
 import os
 from pathlib import Path
 from typing import Any, Tuple
 
+import requests
+
 from core.api.parameters import OllamaPullResponse
 from core.config import config_utils
 from core.config.config_utils import get_settings
+from core.model.Model import Model
 from core.model.ModelFile import ModelFile
 from core.model.ModelFileInfo import ModelFileInfo
-from core.model.ModelInfo import OllamaModelInfo
-from core.model.ModelMetadata import SimpleModelMetadata
+from core.model.ModelInfo import ModelInfo, DummyStatResult
+from core.model.ModelPath import ModelPath
+from core.model.models_constants import validate_model_id
+from core.model.suppliers_model_info import OllamaModelInfo, OllamaModelLicense
+from core.model.ModelMetadata import SimpleModelMetadata, create_metadata
 from core.model.ModelType import ModelType
 from core.model.OllamaManifest import OllamaManifest, VND_OLLAMA_IMAGE_MODEL, VND_OLLAMA_IMAGE_SYSTEM, \
     OllamaManifestModelLayer
 from core.model.storage_helpers.OllamaFileSystem import OllamaFileSystem
 from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
-from core.model.storage_helpers.PullSupplier import PullSupplier, Supplier
-
+from core.model.storage_helpers.PullSupplier import PullSupplier
+from core.model.storage_helpers.SupplierFileInfo import Supplier
 
 DEFAULT_CONTENT_TYPE = "application/x-ndjson"
 
@@ -103,17 +110,6 @@ class OllamaPullSupplier(PullSupplier):
 
         return file_info, None
 
-    def size_and_digest(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any, Any]:
-        total_size = file_info.size  # File size in bytes
-        if total_size == 0:
-            return None, None, "Error: Unable to retrieve file size.\n"
-
-        digest = file_info.lfs_sha256
-        if not digest:
-            return None, None, "Error: Unable to retrieve file digest.\n"
-
-        return total_size, digest, None
-
     def model_file_info(self, model_name, file, repo, model_type, file_info, supplier: Supplier) -> Tuple[
         Any | None, Any | None, str | None, ModelType | None, Any]:
         if supplier != Supplier.OLLAMA:
@@ -163,8 +159,35 @@ class OllamaPullSupplier(PullSupplier):
                     break
             self.logger.debug(f"model_type={model_type}")
 
-            ollama_model_info.ollama_manifest = file_info
+            # manage license
+            if file_info.ollama_manifest_license_layer:
+                license_url = fs.blob_url(
+                    digest=file_info.ollama_manifest_license_layer.digest,
+                    model_name=model_name)
+                with requests.get(license_url) as r:
+                    ollama_model_info.license = OllamaModelLicense.from_content(
+                        content=r.content,
+                        license_url=license_url,
+                        digest=file_info.ollama_manifest_license_layer.digest,
+                    )
 
+            # manage system
+            if file_info.ollama_manifest_system_layer:
+                system_url = fs.blob_url(
+                    digest=file_info.ollama_manifest_system_layer.digest,
+                    model_name=model_name)
+                with requests.get(system_url) as r:
+                    file_info.system = r.content
+
+            # manage template
+            if file_info.ollama_manifest_template_layer:
+                template_url = fs.blob_url(
+                    digest=file_info.ollama_manifest_template_layer.digest,
+                    model_name=model_name)
+                with requests.get(template_url) as r:
+                    file_info.template = r.content
+
+            ollama_model_info.ollama_manifest = file_info
             return ollama_model_info, ollama_model_info.ollama_manifest, OllamaFileSystem.model_path(
                 model_name), model_type, None
         except Exception as e:
@@ -187,6 +210,81 @@ class OllamaPullSupplier(PullSupplier):
 
         return model_file_info, None
 
+    def _create_dummy_stat_result(self, file_info: OllamaManifest, model_file_info: OllamaModelInfo) -> DummyStatResult:
+        dt_now = datetime.datetime.now().timestamp()
+        model_stat = DummyStatResult(
+            st_size=file_info.size,
+            st_atime=dt_now,
+            st_ctime=dt_now,
+            st_mtime=dt_now,
+        )
+        return model_stat
+
+    def create_generic_model_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
+                                       supplier: Supplier,
+                                       total_size: int,
+                                       digest: str,
+                                       file_info: OllamaManifest,
+                                       model_file_info: OllamaModelInfo) -> ModelInfo:
+        """
+        fulfill the ModelInfo fields that are not derived from Hugging Face HfFileSystem
+        """
+        model_stat = self._create_dummy_stat_result(file_info, model_file_info)
+        generic_model_info: ModelInfo = ModelInfo.from_ollama_model_info(
+            ollama_model_info=model_file_info,
+            model_path=ModelPath(model_name=model_name,
+                                 model_type=model_type,
+                                 endpoint_model_file=file,
+                                 endpoint_model_file_size=total_size,
+                                 ),
+            size=total_size,
+            digest=digest,
+            model_stat=model_stat
+        )
+        self.logger.debug(f"generic_model_info={generic_model_info.model_dump_json()}")
+        self.logger.debug(f"ollama_data={generic_model_info.ollama_model_info}")
+        return generic_model_info
+
+    def create_generic_model(self, generic_model_info: ModelInfo,
+                                  file_info: OllamaManifest, model_file_info: OllamaModelInfo,
+                                  model_type: ModelType | None, repo: str) -> Tuple[Model, ModelInfo]:
+        """
+        fulfill the Model fields to create the Model:
+            id: str
+            st_atime: float
+            st_mtime: float
+            st_ctime: float
+            size: int
+            digest: str
+            model_path: ModelPath
+            # model_info contains only model file stats, and nothing in relation with model content configuration
+            model_info: ModelInfo
+            # model_metadata contains model configuration
+            model_metadata: Optional[BasicModelMetadata|SimpleModelMetadata|ModelMetadata] = Field(default=None, description="Model metadata")
+
+            _supplier: Optional[Supplier] = None
+            _supplier_model_info: Optional[OllamaModelInfo|HFModelInfo] = None
+
+        """
+        model_path: ModelPath = generic_model_info.model_path
+        model_metadata, model_metadata_format, model_metadata_path = create_metadata(model_path=model_path, ollama_model_info=model_file_info)
+        model_stat = self._create_dummy_stat_result(file_info, model_file_info)
+        model: Model = Model(
+            id=validate_model_id(model_path.model_id),
+            st_atime=model_stat.st_atime,
+            st_mtime=model_stat.st_mtime,
+            st_ctime=model_stat.st_ctime,
+            size=file_info.size,
+            digest=file_info.digest,
+            model_path=model_path,
+            model_info=generic_model_info,
+            model_metadata=model_metadata
+        )
+        model._supplier = Supplier.OLLAMA
+        model._supplier_model_info = model_file_info
+        return model, generic_model_info
+
+
     def create_generic_model_file_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
                                        supplier: Supplier,
                                        total_size: int,
@@ -207,14 +305,17 @@ class OllamaPullSupplier(PullSupplier):
 
         return generic_model_file_info
 
-    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo,
-                                  file_info, model_file_info,
+    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo, model: Model,
+                                  file_info: OllamaManifest, model_file_info: OllamaModelInfo,
                                   model_type, repo) -> Tuple[ModelFile, ModelFileInfo]:
         generic_model_file_info_dump = generic_model_file_info.model_dump()
         self.logger.debug(f"generic_model_file_info_dump={generic_model_file_info_dump}")
         generic_model_file: ModelFile = ModelFile.create(
             model_file_info=generic_model_file_info,
-            default_model_config=get_settings().model)
+            default_model_config=get_settings().model,
+            model=model,
+            model_license=model_file_info.license
+        )
         self.logger.debug(f"generic_model_file={generic_model_file.model_dump_json()}")
         self.logger.debug(
             f"generic_model_file.simple_model_metadata={generic_model_file.simple_model_metadata.model_dump_json()}")

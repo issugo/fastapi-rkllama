@@ -42,6 +42,27 @@ class OllamaModelStorageHelper(StorageHelper):
             digest = digest[len(BLOB_PREFIX):]
         return os.path.join(OllamaModelStorageHelper.blobs_dir(), f"{BLOB_PREFIX}{digest}")
 
+    @classmethod
+    def store_blob_link(cls, blob_link: str | Path, digest: str):
+        if isinstance(blob_link, str):
+            blob_link = Path(blob_link)
+        if blob_link.exists():
+            if not os.path.islink(blob_link):
+                raise Exception(f"Blob link {blob_link} exists but is not a symlink")
+        else:
+            root_common_path = Path(get_settings().paths.models)
+            if not root_common_path.exists():
+                root_common_path.mkdir(parents=True)
+            if not blob_link.parent.exists():
+                blob_link.parent.mkdir(parents=True)
+            target_file_path = cls.blob_path(digest=digest)
+            blob_link.symlink_to(cls.build_relative_link_path(
+                    target_file_path=target_file_path,
+                    link_path=str(blob_link),
+                    root_common_path=f"{str(root_common_path)}/"
+                ))
+
+
     @property
     def model_blob_path(self) -> Tuple[str, str]:
         if self._model_blob_path is None:

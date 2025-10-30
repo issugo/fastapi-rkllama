@@ -6,13 +6,168 @@ import requests
 from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
+from core.model.Model import Model
 from core.model.ModelFile import ModelFile
 from core.model.ModelFileInfo import ModelFileInfo
+from core.model.ModelInfo import ModelInfo
 from core.model.ModelType import ModelType
 from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
 from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
-from core.model.storage_helpers.PullSupplier import PullSupplier, Supplier
+from core.model.storage_helpers.PullSupplier import PullSupplier
+from core.model.storage_helpers.SupplierFileInfo import Supplier
 from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+
+def _create_specific(model_name: str, file: str, repo: str, model_type: ModelType,
+                     supplier: Supplier, pull_supplier: PullSupplier) -> tuple[Any, Any, Any, Any, str, str, str|None, ModelType | None, str|None]:
+    """
+    return: model_file_info, file_info, total_size, digest, model_name, file, repo, model_type, error
+    """
+    # when the supplier is Ollama, file_info is an OllamaManifest
+    # when the supplier is Rkllama, file_info is a HfFileInfo
+    file_info, repo, model_type, error = pull_supplier.file_info(
+        model_name=model_name, file=file, repo=repo, model_type=model_type, supplier=supplier)
+    if error is not None:
+        pull_supplier.logger.error(error)
+        return None, None, None, None, model_name, file, repo, model_type, error
+
+    file_info, error = pull_supplier.check_file_info(model_name, file, repo, model_type, file_info)
+    if error is not None:
+        pull_supplier.logger.error(error)
+        return None, None, None, None, model_name, file, repo, model_type, error
+    if file_info is None:
+        error = pull_supplier.error(f"Invalid file info'\n")
+        pull_supplier.logger.error(error)
+        return None, None, None, None, model_name, file, repo, model_type, error
+
+    pull_supplier.logger.debug(f"file_info.cls={file_info.__class__}")
+
+    total_size = file_info.size  # File size in bytes
+    if total_size == 0:
+        error = pull_supplier.error(f"Unable to retrieve file size.\n")
+        pull_supplier.logger.error(error)
+        return None, file_info, None, None, model_name, file, repo, model_type, error
+
+    digest = file_info.digest
+    if not digest:
+        error = pull_supplier.error(f"Unable to retrieve file digest.\n")
+        pull_supplier.logger.error(error)
+        return None, file_info, total_size, None, model_name, file, repo, model_type, error
+
+    # Create the configuration file for the model
+    if model_type is None:
+        model_type = ModelType.get_model_type_from_endpoint_model_file(file)
+
+    pull_supplier.logger.debug(f"model_type={model_type}")
+
+    # when the supplier is Ollama, file_info is an OllamaModelInfo
+    # when the supplier is Rkllama, file_info is a HFModelInfo
+    model_file_info, file_info, repo, model_type, error = pull_supplier.model_file_info(
+        model_name=model_name, file=file, repo=repo, model_type=model_type,
+        file_info=file_info, supplier=supplier)
+    if error is not None:
+        pull_supplier.logger.error(error)
+        return model_file_info, file_info, total_size, digest, model_name, file, repo, model_type, error
+
+    if model_type is None:
+        error = pull_supplier.error(f"Invalid model type '{model_type}'\n")
+        pull_supplier.logger.error(error)
+        return model_file_info, file_info, total_size, digest, model_name, file, repo, None, error
+
+    model_file_info, error = pull_supplier.check_model_file_info(
+        model_name=model_name, file=file, repo=repo, model_type=model_type,
+        file_info=file_info, model_file_info=model_file_info)
+    if error is not None:
+        pull_supplier.logger.error(error)
+        return model_file_info, file_info, total_size, digest, model_name, file, repo, model_type, error
+    if model_file_info is None:
+        error = pull_supplier.error(f"Invalid model file info'\n")
+        pull_supplier.logger.error(error)
+        return None, file_info, total_size, digest, model_name, file, repo, model_type, error
+
+    return model_file_info, file_info, total_size, digest, model_name, file, repo, model_type, None
+
+
+def _create_generic(model_name: str, file: str, repo: str, model_type: ModelType,
+                model_file_info: Any, file_info: Any, total_size: Any, digest: Any,
+                supplier: Supplier, pull_supplier: PullSupplier)  -> tuple[ModelFile | None, ModelFileInfo| None, Model | None, ModelInfo| None, str|None]:
+    """
+    returns: generic_model_file, generic_model_file_info, generic_model, generic_model_info, error
+    """
+    generic_model_info = pull_supplier.create_generic_model_info(
+        file=file,
+        model_name=model_name,
+        model_type=model_type,
+        repo=repo,
+        supplier=supplier,
+        total_size=total_size,
+        digest=digest,
+        file_info=file_info,
+        model_file_info=model_file_info,
+    )
+    pull_supplier.logger.debug(
+        f"pull_model_stream(): generic_model_info={generic_model_info}")
+    if generic_model_info is None:
+        error = pull_supplier.error(f"Invalid Model info'\n")
+        pull_supplier.logger.error(error)
+        return None, None, None, None, error
+
+    generic_model, generic_model_info = pull_supplier.create_generic_model(
+        generic_model_info=generic_model_info,
+        file_info=file_info,
+        model_file_info=model_file_info,
+        model_type=model_type,
+        repo=repo,
+    )
+    pull_supplier.logger.debug(
+        f"pull_model_stream(): generic_model={generic_model}")
+    if generic_model is None:
+        error = pull_supplier.error(f"Invalid Model'\n")
+        pull_supplier.logger.error(error)
+        return None, None, None, generic_model_info, error
+
+    generic_model_file_info = pull_supplier.create_generic_model_file_info(
+        file=file,
+        model_name=model_name,
+        model_type=model_type,
+        repo=repo,
+        supplier=supplier,
+        total_size=total_size,
+        file_info=file_info,
+        model_file_info=model_file_info,
+    )
+    pull_supplier.logger.debug(
+        f"pull_model_stream(): generic_model_file_info={generic_model_file_info}")
+    if generic_model_file_info is None:
+        error = pull_supplier.error(f"Invalid Modelfile info'\n")
+        pull_supplier.logger.error(error)
+        return None, None, generic_model, generic_model_info, error
+
+    generic_model_file, generic_model_file_info = pull_supplier.create_generic_model_file(
+        generic_model_file_info=generic_model_file_info,
+        file_info=file_info,
+        model_file_info=model_file_info,
+        model=generic_model,
+        model_type=model_type,
+        repo=repo,
+    )
+    pull_supplier.logger.debug(
+        f"pull_model_stream(): generic_model_file={generic_model_file}")
+    if generic_model_file is None:
+        error = pull_supplier.error(f"Invalid Modelfile'\n")
+        pull_supplier.logger.error(error)
+        return None, generic_model_file_info, generic_model, generic_model_info, error
+
+    # debug
+    if supplier.is_huggingface():
+        huggingface_model_info_path = RkllamaStorageHelper.huggingface_model_info_path(generic_model_file_info)
+        pull_supplier.logger.debug(
+            f"pull_model_stream(): huggingface_model_info_path={huggingface_model_info_path}")
+    elif supplier.is_ollama():
+        ollama_model_info_path = OllamaStorageHelper.ollama_model_info_path(model_path=generic_model_file_info,
+                                                                            ollama_manifest=file_info)
+        pull_supplier.logger.debug(f"pull_model_stream(): ollama_model_info_path={ollama_model_info_path}")
+
+    return generic_model_file, generic_model_file_info, generic_model, generic_model_info, None
 
 
 def pull_model(request: Request,
@@ -37,92 +192,21 @@ def pull_model(request: Request,
         return error
 
     try:
-        # when the supplier is Ollama, file_info is an OllamaManifest
-        # when the supplier is Rkllama, file_info is a HfFileInfo
-        file_info, repo, model_type, error = pull_supplier.file_info(
-            model_name=model_name, file=file, repo=repo, model_type=model_type, supplier=supplier)
-        if error is not None:
-            pull_supplier.logger.error(error)
-            return error
 
-        file_info, error = pull_supplier.check_file_info(model_name, file, repo, model_type, file_info)
-        if error is not None:
-            pull_supplier.logger.error(error)
-            return error
-        if file_info is None:
-            error = pull_supplier.error(f"Invalid file info'\n")
-            pull_supplier.logger.error(error)
-            return error
-
-        total_size, digest, error = pull_supplier.size_and_digest(model_name, file, repo, model_type, file_info)
-        if error is not None:
-            pull_supplier.logger.error(error)
-            return error
-
-        # Create the configuration file for the model
-        if model_type is None:
-            model_type = ModelType.get_model_type_from_endpoint_model_file(file)
-
-        pull_supplier.logger.debug(f"model_type={model_type}")
-
-        # when the supplier is Ollama, file_info is an OllamaModelInfo
-        # when the supplier is Rkllama, file_info is a HFModelInfo
-        model_file_info, file_info, repo, model_type, error = pull_supplier.model_file_info(
-            model_name=model_name, file=file, repo=repo, model_type=model_type,
-            file_info=file_info, supplier=supplier)
-        if error is not None:
-            pull_supplier.logger.error(error)
-            return error
-
-        if model_type is None:
-            error = pull_supplier.error(f"Invalid model type '{model_type}'\n")
-            pull_supplier.logger.error(error)
-            return error
-
-        model_file_info, error = pull_supplier.check_model_file_info(
-            model_name=model_name, file=file, repo=repo, model_type=model_type,
-            file_info=file_info, model_file_info=model_file_info)
-        if error is not None:
-            pull_supplier.logger.error(error)
-            return error
-        if model_file_info is None:
-            error = pull_supplier.error(f"Invalid model file info'\n")
-            pull_supplier.logger.error(error)
-            return error
-
-        generic_model_file_info = pull_supplier.create_generic_model_file_info(
-            file=file,
-            model_name=model_name,
-            model_type=model_type,
-            repo=repo,
-            supplier=supplier,
-            total_size=total_size,
-            file_info=file_info,
-            model_file_info=model_file_info,
+        model_file_info, file_info, total_size, digest, model_name, file, repo, model_type, error = (
+            _create_specific(model_name=model_name, file=file, repo=repo, model_type=model_type,
+                             supplier=supplier, pull_supplier=pull_supplier)
         )
-        pull_supplier.logger.debug(
-            f"pull_model_stream(): generic_model_file_info={generic_model_file_info}")
+        if error is not None:
+            return error
 
-        generic_model_file, generic_model_file_info = pull_supplier.create_generic_model_file(
-            generic_model_file_info=generic_model_file_info,
-            file_info=file_info,
-            model_file_info=model_file_info,
-            model_type=model_type,
-            repo=repo,
+        generic_model_file, generic_model_file_info, generic_model, generic_model_info, error = (
+            _create_generic(model_name=model_name, file=file, repo=repo, model_type=model_type,
+                            model_file_info=model_file_info, file_info=file_info, total_size=total_size, digest=digest,
+                            supplier=supplier, pull_supplier=pull_supplier)
         )
-        pull_supplier.logger.debug(
-            f"pull_model_stream(): generic_model_file={generic_model_file}")
-
-        # debug
-        if supplier.is_huggingface():
-            huggingface_model_info_path = RkllamaStorageHelper.huggingface_model_info_path(generic_model_file_info)
-            pull_supplier.logger.debug(
-                f"pull_model_stream(): huggingface_model_info_path={huggingface_model_info_path}")
-        elif supplier.is_ollama():
-            ollama_model_info_path = OllamaStorageHelper.ollama_model_info_path(model_path=generic_model_file_info,
-                                                                                ollama_manifest=file_info)
-            pull_supplier.logger.debug(f"pull_model_stream(): ollama_model_info_path={ollama_model_info_path}")
-
+        if error is not None:
+            return error
 
         ollama_model_storage_helper, ollama_storage_helper, rkllama_storage_helper = create_storage_helpers(
             generic_model_file=generic_model_file,
@@ -264,86 +348,21 @@ def pull_model_stream(request: Request,
             yield pull_supplier.format_error(error)
 
         try:
-            file_info, repo, model_type, error = pull_supplier.file_info(
-                model_name=model_name, file=file, repo=repo, model_type=model_type, supplier=supplier)
-            if error is not None:
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-
-            file_info, error = pull_supplier.check_file_info(model_name, file, repo, model_type, file_info)
-            if error is not None:
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-            if file_info is None:
-                error = pull_supplier.error(f"Invalid file info'\n")
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-
-            total_size, digest, error = pull_supplier.size_and_digest(model_name, file, repo, model_type, file_info)
-            if error is not None:
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-
-            # Create the configuration file for a model
-            if model_type is None:
-                model_type = ModelType.get_model_type_from_endpoint_model_file(file)
-
-            pull_supplier.logger.debug(f"model_type={model_type}")
-
-            model_file_info, file_info, repo, model_type, error = pull_supplier.model_file_info(
-                model_name=model_name, file=file, repo=repo, model_type=model_type,
-                file_info=file_info, supplier=supplier)
-            if error is not None:
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-
-            if model_type is None:
-                error = pull_supplier.error(f"Invalid model type '{model_type}'\n")
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-
-            model_file_info, error = pull_supplier.check_model_file_info(
-                model_name=model_name, file=file, repo=repo, model_type=model_type,
-                file_info=file_info, model_file_info=model_file_info)
-            if error is not None:
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-            if model_file_info is None:
-                error = pull_supplier.error(f"Invalid model file info'\n")
-                pull_supplier.logger.error(error)
-                yield pull_supplier.format_error(error)
-
-            generic_model_file_info = pull_supplier.create_generic_model_file_info(
-                file=file,
-                model_name=model_name,
-                model_type=model_type,
-                repo=repo,
-                supplier=supplier,
-                total_size=total_size,
-                file_info=file_info,
-                model_file_info=model_file_info,
+            model_file_info, file_info, total_size, digest, model_name, file, repo, model_type, error = (
+                _create_specific(model_name=model_name, file=file, repo=repo, model_type=model_type,
+                                 supplier=supplier, pull_supplier=pull_supplier)
             )
-            pull_supplier.logger.debug(
-                f"pull_model_stream(): generic_model_file_info={generic_model_file_info}")
+            if error is not None:
+                yield pull_supplier.format_error(error)
 
-            generic_model_file, generic_model_file_info = pull_supplier.create_generic_model_file(
-                generic_model_file_info=generic_model_file_info,
-                file_info=file_info,
-                model_file_info=model_file_info,
-                model_type=model_type,
-                repo=repo,
+            generic_model_file, generic_model_file_info, generic_model, generic_model_info, error = (
+                _create_generic(model_name=model_name, file=file, repo=repo, model_type=model_type,
+                                model_file_info=model_file_info, file_info=file_info, total_size=total_size,
+                                digest=digest,
+                                supplier=supplier, pull_supplier=pull_supplier)
             )
-            pull_supplier.logger.debug(
-                f"pull_model_stream(): generic_model_file={generic_model_file}")
-
-            # debug
-            if supplier.is_huggingface():
-                huggingface_model_info_path = RkllamaStorageHelper.huggingface_model_info_path(generic_model_file_info)
-                pull_supplier.logger.debug(f"pull_model_stream(): huggingface_model_info_path={huggingface_model_info_path}")
-            elif supplier.is_ollama():
-                ollama_model_info_path = OllamaStorageHelper.ollama_model_info_path(model_path=generic_model_file_info,
-                                                                                    ollama_manifest=file_info)
-                pull_supplier.logger.debug(f"pull_model_stream(): ollama_model_info_path={ollama_model_info_path}")
+            if error is not None:
+                yield pull_supplier.format_error(error)
 
             ollama_model_storage_helper, ollama_storage_helper, rkllama_storage_helper = create_storage_helpers(
                 generic_model_file=generic_model_file,

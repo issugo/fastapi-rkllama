@@ -3,26 +3,27 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-
-from pydantic_core import from_json
 from typing import Optional, List, Tuple, Any
 
 from pydantic import BaseModel, Field
 
 from core.backends.backend import BACKEND_SUPPORTED_LIB_VERSION
 from core.config.PlatformConfig import PlatformProcessor
-from core.model.ModelFileInfo import ModelFileInfo
-from core.model.ModelInfo import ModelDetails, HFModelInfo, OllamaModelInfo
-from core.model.ModelPath import ModelPath, int_parameters_size
-from core.model.ModelType import ModelType
 from core.model import logger
+from core.model.ModelFileInfo import ModelFileInfo
+from core.model.ModelInfo import ModelDetails
+from core.model.ModelLicense import ModelLicense
+from core.model.ModelPath import ModelPath, int_parameters_size, ModelException
+from core.model.ModelType import ModelType
 from core.model.converter.quantization_constants import RK_QUANT_FORMAT, ollama_quant_mapping, OLLAMA_QUANT_FORMAT
-from core.model.models_constants import MODEL_SPECS, RK_TAGS_LIST, default_context_length
+from core.model.models_constants import MODEL_SPECS, RK_TAGS_LIST, default_context_length, validate_model_id, \
+    DEFAULT_SYSTEM
+from core.model.suppliers_model_info import OllamaModelInfo, HFModelInfo
 
 
 class ModelMetadataFormat(str, Enum):
-    SIMPLE = "simple"
     BASIC = "basic"
+    SIMPLE = "simple"
     COMPLETE = "complete"
 
     @staticmethod
@@ -39,13 +40,20 @@ class ModelMetadataFormat(str, Enum):
             metadata = json.load(f)
             if "conversion_date" in metadata:
                 return ModelMetadataFormat.COMPLETE
-            elif "model_id" in metadata:
-                return ModelMetadataFormat.BASIC
-            else:
+            elif "name" in metadata:
                 return ModelMetadataFormat.SIMPLE
+            else:
+                return ModelMetadataFormat.BASIC
 
 
 METADATA_FILENAME = "metadata.json"
+
+class ModelMetadataNotFoundException(ModelException):
+    model_name: str
+
+    def __init__(self, model_name: str):
+        super().__init__(f"Model Metadata '{model_name}' not found.")
+        self.model_name = model_name
 
 
 class ModelMetadataParameters(BaseModel):
@@ -56,73 +64,94 @@ class ModelMetadataParameters(BaseModel):
 
 
 class BasicModelMetadata(BaseModel):
-    model_id: str
-    quantization: str
-
-
-class ModelMetadata(BasicModelMetadata):
-    conversion_date: str
-    parameters: ModelMetadataParameters
-
-    def save(self, output_path: str) -> None:
-        """
-        Save model metadata to a JSON file.
-
-        Args:
-            metadata: The model metadata to save
-            output_path: The directory to save the metadata in
-        """
-        try:
-            # Save to JSON file
-            metadata_path = os.path.join(output_path, "metadata.json")
-            with open(metadata_path, "w") as f:
-                json.dump(self.model_dump_json(), f, indent=2)
-
-            logger.info(f"Metadata saved to {metadata_path}")
-        except Exception as e:
-            logger.error(f"Error saving metadata: {str(e)}")
-            raise
+    model_id: Optional[str] = Field(default=None, description="Unique identifier of the model (ex: qwen2.5:0.5B).")
+    quantization: str = Field(description="Quantization format of the model(like w8a8, opt, hybrid, etc.)")
 
     @classmethod
-    def load(cls, metadata_path: str | Path):
-        """
-        Load model metadata from a JSON file.
+    def factory_helper(cls) -> dict:
+        return { "format": ModelMetadataFormat.BASIC }
 
-        Args:
-            metadata_path: Path to the metadata JSON file
+    def get_format(self) -> ModelMetadataFormat:
+        return self.__class__.factory_helper().get("format")
 
-        Returns:
-            The loaded model metadata
-        """
-        if ModelMetadataFormat.get_format(metadata_path) == ModelMetadataFormat.SIMPLE:
-            raise ValueError("Metadata file is not in the correct format (cannot be SIMPLE).")
+    def save(self, model_path: ModelPath, factory_helper: dict = None):
+        """Save model metadata to a JSON file."""
+        logger.debug(f"BasicModelMetadata.save(model_path={model_path})")
+        metadata_path: Path = model_path.model_metadata_path
+        logger.debug(f"BasicModelMetadata.save(): metadata_path={metadata_path}")
+
+        if factory_helper is None:
+            factory_helper = self.__class__.factory_helper()
+
+        model_metadata_format: ModelMetadataFormat | None = ModelMetadataFormat.get_format(metadata_path)
+        if model_metadata_format is None or model_metadata_format == factory_helper.get("format"):
+            try:
+                # Save to JSON file
+                with open(str(metadata_path), "w") as f:
+                    f.write(self.model_dump_json(indent=2,
+                                                 exclude_unset=True,
+                                                 exclude_defaults=True,
+                                                 exclude_none=True,
+                                                 ))
+
+                logger.info(f"Metadata saved to {metadata_path}")
+            except Exception as e:
+                logger.error(f"Error saving metadata: {str(e)}")
+                raise
+        else:
+            raise ValueError(
+                f"Metadata file is already in a different format (search for {factory_helper.get("format")}, is {model_metadata_format}).")
+
+    @classmethod
+    def load(cls, model_path: ModelPath, factory_helper: dict = None):
+        """Load model metadata from a JSON file."""
+        logger.debug(f"ModelConfig.load(model_path={model_path})")
+        metadata_path: Path = model_path.model_metadata_path
+        logger.debug(f"ModelConfig.load(): metadata_path={metadata_path}")
+
+        if factory_helper is None:
+            factory_helper = cls.factory_helper()
+
+        if ModelMetadataFormat.get_format(metadata_path) != factory_helper.get("format"):
+            raise ValueError(
+                f"Metadata file is not in the correct format (search for {factory_helper.get("format")}, is {ModelMetadataFormat.get_format(metadata_path)}).")
 
         try:
             with open(str(metadata_path), "r") as f:
-                return ModelMetadata.model_validate(from_json(json.load(f), allow_partial=True))
+                json_data = json.load(f)
+                json_data['model_id'] = validate_model_id(model_path.model_id)
+                logger.debug(f"Metadata loaded from {metadata_path}: {json_data}")
+                if factory_helper.get("format") is ModelMetadataFormat.COMPLETE:
+                    return ModelMetadata(**json_data)
+                elif factory_helper.get("format") is ModelMetadataFormat.SIMPLE:
+                    return SimpleModelMetadata(**json_data)
+                else:
+                    return BasicModelMetadata(**json_data)
 
         except Exception as e:
             logger.error(f"Error loading metadata: {str(e)}")
             raise
 
 
-class SimpleModelMetadata(BaseModel):
+class SimpleModelMetadata(BasicModelMetadata):
     """Metadata for a converted model."""
     name: str
     architecture: str = Field(description="Architecture of the model(like Qwen, OPT, etc.)")
-    quantization: str = Field(description="Quantization format of the model(like w8a8, opt, hybrid, etc.)")
     quantization_opt: Optional[int] = None
     quantization_hybrid_ratio: Optional[float] = None
     parameters: int = Field(description="Number of parameters in the model (converted to int)")
     context_length: int
-    system_prompt: str
+    system_prompt: Optional[str] = None
+    template: Optional[str] = None
     temperature: float
     model_type: Optional[ModelType]
+    description: Optional[str] = Field(default=None, description="Description of the model")
+    finetune: Optional[str] = Field(default=None, description="Type of finetune (like Instruct, Chat)")
+    license: Optional[ModelLicense] = Field(default=None, description="License of the model")
 
-    @staticmethod
-    def get_metadata_fields():
-        return ["name", "architecture", "quantization", "parameters", "context_length", "system_prompt", "temperature",
-                "model_type"]
+    @classmethod
+    def factory_helper(cls) -> dict:
+        return { "format": ModelMetadataFormat.SIMPLE }
 
     # model_name=Qwen3-1.7B-rk3588-1.2.1-unsloth-16k,
     @staticmethod
@@ -194,6 +223,15 @@ class SimpleModelMetadata(BaseModel):
                     if rk_tag == platform_processor.value:
                         model_details.update({'architecture': rk_tag})
                         break
+
+        # Determine finetune type if present
+        finetune = None
+        if "instruct" in model_name.lower():
+            finetune = "Instruct"
+        elif "chat" in model_name.lower():
+            finetune = "Chat"
+        if finetune:
+            model_metadata.update({'finetune': finetune})
 
         logger.debug(f"parse_model_name: Model metadata={model_metadata}")
         logger.debug(f"parse_model_name: Model details={model_details}")
@@ -313,7 +351,8 @@ class SimpleModelMetadata(BaseModel):
         return model_metadata, model_details, model_tags
 
     @classmethod
-    def compute(cls, model_path: ModelPath, model_details: ModelDetails, system_prompt: str,
+    def compute(cls, model_path: ModelPath, model_details: ModelDetails,
+                system_prompt: str = None,
                 temperature: float = None) -> dict:
         model_metadata_from_name, model_details_from_name, model_tags_from_name = \
             SimpleModelMetadata.parse_model_name(model_path.model_name)
@@ -348,6 +387,7 @@ class SimpleModelMetadata(BaseModel):
         if model_type is None and 'model_type' in model_metadata_from_name:
             model_type = model_metadata_from_name['model_type']
 
+        from core.model.ModelFile import DEFAULT_SYSTEM
         to_return = {
             "name": model_metadata_from_name['name'],
             "architecture": model_architecture,
@@ -355,10 +395,9 @@ class SimpleModelMetadata(BaseModel):
                                                          ollama_quant_mapping.get(model_details.quantization_level)),
             "parameters": int_size_value,
             "context_length": default_context_length(model_architecture),
-            "system_prompt": system_prompt,
-            "temperature": temperature if temperature is not None \
-                else ModelMetadataParameters().temperature,
-            "model_type": model_type
+            "system_prompt": system_prompt or DEFAULT_SYSTEM,
+            "temperature": temperature or ModelMetadataParameters().temperature,
+            "model_type": model_type,
         }
         if 'context_length' in model_metadata_from_name:
             to_return.update({'context_length': model_metadata_from_name['context_length']})
@@ -366,11 +405,13 @@ class SimpleModelMetadata(BaseModel):
             to_return.update({'quantization_opt': model_metadata_from_name['quantization_opt']})
         if 'quantization_hybrid_ratio' in model_metadata_from_name:
             to_return.update({'quantization_hybrid_ratio': model_metadata_from_name['quantization_hybrid_ratio']})
+        if 'finetune' in model_metadata_from_name:
+            to_return.update({'finetune': model_metadata_from_name['finetune']})
 
         return to_return
 
     @staticmethod
-    def create_using_huggingface_model_info(model_metadata_data: dict, huggingface_model_info: HFModelInfo) -> Any:
+    def create_using_huggingface_model_info(model_path: ModelPath, model_metadata_data: dict, huggingface_model_info: HFModelInfo) -> Any:
         """
         for all fields in HFModelInfo, check if they are existing in the model metadata and if, then update them
 
@@ -441,7 +482,9 @@ class SimpleModelMetadata(BaseModel):
             system_prompt: str
             temperature: float
             model_type: Optional[ModelType]
-
+            description: Optional[str] = Field(default=None, description="Description of the model")
+            finetune: Optional[str] = Field(default=None, description="Type of finetune (like Instruct, Chat)")
+            license: Optional[ModelLicense] = Field(default=None, description="License of the model")
         """
 
         # architecture
@@ -462,12 +505,20 @@ class SimpleModelMetadata(BaseModel):
             if huggingface_model_info.cardData.params > 0:
                 model_metadata_data['parameters'] = huggingface_model_info.cardData.params
 
+        # description
+        if huggingface_model_info.description:
+            model_metadata_data['description'] = huggingface_model_info.description
+
+        # license
+        if huggingface_model_info.license:
+            model_metadata_data['license'] = huggingface_model_info.license
+
         logger.debug(f"model_metadata_data: {model_metadata_data}")
 
         return SimpleModelMetadata(**model_metadata_data)
 
     @staticmethod
-    def create_using_ollama_model_info(model_metadata_data: dict, ollama_model_info: OllamaModelInfo) -> Any:
+    def create_using_ollama_model_info(model_path: ModelPath, model_metadata_data: dict, ollama_model_info: OllamaModelInfo) -> Any:
         """
         for all fields in OllamaModelInfo, check if they are existing in the model metadata and if, then update them
         ollama_model_info = {
@@ -529,67 +580,44 @@ class SimpleModelMetadata(BaseModel):
                     model_metadata_data['model_type'] = mt
                     break
 
+        # license
+        if ollama_model_info.license:
+            model_metadata_data['license'] = ollama_model_info.license
+
+        # system prompt
+        system_prompt = ollama_model_info.system_prompt
+        if system_prompt:
+            model_metadata_data['system_prompt'] = system_prompt
+
         logger.debug(f"model_metadata_data: {model_metadata_data}")
 
         return SimpleModelMetadata(**model_metadata_data)
 
+class ModelMetadata(SimpleModelMetadata):
+    conversion_date: str
+    model_parameters: ModelMetadataParameters
+
     @classmethod
-    def from_complete(cls, metadata: ModelMetadata):
+    def factory_helper(cls) -> dict:
+        return { "format": ModelMetadataFormat.COMPLETE }
+
+
+    @classmethod
+    def create(cls, model_metadata_data: dict, metadata = None):
+        if model_metadata_data is None:
+            model_metadata_data = {}
+        if metadata is not None:
+            model_metadata_data.update(metadata.model_dump())
+        return cls(**model_metadata_data)
+
+    @classmethod
+    def build(cls, hf_model_info: HFModelInfo,ollama_model_info: OllamaModelInfo):
         data: dict = {}
-        for attr in metadata.__dict__:
-            if attr == "model_id":
-                data["name"] = metadata.__dict__[attr]
-            elif attr == "parameters":
-                for param_attr in metadata.parameters.__dict__:
-                    data[param_attr] = metadata.parameters.__dict__[param_attr]
-
+        # TODO: load if persistent file is existing, and get the data as dict
+        # TODO: compute simple metadate using ollama_model_info, and update the data
+        # TODO: compute simple metadate using hf_model_info, and update the data
+        raise NotImplemented
         return cls(**data)
-
-    def save(self, model_file_info: ModelFileInfo):
-        """Save model metadata to a JSON file."""
-        logger.debug(f"ModelConfig.save(model_file_info={model_file_info})")
-        metadata_path: Path = model_file_info.modelfile_metadata_path
-        logger.debug(f"ModelConfig.save(): metadata_path={metadata_path}")
-
-        model_metadata_format: ModelMetadataFormat | None = ModelMetadataFormat.get_format(metadata_path)
-        if model_metadata_format is None or model_metadata_format == ModelMetadataFormat.SIMPLE:
-            try:
-                # Save to JSON file
-                with open(str(metadata_path), "w") as f:
-                    f.write(self.model_dump_json(indent=2,
-                                                 exclude_unset=True,
-                                                 exclude_defaults=True,
-                                                 exclude_none=True,
-                                                 ))
-
-                logger.info(f"Metadata saved to {metadata_path}")
-            except Exception as e:
-                logger.error(f"Error saving metadata: {str(e)}")
-                raise
-        else:
-            raise ValueError(
-                f"Metadata file is already in a different format (search for {ModelMetadataFormat.SIMPLE}, is {model_metadata_format}).")
-
-    @classmethod
-    def load(cls, model_file_info: ModelFileInfo):
-        """Load model metadata from a JSON file."""
-        logger.debug(f"ModelConfig.load(model_file_info={model_file_info})")
-        metadata_path: Path = model_file_info.modelfile_metadata_path
-        logger.debug(f"ModelConfig.load(): metadata_path={metadata_path}")
-
-        if ModelMetadataFormat.get_format(metadata_path) != ModelMetadataFormat.SIMPLE:
-            raise ValueError(
-                f"Metadata file is not in the correct format (search for SIMPLE, is {ModelMetadataFormat.get_format(metadata_path)}).")
-
-        try:
-            with open(str(metadata_path), "r") as f:
-                json_data = json.load(f)
-                logger.debug(f"Metadata loaded from {metadata_path}: {json_data}")
-                return SimpleModelMetadata(**json_data)
-
-        except Exception as e:
-            logger.error(f"Error loading metadata: {str(e)}")
-            raise
 
 
 def get_model_size(model_path: str) -> int:
@@ -610,3 +638,50 @@ def get_model_architecture(model_path: str) -> Optional[str]:
     """Detect the model architecture from the model file."""
     # TODO: Implement architecture detection
     pass
+
+def create_metadata(model_path: ModelPath, system_prompt: str = DEFAULT_SYSTEM,
+                    hf_model_info = None, ollama_model_info = None) -> Tuple[ModelMetadata | SimpleModelMetadata | BasicModelMetadata | None, ModelMetadataFormat, Path]:
+    metadata_path = model_path.model_metadata_path
+    md_format = ModelMetadataFormat.get_format(metadata_path)
+    logger.debug(f"Searching for Metadata: get {md_format}")
+    if md_format == ModelMetadataFormat.SIMPLE:
+        model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(model_path=model_path)
+    elif md_format is None:
+        if (hf_model_info and ollama_model_info) or (model_path.huggingface_model_info_exists and model_path.ollama_model_info_exists):
+            model_metadata: ModelMetadata = ModelMetadata.create(
+                model_metadata_data=SimpleModelMetadata.compute(
+                    model_path=model_path,
+                    model_details=ModelDetails.from_model_path(model_path=model_path),
+                    system_prompt=system_prompt
+                ),
+                metadata=ModelMetadata.build(
+                    hf_model_info=hf_model_info or model_path.huggingface_model_info,
+                    ollama_model_info=ollama_model_info or model_path.ollama_model_info
+                )
+            )
+        else:
+            model_metadata: SimpleModelMetadata | None = None
+            if hf_model_info or model_path.huggingface_model_info_exists:
+                model_metadata = SimpleModelMetadata.create_using_huggingface_model_info(
+                    model_path=model_path,
+                    model_metadata_data=SimpleModelMetadata.compute(
+                        model_path=model_path,
+                        model_details=ModelDetails.from_model_path(model_path=model_path),
+                        system_prompt=system_prompt
+                    ),
+                    huggingface_model_info=hf_model_info or model_path.huggingface_model_info)
+            elif ollama_model_info or model_path.ollama_model_info_exists:
+                model_metadata = SimpleModelMetadata.create_using_ollama_model_info(
+                    model_path=model_path,
+                    model_metadata_data=SimpleModelMetadata.compute(
+                        model_path=model_path,
+                        model_details=ModelDetails.from_model_path(model_path=model_path),
+                        system_prompt=system_prompt
+                    ),
+                    ollama_model_info=ollama_model_info or model_path.ollama_model_info)
+    else:
+        # from conversion
+        model_metadata: SimpleModelMetadata = SimpleModelMetadata.from_complete(
+            metadata=ModelMetadata.load(model_path=model_path)
+        )
+    return model_metadata, md_format, metadata_path

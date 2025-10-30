@@ -2,6 +2,10 @@ from enum import Enum
 from typing import Dict, Optional, Any, Literal
 from pydantic import BaseModel, Field
 
+from core.model.Model import Model
+
+OPENAI_OWNER = "openai"
+
 
 class OpenAIRoleEnum(str, Enum):
     """Role in an OpenAI message."""
@@ -59,3 +63,17 @@ class OpenAIChoice(BaseModel):
     """Base class for choices in OpenAI responses."""
     index: int
     finish_reason: Optional[OpenAIFinishReason] = None
+
+class OpenAIModel(BaseModel):
+    id: str = Field(description="model name like gpt-3.5-turbo")
+    object: str = "model"
+    created: int = Field(description="date as int format, like 1677610602")
+    owned_by: str = Field(default=OPENAI_OWNER, description="owner of the model")
+
+    @staticmethod
+    def from_model(model: Model):
+        return OpenAIModel(
+            id=model.id.replace('/',':'),
+            created=int(model.model_info.created_at_dt.timestamp()),
+            owned_by=model.model_info.author if model.model_info.author else OPENAI_OWNER,
+        )

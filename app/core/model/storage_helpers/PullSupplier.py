@@ -1,21 +1,14 @@
-from enum import Enum
 from logging import Logger
-from typing import AsyncGenerator, Any, Tuple
+from typing import Any, Tuple
+
+from core.model.Model import Model
+from core.model.ModelInfo import ModelInfo
+from core.model.storage_helpers import logger
 
 from core.model.ModelFile import ModelFile
 from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelType import ModelType
-
-
-class Supplier(str, Enum):
-    HUGGINGFACE = "HUGGINGFACE"
-    OLLAMA = "OLLAMA"
-
-    def is_ollama(self):
-        return self is Supplier.OLLAMA
-
-    def is_huggingface(self):
-        return self is Supplier.HUGGINGFACE
+from core.model.storage_helpers.SupplierFileInfo import Supplier
 
 
 class PullSupplier:
@@ -39,18 +32,32 @@ class PullSupplier:
         raise Exception("abstract method")
 
     def file_info(self, model_name, file, repo, model_type, supplier: Supplier) -> Tuple[Any | None, str | None, ModelType | None, Any]:
+        logger.debug(f"PullSupplier.file_info(model_name={model_name}, file={file}, repo={repo}, model_type={model_type}, supplier={supplier})")
         raise Exception("abstract method")
 
     def check_file_info(self, model_name, file, repo, model_type, file_info) -> Tuple[Any | None, Any]:
-        raise Exception("abstract method")
-
-    def size_and_digest(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any , Any]:
+        logger.debug(f"PullSupplier.check_file_info(model_name={model_name}, file={file}, repo={repo}, model_type={model_type}, file_info={file_info})")
         raise Exception("abstract method")
 
     def model_file_info(self, model_name, file, repo, model_type, file_info, supplier: Supplier) -> Tuple[Any | None, Any | None, str | None, ModelType | None, Any]:
+        logger.debug(f"PullSupplier.model_file_info(model_name={model_name}, file={file}, repo={repo}, model_type={model_type}, file_info={file_info}, supplier={supplier})")
         raise Exception("abstract method")
 
     def check_model_file_info(self, model_name, file, repo, model_type, file_info, model_file_info) -> Tuple[Any | None, Any]:
+        logger.debug(f"PullSupplier.check_model_file_info(model_name={model_name}, file={file}, repo={repo}, model_type={model_type}, file_info={file_info}, model_file_info={model_file_info})")
+        raise Exception("abstract method")
+
+    def create_generic_model_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
+                                       supplier: Supplier,
+                                       total_size: int,
+                                       digest: str,
+                                       file_info,
+                                       model_file_info) -> ModelInfo:
+        raise Exception("abstract method")
+
+    def create_generic_model(self, generic_model_info: ModelInfo,
+                                  file_info, model_file_info,
+                                  model_type: ModelType | None, repo: str) -> Tuple[Model, ModelInfo]:
         raise Exception("abstract method")
 
     def create_generic_model_file_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
@@ -60,7 +67,7 @@ class PullSupplier:
                                        model_file_info) -> ModelFileInfo:
         raise Exception("abstract method")
 
-    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo,
+    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo, model: Model,
                                   file_info, model_file_info,
                                   model_type: ModelType | None, repo: str) -> Tuple[ModelFile, ModelFileInfo]:
         raise Exception("abstract method")

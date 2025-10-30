@@ -5,12 +5,15 @@ import requests
 from core.model.storage_helpers.OllamaModelStorageHelper import BLOBS
 from core.model.storage_helpers.OllamaStorageHelper import MANIFESTS
 
-REGISTRY_BASE = "https://registry.ollama.ai/v2/library"
+REGISTRY_BASE = "https://registry.ollama.ai/library"
+REGISTRY_API_BASE = "https://registry.ollama.ai/v2/library"
 
 class OllamaFileSystem:
     @staticmethod
-    def model_path(model_name: str):
-        return f"{REGISTRY_BASE}/{model_name}"
+    def model_path(model_name: str, api: bool = True):
+        if not api:
+            return f"{REGISTRY_BASE}/{model_name}"
+        return f"{REGISTRY_API_BASE}/{model_name}"
 
     @staticmethod
     def manifest(model_name: str, target_tag: str):
@@ -30,11 +33,17 @@ class OllamaFileSystem:
         return man_resp.json()
 
     @staticmethod
+    def blob_url(digest: str, model_name: str) -> str:
+        if digest:
+            model_path = OllamaFileSystem.model_path(model_name)
+            blob_url = f"{model_path}/{BLOBS}/{digest}"
+            return blob_url
+        raise ValueError("invalid blob digest")
+
+    @staticmethod
     def model_url(model_digest: str, model_name: str) -> str:
         if model_digest:
-            model_path = OllamaFileSystem.model_path(model_name)
-            model_url = f"{model_path}/{BLOBS}/{model_digest}"
-            return model_url
+            return OllamaFileSystem.blob_url(model_digest, model_name)
         raise ValueError("invalid model digest")
 
     @staticmethod

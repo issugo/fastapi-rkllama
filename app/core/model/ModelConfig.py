@@ -3,20 +3,19 @@ import re
 from pathlib import Path
 from typing import get_type_hints, Any, Optional
 
-from pydantic_core import from_json
-
-from core.config.config_utils import get_settings
-from core.config.warnings import deprecated
-
 from pydantic import Field, BaseModel
 
+from core.config.DefaultModelConfig import DefaultConfig
+from core.config.config_utils import get_settings
+from core.config.warnings import deprecated
 from core.model import logger
-
-from core.config.DefaultModelConfig import DefaultModelConfig, DefaultConfig
 from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelMetadata import SimpleModelMetadata
 from core.model.ModelPath import ModelPath
-from core.model.models_constants import B_PARAM_SIZE_PATTERN, M_PARAM_SIZE_PATTERN
+from core.model.models_constants import B_PARAM_SIZE_PATTERN, M_PARAM_SIZE_PATTERN, validate_from
+
+class ModelConfigException(Exception):
+    pass
 
 class ModelParameters(BaseModel):
     num_ctx: int = Field(default=4096, description="Sets the size of the context window used to generate the next token. (Default: 4096)")
@@ -51,23 +50,7 @@ class FullModelParameters(ModelParameters):
         raise NotImplementedError
 
 
-
-class MinimalModelFileProperties(BaseModel):
-    FROM: str = Field(description="Defines the base model to use, can be path to the model file or docker image format (<name>:<tag>).")
-    SYSTEM: Optional[str] = Field(default=None, description="Specifies the system message that will be set in the template.")
-
-class ModelFileProperties(MinimalModelFileProperties):
-    Instruction: Optional[str] = Field(default=None, description="Description")
-    TEMPLATE: Optional[str] = Field(default=None, description="The full prompt template to be sent to the model.")
-    ADAPTER: Optional[str] = Field(default=None, description="Defines the (Q)LoRA adapters to apply to the model.")
-    LICENSE: Optional[str] = Field(default=None, description="Specifies the legal license.")
-    MESSAGE: Optional[str] = Field(default=None, description="Specify message history.")
-
-    # PARAMETER: Sets the parameters for how Ollama will run the model.
-    PARAMETER: Optional[ModelParameters] = Field(default=None, description="Sets the parameters for how Ollama will run the model.")
-
-
-class MinimalModelConfig(MinimalModelFileProperties):
+class MinimalModelConfig(BaseModel):
     HUGGINGFACE_PATH: Optional[str] = Field(default=None, description="Hugging Face repository path")
     OLLAMA_PATH: Optional[str] = Field(default=None, description="Ollama repository path")
 
@@ -143,11 +126,15 @@ class ModelConfig(MinimalTemperedModelConfig):
 
             if b_param_pattern or m_param_pattern:
                 logger.warning(f"Model {data["endpoint_model_file"]} does not have any extension (is a model param size).")
-                data["FROM"] = f"{data["model_name"]}:{data["endpoint_model_file"]}"
+                data["FROM"] = validate_from(ModelPath.compute_model_id(
+                    model_name=data["model_name"],
+                    endpoint_model_file=data["endpoint_model_file"],
+                    is_ollama="ollama_path" in data,
+                ))
             else:
-                data["FROM"] = data["endpoint_model_file"]
+                data["FROM"] = validate_from(data["endpoint_model_file"])
                 del data["endpoint_model_file"]
-                from_ext = data["FROM"].split(".")[-1]
+                from_ext = validate_from(data["FROM"]).split(".")[-1]
                 if f".{from_ext}" != model_path.model_type.get_extension():
                     raise ValueError(f"Model type mismatch: FROM extension {from_ext} != {model_path.model_type}")
 
@@ -181,17 +168,20 @@ class ModelConfig(MinimalTemperedModelConfig):
             while line := f.readline():
                 if line.startswith("#"):
                     if line.startswith("# FROM="):
-                        endpoint_model_file = line.split('=')[1].strip()
-                        if model_file_info.endpoint_model_file is not None \
-                            and endpoint_model_file != model_file_info.endpoint_model_file \
-                            and endpoint_model_file != f"{model_file_info.model_name}:{model_file_info.endpoint_model_file}":
-                            raise ValueError(f"Model mismatch: {endpoint_model_file} != ({model_file_info.model_name}:){model_file_info.endpoint_model_file}")
+                        endpoint_model_file = line.split('=',maxsplit=1)[1].strip()
+                        if model_file_info.validate_FROM_with_endpoint_file(FROM=endpoint_model_file):
+                            raise ModelConfigException(f"Model mismatch: {endpoint_model_file} != ({model_file_info.model_name}[:/]){model_file_info.endpoint_model_file}")
                         from_value = endpoint_model_file
                 else:
                     filtered_content += line + "\n"
             json_data = json.loads(filtered_content)
 
-        json_data['FROM'] = from_value or json_data['FROM']
+        if from_value is None and "FROM" not in json_data:
+            raise ModelConfigException(
+                f"Model config file {file_path} does not contain FROM parameter."
+            )
+
+        json_data['FROM'] = validate_from(from_value or json_data['FROM'])
 
         json_data.update(modelfile_parameters.model_dump(
                                          exclude_unset=True,
@@ -210,14 +200,18 @@ class ModelConfig(MinimalTemperedModelConfig):
         return ModelConfig(**json_data)
 
     def save(self, model_file_info: ModelFileInfo, modelfile_parameters: ModelParameters):
+        from core.model.ModelFile import MinimalModelFileContent
         logger.debug(f"ModelConfig.save(model_file_info={model_file_info}, modelfile_parameters={modelfile_parameters})")
         file_path: Path = model_file_info.modelfile_config_path
         logger.debug(f"ModelConfig.save(): file_path={file_path}")
         exclude = {attr for attr, _ in
                    list(ModelParameters.model_fields.items()) + list(MinimalTemperedModelConfig.model_fields.items())}
         with open(str(file_path), "w") as f:
-            for attr, value in self.model_dump().items():
-                if attr in MinimalModelFileProperties.model_fields:
+            model_dump = self.model_dump()
+            if "FROM" not in model_dump:
+                model_dump["FROM"] = model_file_info.model_id
+            for attr, value in model_dump.items():
+                if attr in MinimalModelFileContent.model_fields:
                     f.write(f"# {attr.upper()}={value}\n")
             f.write(self.model_dump_json(indent=2,
                                          exclude_unset=True,

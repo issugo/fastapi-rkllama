@@ -1,10 +1,9 @@
 # Import libs
-import os
-import subprocess
-import resource
-import argparse
-import sys
 import logging
+import os
+import resource
+import subprocess
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -13,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api import api_router
 from core.config import config_utils
-from core.config.RKLLAMAConfig import RKLLAMAConfig
 from loggers import logging_setup
 from loggers.debug_utils import add_debug_api
 

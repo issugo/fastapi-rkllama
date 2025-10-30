@@ -46,6 +46,7 @@ class StorageHelper:
     def model_link(self) -> Path:
         raise NotImplementedError()
 
+
     def _store_model_link(self):
         model_link = self.model_link
         if os.path.exists(model_link):

@@ -9,12 +9,15 @@ from core.api.parameters.converter.ConversionConfig import ConversionConfig
 from core.model.Model import Model
 from core.model.ModelInfo import ModelDetails
 from core.model.ModelMetadata import ModelMetadata, METADATA_FILENAME
+from core.model.ModelName import ModelName
 from core.model.ModelPath import ModelPath
 from core.model.ModelType import ModelType
 from core.model.converter.RKLLMConverter import RKLLMConverter, RKLLMConverterConfig
 from core.model.converter.quantization import QuantizationConverter
 from core.model.converter import logger, quantization_constants
+from core.model.models_constants import validate_model_id
 
+CONVERTION_AUTHOR="convertion"
 
 class HuggingFaceToRKLLMConverter:
     """Converts Hugging Face models to RKLLM format."""
@@ -50,7 +53,7 @@ class HuggingFaceToRKLLMConverter:
             'format': '?'
         })
 
-        endpoint_model_file: str = ModelPath.gen_endpoint_model_file_name_using_model_details(
+        endpoint_model_file: str = ModelDetails.gen_endpoint_model_file_name_using_model_details(
             model_name=self.config.model_name,
             model_type=self.model_type,
             model_details=model_details
@@ -59,7 +62,8 @@ class HuggingFaceToRKLLMConverter:
         model_path: ModelPath = ModelPath(**{
             'model_name': self.config.model_name,
             'model_type': self.model_type,
-            'huggingface_path': self.config.model_id,
+            'huggingface_path': ModelName.model_id_to_path(validate_model_id(self.config.model_id),
+                                                           author=CONVERTION_AUTHOR),
             'endpoint_model_file': endpoint_model_file
         })
 
@@ -93,14 +97,14 @@ class HuggingFaceToRKLLMConverter:
         try:
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
-                self.config.model_id,
+                validate_model_id(self.config.model_id),
                 token=self.config.token
             )
 
             # Try to load processor for multimodal models
             try:
                 self.processor = AutoProcessor.from_pretrained(
-                    self.config.model_id,
+                    validate_model_id(self.config.model_id),
                     token=self.config.token
                 )
                 logger.info("Loaded multimodal processor")
@@ -109,7 +113,7 @@ class HuggingFaceToRKLLMConverter:
 
             # Load model
             self.model = AutoModelForCausalLM.from_pretrained(
-                self.config.model_id,
+                validate_model_id(self.config.model_id),
                 token=self.config.token,
                 torch_dtype=torch.float16 if self.config.dtype == 'float16' else torch.float32,
                 device_map=self.config.device
@@ -187,7 +191,7 @@ TEMPERATURE=0.7
 
         # TODO: use model_details instead of config when possible
         model_metadata: ModelMetadata = ModelMetadata(**{
-            "model_id": self.config.model_id,
+            "model_id": validate_model_id(self.config.model_id),
             "quantization": self.config.quantization,
             "conversion_date": datetime.now().isoformat(),
             "parameters": {

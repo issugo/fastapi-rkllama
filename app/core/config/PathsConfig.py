@@ -1,7 +1,16 @@
+from enum import Enum
 from typing import Annotated
 from core.config.warnings import deprecated
 
 from pydantic import BaseModel, Field
+
+class PATH_KEY(str, Enum):
+    MODELS = "models"
+    LOGS = "logs"
+    DATA = "data"
+    SRC = "src"
+    LIB = "lib"
+    TEMP = "temp"
 
 class Paths(BaseModel):
     models: Annotated[str, Field(default="models", description="Path to model files")]

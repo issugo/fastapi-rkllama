@@ -1,19 +1,25 @@
+import datetime
 import os
 from typing import Tuple, Any
 
+import requests
 from huggingface_hub import HfFileSystem, hf_hub_url
 
-from core.config import config_utils
 from core.config.config_utils import get_settings
 from core.model.HfFileInfo import HfFileInfo
+from core.model.Model import Model
 from core.model.ModelFile import ModelFile
 from core.model.ModelFileInfo import ModelFileInfo
-from core.model.ModelInfo import HFModelInfo
-from core.model.ModelMetadata import SimpleModelMetadata
+from core.model.ModelInfo import ModelInfo, DummyStatResult
+from core.model.ModelMetadata import SimpleModelMetadata, create_metadata
+from core.model.ModelPath import ModelPath
 from core.model.ModelType import ModelType
+from core.model.models_constants import validate_model_id
 from core.model.storage_helpers.HuggingfaceFileSystem import HuggingfaceFileSystem
-from core.model.storage_helpers.PullSupplier import PullSupplier, Supplier
+from core.model.storage_helpers.PullSupplier import PullSupplier
 from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+from core.model.storage_helpers.SupplierFileInfo import Supplier
+from core.model.suppliers_model_info import HFModelInfo, HFModelLicense
 
 DEFAULT_CONTENT_TYPE = "text/plain"
 
@@ -81,17 +87,6 @@ class RKPullSupplier(PullSupplier):
 
         return file_info, None
 
-    def size_and_digest(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any, Any]:
-        total_size = file_info.size  # File size in bytes
-        if total_size == 0:
-            return None, None, "Error: Unable to retrieve file size.\n"
-
-        digest = file_info.lfs.sha256
-        if not digest:
-            return None, None, "Error: Unable to retrieve file digest.\n"
-
-        return total_size, digest, None
-
     def model_file_info(self, model_name, file, repo, model_type, file_info: HfFileInfo, supplier: Supplier) -> Tuple[
         Any | None, Any | None, str | None, ModelType | None, Any]:
         if supplier != Supplier.HUGGINGFACE:
@@ -124,6 +119,29 @@ class RKPullSupplier(PullSupplier):
                 huggingface_model_info = HFModelInfo(**hf_model_info)
             self.logger.debug(f"model_file_info(): huggingface_model_info={huggingface_model_info}")
 
+            # manage license
+            rfilename_siblings = [sibling.rfilename for sibling in huggingface_model_info.siblings]
+            if "LICENSE" in rfilename_siblings:
+                license_url=fs.sibling_url(huggingface_path=repo,
+                                           rfilename_sibling="LICENSE")
+                with requests.get(license_url) as r:
+                    huggingface_model_info.license = HFModelLicense.from_content(
+                        content=r.content,
+                        license_url=license_url
+                    )
+            elif hf_model_info and \
+                    "license" in hf_model_info and \
+                    "license_name" in hf_model_info and \
+                    "license_url" in hf_model_info :
+                huggingface_model_info.license = HFModelLicense(
+                    supplier=Supplier.HUGGINGFACE,
+                    license_name=hf_model_info["license_name"],
+                    license_url=hf_model_info["license_url"],
+                    license_text=hf_model_info["license"],
+                )
+
+            # manage template: already in huggingface_model_info.config.chat_template_jinja
+
             return huggingface_model_info, file_info, repo, model_type, None
         except Exception as e:
             self.logger.exception(f"Error reading model HFModelInfo: {str(e)}", exc_info=e)
@@ -145,6 +163,85 @@ class RKPullSupplier(PullSupplier):
         # TODO: check that model_file_info is valid
 
         return model_file_info, None
+
+    def create_generic_model_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
+                                       supplier: Supplier,
+                                       total_size: int,
+                                       digest: str,
+                                       file_info: HfFileInfo,
+                                       model_file_info: HFModelInfo) -> ModelInfo:
+        """
+        fulfill the ModelInfo fields that are not derived from Hugging Face HfFileSystem
+        """
+        model_stat = self._create_dummy_stat_result(file_info, model_file_info)
+        generic_model_info: ModelInfo = ModelInfo.from_hf_model_info(
+            hf_model_info=model_file_info,
+            model_path=ModelPath(model_name=model_name,
+                                 model_type=model_type,
+                                 endpoint_model_file=file,
+                                 endpoint_model_file_size=total_size,
+                                 ),
+            size=total_size,
+            digest=digest,
+            model_stat=model_stat
+        )
+        self.logger.debug(f"generic_model_info={generic_model_info.model_dump_json()}")
+        self.logger.debug(f"hf_data={generic_model_info.hf_model_info}")
+        return generic_model_info
+
+    def _create_dummy_stat_result(self, file_info: HfFileInfo, model_file_info: HFModelInfo) -> DummyStatResult:
+        dt_now = datetime.datetime.now().timestamp()
+        dt_modified = datetime.datetime.strptime(model_file_info.lastModified,
+                                                 "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() if model_file_info.lastModified else \
+            datetime.datetime.strptime(HfFileInfo.last_commit_to_last_modified(file_info.last_commit),
+                                       "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() if file_info.last_commit else \
+                dt_now
+        model_stat = DummyStatResult(
+            st_size=file_info.size,
+            st_atime=dt_modified,
+            st_ctime=dt_modified,
+            st_mtime=dt_modified,
+        )
+        return model_stat
+
+    def create_generic_model(self, generic_model_info: ModelInfo,
+                                  file_info: HfFileInfo, model_file_info: HFModelInfo,
+                                  model_type: ModelType | None, repo: str) -> Tuple[Model, ModelInfo]:
+        """
+        fulfill the Model fields to create the Model:
+            id: str
+            st_atime: float
+            st_mtime: float
+            st_ctime: float
+            size: int
+            digest: str
+            model_path: ModelPath
+            # model_info contains only model file stats, and nothing in relation with model content configuration
+            model_info: ModelInfo
+            # model_metadata contains model configuration
+            model_metadata: Optional[BasicModelMetadata|SimpleModelMetadata|ModelMetadata] = Field(default=None, description="Model metadata")
+
+            _supplier: Optional[Supplier] = None
+            _supplier_model_info: Optional[OllamaModelInfo|HFModelInfo] = None
+
+        """
+        model_path: ModelPath = generic_model_info.model_path
+        model_metadata, model_metadata_format, model_metadata_path = create_metadata(model_path=model_path, hf_model_info=model_file_info)
+        model_stat = self._create_dummy_stat_result(file_info, model_file_info)
+        model: Model = Model(
+            id=validate_model_id(model_path.model_id),
+            st_atime=model_stat.st_atime,
+            st_mtime=model_stat.st_mtime,
+            st_ctime=model_stat.st_ctime,
+            size=file_info.size,
+            digest=file_info.digest,
+            model_path=model_path,
+            model_info=generic_model_info,
+            model_metadata=model_metadata
+        )
+        model._supplier = Supplier.HUGGINGFACE
+        model._supplier_model_info = model_file_info
+        return model, generic_model_info
 
 
     def create_generic_model_file_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
@@ -179,14 +276,18 @@ class RKPullSupplier(PullSupplier):
         self.logger.debug(f"hf_data={generic_model_file_info.huggingface_model_info}")
         return generic_model_file_info
 
-    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo,
+    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo, model: Model,
                                   file_info: HfFileInfo, model_file_info: HFModelInfo,
                                   model_type: ModelType | None, repo: str) -> Tuple[ModelFile, ModelFileInfo]:
+
         generic_model_file_info_dump = generic_model_file_info.model_dump()
         self.logger.debug(f"generic_model_file_info_dump={generic_model_file_info_dump}")
         generic_model_file: ModelFile = ModelFile.create(
             model_file_info=generic_model_file_info,
-            default_model_config=get_settings().model)
+            default_model_config=get_settings().model,
+            model=model,
+            model_license=model_file_info.license
+        )
         self.logger.debug(f"generic_model_file={generic_model_file.model_dump_json()}")
         self.logger.debug(
             f"generic_model_file.simple_model_metadata={generic_model_file.simple_model_metadata.model_dump_json()}")

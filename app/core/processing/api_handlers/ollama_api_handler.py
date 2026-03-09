@@ -1,7 +1,14 @@
 import datetime
+from importlib.metadata import pass_none
 from typing import Any
 
+from core.backends.backend import Backend
+from core.model.ModelConfig import FullModelParameters
+from core.model.ModelFile import ModelFile
 from core.processing.APIHandler import APIHandler, Counters, SharedData
+from core.processing.workers.Worker import Worker
+from core.processing.endpoints.ChatEndpointHandler import ChatEndpointHandler
+from core.processing.endpoints.GenerateEndpointHandler import GenerateEndpointHandler
 
 
 class OllamaAPIHandler(APIHandler):
@@ -43,3 +50,55 @@ class OllamaAPIHandler(APIHandler):
             "eval_duration": int(counters.eval_duration * 1_000_000_000),
         }
 
+class OllamaGenerateAPIHandler(OllamaAPIHandler):
+    pass
+
+class OllamaChatAPIHandler(OllamaAPIHandler):
+    pass
+
+def process_ollama_chat_request(
+    model_backend: Backend,
+        api_handler: APIHandler,
+    modelfile: ModelFile,
+    messages,
+    system="",
+    stream=True,
+    format_spec=None,
+    options=None,
+):
+    """Process /api/chat request with correct format"""
+    return ChatEndpointHandler.handle_request(
+        model_backend=model_backend,
+        api_handler=api_handler,
+        modelfile=modelfile,
+        messages=messages,
+        system=system,
+        stream=stream,
+        format_spec=format_spec,
+        options=options,
+    )
+
+
+def process_ollama_generate_request(
+    model_worker: Worker,
+    api_handler: APIHandler,
+    modelfile: ModelFile,
+    prompt: str,
+    system: str,
+    stream: bool,
+    options: FullModelParameters,
+    enable_thinking: bool,
+    images: None | dict[str, str | None] = None,
+    format_spec = None,
+):
+    """Process /api/generate request with correct format"""
+    return GenerateEndpointHandler.handle_request(
+        model_worker=model_worker,
+        api_handler=api_handler,
+        modelfile=modelfile,
+        prompt=prompt,
+        system=system,
+        stream=stream,
+        options=options,
+        format_spec=format_spec,
+    )

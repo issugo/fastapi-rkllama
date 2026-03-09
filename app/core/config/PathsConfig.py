@@ -11,6 +11,7 @@ class PATH_KEY(str, Enum):
     SRC = "src"
     LIB = "lib"
     TEMP = "temp"
+    PROMPT_CACHE = "prompt_cache"
 
 class Paths(BaseModel):
     models: Annotated[str, Field(default="models", description="Path to model files")]
@@ -19,6 +20,7 @@ class Paths(BaseModel):
     src: Annotated[str, Field(default="src", description="Path to source files")]
     lib: Annotated[str, Field(default="lib", description="Path to library files")]
     temp: Annotated[str, Field(default="temp", description="Path to temporary files")]
+    prompt_cache: Annotated[str, Field(default="prompt_cache", description="Path to prompt cache files")]
 
 @deprecated("use core.config.Paths instead.", category=DeprecationWarning, stacklevel=2)
 class PathsConfig(Paths):

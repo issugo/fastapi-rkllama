@@ -1,11 +1,13 @@
 import base64
 import os
+from typing import Union
 
 import numpy as np
 import requests
 
 import core.config.config_utils
 from core import config
+from core.model.ModelPath import ModelPath
 from src.format_utils import logger
 
 
@@ -117,7 +119,7 @@ def read_data_from_file(path: str) -> bytes:
         return f.read()
 
 
-def get_encoder_model_path(model_name: str) -> Union[str, None]:
+def get_encoder_model_path(model_id: str) -> Union[str, None]:
     """
     Get the path of the vision encoder model if exists.
 
@@ -128,8 +130,7 @@ def get_encoder_model_path(model_name: str) -> Union[str, None]:
         The path to the vision encoder model or None if not found
     """
     # Get the models directory
-    models_dir = core.config.config_utils.get_path("models")
-    model_path = os.path.join(models_dir, model_name)
+    model_path: ModelPath = ModelPath.from_model_id(model_id=model_id)
 
     # check for the RKNN file
     encoder_filename = None
@@ -145,3 +146,32 @@ def get_encoder_model_path(model_name: str) -> Union[str, None]:
         return os.path.join(model_path, encoder_filename)
     else:
         return None
+
+
+def run_encoder(model_input, rknn_queue):
+    """
+    Run the vision encoder to get the image embedding
+    Args:
+        model_input (tuple): (model_encoder_path, core_mask, base_domain_id, image_path)
+        rknn_queue (Queue): Queue to return the image embedding
+    Returns:
+        np.ndarray: Image embedding
+    """
+
+    # TODO: get from backend
+    from .rknn import RKNN
+
+    # Get the image path/base64/URL
+    model_encoder_path, core_mask, base_domain_id, image = model_input
+
+    # Init encoder
+    rknn_model = RKNN(model_encoder_path, core_mask, base_domain_id)
+
+    # Encode the images
+    img_encoded = rknn_model.run(image)
+
+    # Stop the encoder
+    rknn_model.stop()
+
+    # Send the encoded image to the main process
+    rknn_queue.put(img_encoded)

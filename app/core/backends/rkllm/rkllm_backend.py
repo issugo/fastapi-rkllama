@@ -8,6 +8,10 @@ import multiprocessing
 
 from core.backends.rkllm.classes import RKLLMResult, RKLLMParam, RKLLM_Handle_t, rkllm_lib, RKLLMInput, RKLLMInferParam, \
     RKLLMLoraAdapter, RKLLMLoraParam, RKLLMInferMode, RKLLMInputType
+from core.model.Model import Model
+from core.model.ModelConfig import FullModelParameters
+from core.model.ModelPath import ModelPath
+from core.processing.BaseDomainId import BaseDomainId
 
 logger = logging.getLogger("rkllama.rkllm")
 
@@ -22,13 +26,14 @@ callback = callback_type(callback_impl)
 class RKLLMBackend(Backend):
     def __init__(
         self,
-        model_path,
-        model_dir,
-        options=None,
-        lora_model_path=None,
+        model: Model,
+        options: FullModelParameters,
+        base_domain_id: BaseDomainId,
         prompt_cache_path=None,
+        lora_model_path=None
     ):
         super().__init__(BackendType.RKLLM)
+        model_path: ModelPath = model.model_path
         logger.debug(
             f"Initializing RKLLM model from {model_path} with options: {options}"
         )
@@ -37,48 +42,22 @@ class RKLLMBackend(Backend):
         self.format_schema = None
         self.format_type = None
         self.format_options = {}
-        self.model_dir = model_dir
+        self.model_dir = model_path.model_dir
 
         # Configure RKLLM parameters
         self.rkllm_param = RKLLMParam()
-        self.rkllm_param.model_path = bytes(model_path, "utf-8")
-        self.rkllm_param.max_context_len = int(
-            core.config.config_utils.get("num_ctx", core.config.config_utils.get("model", "default_num_ctx"))
-        )
-        self.rkllm_param.max_new_tokens = int(
-            core.config.config_utils.get("max_new_tokens", core.config.config_utils.get("model", "default_max_new_tokens"))
-        )
-        self.rkllm_param.top_k = int(
-            core.config.config_utils.get("top_k", core.config.config_utils.get("model", "default_top_k"))
-        )
-        self.rkllm_param.top_p = float(
-            core.config.config_utils.get("top_p", core.config.config_utils.get("model", "default_top_p"))
-        )
-        self.rkllm_param.temperature = float(
-            core.config.config_utils.get("temperature", core.config.config_utils.get("model", "default_temperature"))
-        )
-        self.rkllm_param.repeat_penalty = float(
-            core.config.config_utils.get("repeat_penalty", core.config.config_utils.get("model", "default_repeat_penalty"))
-        )
-        self.rkllm_param.frequency_penalty = float(
-            core.config.config_utils.get(
-                "frequency_penalty", core.config.config_utils.get("model", "default_frequency_penalty")
-            )
-        )
-        self.rkllm_param.presence_penalty = float(
-            core.config.config_utils.get(
-                "presence_penalty", core.config.config_utils.get("model", "default_presence_penalty")
-            )
-        )
-        self.rkllm_param.mirostat = int(
-            core.config.config_utils.get("mirostat", core.config.config_utils.get("model", "default_mirostat"))
-        )
-        self.rkllm_param.mirostat_tau = float(
-            core.config.config_utils.get("mirostat_tau", core.config.config_utils.get("model", "default_mirostat_tau"))
-        )
-        self.rkllm_param.mirostat_eta = float(
-            core.config.config_utils.get("mirostat_eta", core.config.config_utils.get("model", "default_mirostat_eta"))
-        )
+        self.rkllm_param.model_path = bytes(str(model_path.endpoint_model_file_path), "utf-8")
+        self.rkllm_param.max_context_len = int(options.num_ctx)
+        self.rkllm_param.max_new_tokens = int(options.max_new_tokens)
+        self.rkllm_param.top_k = int(options.top_k)
+        self.rkllm_param.top_p = float(options.top_p)
+        self.rkllm_param.temperature = float(options.temperature)
+        self.rkllm_param.repeat_penalty = float(options.repeat_penalty)
+        self.rkllm_param.frequency_penalty = float(options.frequency_penalty)
+        self.rkllm_param.presence_penalty = float(options.presence_penalty)
+        self.rkllm_param.mirostat = int(options.mirostat)
+        self.rkllm_param.mirostat_tau = float(options.mirostat_tau)
+        self.rkllm_param.mirostat_eta = float(options.mirostat_eta)
 
         # Fixme: these parameters are not used in the current implementation, but they are set to default values
         self.rkllm_param.skip_special_token = True
@@ -91,7 +70,7 @@ class RKLLMBackend(Backend):
         self.rkllm_param.img_content = "".encode("utf-8")
 
         # Extend parameters for RKLLM
-        self.rkllm_param.extend_param.base_domain_id = 0
+        self.rkllm_param.extend_param.base_domain_id = int(base_domain_id)
         self.rkllm_param.extend_param.embed_flash = 1
         self.rkllm_param.extend_param.n_batch = 1
         self.rkllm_param.extend_param.use_cross_attn = 0

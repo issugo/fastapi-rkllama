@@ -2,14 +2,21 @@ import datetime
 import json
 import threading
 import time
+from typing import List, Union, Dict
 
 import core.config.config_utils
 import core.model
-from core import config
+from core.api.parameters import Message, Role
+from core.model.ModelConfig import FullModelParameters
+from core.model.ModelFile import ModelFile
+from core.processing import APIHandler
+from core.processing.workers.Worker import Worker
+from core.processing.WorkerManager import get_worker_manager, WorkerManager
+from core.processing.endpoints.EndpointHandler import EndpointHandler
 from core.processing.format_spec.formatting import create_format_instruction, validate_format_response
 from core.processing.tools.tools_utils import get_tool_calls
 from src import variables as variables
-from src.format_utils import handle_ollama_response
+from core.processing.endpoints import logger
 
 
 class ChatEndpointHandler(EndpointHandler):
@@ -54,7 +61,7 @@ class ChatEndpointHandler(EndpointHandler):
         return chunk
 
     @staticmethod
-    def format_complete_response(model_name, complete_text, metrics, format_data=None):
+    def format_complete_response(model_name, complete_text, metrics : dict, format_data=None):
         """Format a complete non-streaming response for chat endpoint"""
         response = {
             "model": model_name,
@@ -84,83 +91,88 @@ class ChatEndpointHandler(EndpointHandler):
 
     @classmethod
     def handle_request(
-        cls,
-        modele_rkllm,
-        model_name,
-        messages,
-        system="",
-        stream=True,
-        format_spec=None,
-        options=None,
-        tools=None,
-        enable_thinking=False,
-        is_openai_request=False,
+            cls,
+            model_worker: Worker,
+            api_handler: APIHandler,
+            modelfile: ModelFile,
+            messages: List[Message],
+            system: str,
+            stream: bool,
+            options: FullModelParameters,
+            enable_thinking: bool = False,
+            tools=None,
+            images=None,
+            format_spec=None,
     ):
         """Process a chat request with proper format handling"""
 
-        original_system = core.model.ModelFile.system
-        if system:
-            core.model.ModelFile.system = system
+        model_id: str = modelfile.model_id
+
+        if system is None or system == "":
+            system = modelfile.SYSTEM
+
+        if cls.DEBUG_MODE:
+            logger.debug(
+                f"ChatEndpointHandler: processing request for {model_id}"
+            )
+            logger.debug(f"Format spec: {format_spec}")
 
         try:
-            variables.global_status = -1
-
             if format_spec:
                 format_instruction = create_format_instruction(format_spec)
                 if format_instruction:
                     for i in range(len(messages) - 1, -1, -1):
-                        if messages[i]["role"] == "user":
-                            messages[i]["content"] += format_instruction
+                        if messages[i].role == Role.USER:
+                            if isinstance(messages[i].content, str):
+                                messages[i].content += format_instruction
+                            else:
+                                messages[i].content.append(format_instruction)
                             break
 
-            tokenizer, prompt_tokens, prompt_token_count = cls.prepare_prompt(
-                messages, system, tools, enable_thinking
-            )
+            # If Multimodal request, do not use tokenizer
+            prompt_tokens = None
+            prompt_token_count = None
+            if not images:
+                # Create the prompts tokens for text only requests
+                _, prompt_tokens, prompt_token_count = cls.prepare_prompt(
+                    modelfile=modelfile,
+                    messages=messages,
+                    system=system,
+                    tools=tools,
+                    enable_thinking=enable_thinking
+                )
+
+            else:
+                if cls.DEBUG_MODE:
+                    logger.debug(f"Multimodal request detected. Skipping tokenization.")
+
+                for message in messages:
+                    if "images" in message:
+                        message.pop(
+                            "images")  # Remove images from messages to avoid context length reach with base64 images
+                prompt_tokens = f"<image>{str(messages)}"
+                prompt_token_count = 0
 
             # Ollama request handling
             if stream:
-                ollama_chunk = cls.handle_streaming(
-                    modele_rkllm,
-                    model_name,
-                    prompt_tokens,
-                    prompt_token_count,
-                    format_spec,
-                    tools,
-                    enable_thinking,
-                )
-                if is_openai_request:
-                    # Use unified handler
-                    result = handle_ollama_response(ollama_chunk, stream=stream)
-
-                    # Convert Ollama streaming response to OpenAI format
-                    ollama_chunk = Response(
-                        stream_with_context(result), mimetype="text/event-stream"
-                    )
+                ollama_chunk = cls.handle_streaming(modelfile, prompt_tokens,
+                                                    prompt_token_count, format_spec, tools, enable_thinking, images)
+                # Use unified handler
+                result = api_handler.format_stream_chunk(ollama_chunk)
 
                 # Return Ollama streaming response
-                return ollama_chunk
+                return api_handler.format_stream_response(stream_with_context(result), mimetype="text/event-stream")
             else:
-                ollama_response, code = cls.handle_complete(
-                    modele_rkllm,
-                    model_name,
-                    prompt_tokens,
-                    prompt_token_count,
-                    format_spec,
-                    tools,
-                    enable_thinking,
-                )
+                ollama_response, code = cls.handle_complete(model_name, prompt_tokens,
+                                                            prompt_token_count, format_spec, tools, enable_thinking,
+                                                            images)
 
-                if is_openai_request:
-                    # Convert Ollama streaming response to OpenAI format
-                    ollama_response = handle_ollama_response(
-                        ollama_response, stream=stream
-                    )
+                # Convert Ollama response to OpenAI format
+                ollama_response = api_handler.handle_response(ollama_response, stream=stream, is_chat=True)
 
-                # Return Ollama streaming response
+                # Return Ollama response
                 return ollama_response, code
 
-        finally:
-            core.model.ModelFile.system = original_system
 
     @classmethod
     def handle_streaming(
@@ -316,40 +328,60 @@ class ChatEndpointHandler(EndpointHandler):
 
     @classmethod
     def handle_complete(
-        cls,
-        modele_rkllm,
-        model_name,
-        prompt_tokens,
-        prompt_token_count,
-        format_spec,
-        tools,
-        enable_thinking,
+            cls,
+            model_worker: Worker,
+            api_handler: APIHandler,
+            model_id: str,
+            prompt_tokens: Union[list[int], Dict],
+            prompt_token_count: int,
+            enable_thinking: bool,
+            format_spec,
+            tools = None,
+            images = None
     ):
         """Handle complete non-streaming chat response"""
         start_time = time.time()
         prompt_eval_time = None
-
-        thread_model = threading.Thread(target=modele_rkllm.run, args=(prompt_tokens,))
-        thread_model.start()
+        thread_finished = False
 
         count = 0
         complete_text = ""
 
-        while thread_model.is_alive() or len(variables.global_text) > 0:
-            while len(variables.global_text) > 0:
-                count += 1
-                token = variables.global_text.pop(0)
-                time.sleep(0.005)
+        worker_manager: WorkerManager = get_worker_manager(model_worker.backend_type)
 
-                if count == 1:
-                    prompt_eval_time = time.time()
+        # Check if multimodal or text only
+        if not images:
+            # Send the task of inference to the model
+            worker_manager.inference(
+                model_id=model_id,
+                prompt_tokens=prompt_tokens)
+        else:
+            # Send the task of multimodal inference to the model
+            worker_manager.multimodal(
+                model_id=model_id,
+                prompt_tokens=prompt_tokens,
+                images=images)
+            # Clear the cache to prevent image embedding problems
+            worker_manager.clear_cache_worker(model_id=model_id)
 
-                    if enable_thinking and "<think>" not in token.lower():
-                        token = "<think>" + token  # Ensure correct initial format
+        # Wait for result queue
+        result_q = worker_manager.get_result(model_id=model_id)
+        finished_inference_token = worker_manager.get_finished_inference_token()
 
-                complete_text += token
+        while not thread_finished:
+            token = result_q.get(timeout=300)  # Block until receive any token
+            if token == finished_inference_token:
+                thread_finished = True
+                continue
 
-            thread_model.join(timeout=0.005)
+            count += 1
+            if count == 1:
+                prompt_eval_time = time.time()
+
+                if enable_thinking and "<think>" not in token.lower():
+                    token = "<think>" + token  # Ensure correct initial format
+
+            complete_text += token
 
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
         metrics["prompt_tokens"] = prompt_token_count
@@ -358,19 +390,16 @@ class ChatEndpointHandler(EndpointHandler):
         format_data = None
         tool_calls = get_tool_calls(complete_text) if tools else None
         if format_spec and complete_text and not tool_calls:
-            success, parsed_data, error, cleaned_json = validate_format_response(
-                complete_text, format_spec
-            )
+            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
             if success and parsed_data:
                 format_type = (
-                    format_spec.get("type", "")
-                    if isinstance(format_spec, dict)
+                    format_spec.get("type", "") if isinstance(format_spec, dict)
                     else "json"
                 )
                 format_data = {
                     "format_type": format_type,
                     "parsed": parsed_data,
-                    "cleaned_json": cleaned_json,
+                    "cleaned_json": cleaned_json
                 }
 
         if tool_calls:
@@ -378,10 +407,80 @@ class ChatEndpointHandler(EndpointHandler):
                 "format_type": "json",
                 "parsed": "",
                 "cleaned_json": "",
-                "tool_call": tool_calls,
+                "tool_call": tool_calls
             }
 
-        response = cls.format_complete_response(
-            model_name, complete_text, metrics, format_data
-        )
+        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
         return jsonify(response), 200
+
+    @classmethod
+    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking,
+                        images=None):
+        """Handle complete non-streaming chat response"""
+
+        start_time = time.time()
+        prompt_eval_time = None
+        thread_finished = False
+
+        count = 0
+        complete_text = ""
+
+        # Check if multimodal or text only
+        if not images:
+            # Send the task of inference to the model
+            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
+        else:
+            # Send the task of multimodal inference to the model
+            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
+            # Clear the cache to prevent image embedding problems
+            variables.worker_manager_rkllm.clear_cache_worker(model_name)
+
+        # Wait for result queue
+        result_q = variables.worker_manager_rkllm.get_result(model_name)
+        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
+
+        while not thread_finished:
+            token = result_q.get(timeout=300)  # Block until receive any token
+            if token == finished_inference_token:
+                thread_finished = True
+                continue
+
+            count += 1
+            if count == 1:
+                prompt_eval_time = time.time()
+
+                if enable_thinking and "<think>" not in token.lower():
+                    token = "<think>" + token  # Ensure correct initial format
+
+            complete_text += token
+
+        metrics = cls.calculate_durations(start_time, prompt_eval_time)
+        metrics["prompt_tokens"] = prompt_token_count
+        metrics["token_count"] = count
+
+        format_data = None
+        tool_calls = get_tool_calls(complete_text) if tools else None
+        if format_spec and complete_text and not tool_calls:
+            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+            if success and parsed_data:
+                format_type = (
+                    format_spec.get("type", "") if isinstance(format_spec, dict)
+                    else "json"
+                )
+                format_data = {
+                    "format_type": format_type,
+                    "parsed": parsed_data,
+                    "cleaned_json": cleaned_json
+                }
+
+        if tool_calls:
+            format_data = {
+                "format_type": "json",
+                "parsed": "",
+                "cleaned_json": "",
+                "tool_call": tool_calls
+            }
+
+        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
+        return jsonify(response), 200
+

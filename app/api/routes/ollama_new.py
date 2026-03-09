@@ -30,16 +30,26 @@ from core.api.parameters.ollama_responses import (
     OllamaCopyResponse,
     OllamaDeleteResponse, OllamaHFModelShow, OllamaModelShowDetails,
 )
+from core.backends.backend import backend_type, BackendType
+from core.config.RKLLAMAConfig import RKLLAMASettings
 from core.model.Model import Model
+from core.model.ModelConfig import FullModelParameters
 from core.model.ModelFile import ModelFile
 from core.model.ModelPath import ModelDirException, ModelPath, ModelException
-from core.model.ModelType import FILE_TYPE
+from core.model.ModelType import FILE_TYPE, model_type, ModelType
 from core.model.models_constants import LANGUAGE_DEFAULT, default_context_length, DEFAULT_SYSTEM, DEFAULT_TEMPLATE
 from core.model.storage_helpers.OllamaPullSupplier import OllamaPullSupplier
 from core.model.storage_helpers.SupplierFileInfo import Supplier
+from core.processing.WorkerManager import WorkerManager, get_worker_manager
+from core.processing.api_handlers.ollama_api_handler import process_ollama_generate_request, OllamaAPIHandler, \
+    OllamaGenerateAPIHandler, OllamaChatAPIHandler
+from core.processing.endpoints.ChatEndpointHandler import ChatEndpointHandler
+from core.processing.endpoints.GenerateEndpointHandler import GenerateEndpointHandler
 
 router = APIRouter(tags=["ollama"])
 
+setting: RKLLAMASettings | None = None
+DEBUG_MODE: bool | None = None
 
 @router.post("/api/pull", response_model=OllamaPullResponse)
 async def pull_model(request: Request, oll_pull_request: OllamaPullRequest):
@@ -286,54 +296,114 @@ async def show_model(request: Request, ollama_show_request: OllamaShowRequest):
         )
 
 @router.post("/api/generate", response_model=OllamaGenerateResponse)
-async def generate(request: Request, data: OllamaGenerateRequest):
+async def generate(request: Request, ollama_generate_request: OllamaGenerateRequest):
     """
     Generate a response for a given prompt with a provided model.
 
     This endpoint generates text based on the provided prompt and model.
     If stream is set to true, it will return a streaming response.
     """
-    # Default response for demonstration
-    if data.stream:
-        # Return a streaming response (implementation would depend on your backend)
-        async def generate_stream():
-            yield OllamaGenerateResponse(
-                model=data.model,
-                created_at="2025-09-11T12:00:00Z",
-                response="This is a streaming response...",
-                done=False,
-                total_duration=1000000,
-                eval_count=10,
-            ).model_dump_json().encode() + b"\n"
 
-            yield OllamaGenerateResponse(
-                model=data.model,
-                created_at="2025-09-11T12:00:01Z",
-                response="Generation complete.",
-                done=True,
-                total_duration=2000000,
-                eval_count=20,
-            ).model_dump_json().encode() + b"\n"
+    global settings
+    if settings is None:
+        from core.config import config_utils
+        settings = config_utils.get_settings()
 
-        return StreamingResponse(generate_stream(), media_type="application/json")
+    global DEBUG_MODE
+    if DEBUG_MODE is None:
+        DEBUG_MODE = settings.is_debug_mode()
 
-    # Non-streaming response
-    return OllamaGenerateResponse(
-        model=data.model,
-        created_at="2025-09-11T12:00:00Z",
-        response="This is a sample generated response based on your prompt: " + data.prompt,
-        done=True,
-        total_duration=1500000,
-        load_duration=200000,
-        prompt_eval_duration=300000,
-        eval_duration=1000000,
-        eval_count=20,
-        prompt_eval_count=10,
-    )
+    if DEBUG_MODE:
+        logger.debug(f"API generate request OllamaGenerateRequest: {ollama_generate_request}")
+
+    if not ollama_generate_request.prompt:
+        return JSONResponse(
+            jsonable_encoder({"error": "Missing prompt"}),
+            status_code=400,
+        )
+
+    try:
+
+        # modelfile can be search
+        model_path: ModelPath = ModelPath.from_model_id(model_id=ollama_generate_request.model)
+        modelfile: ModelFile = ModelFile.load(model_path=model_path)
+
+        # optional non formatted values
+        data = request.get_json(force=True)
+        # enable_thinking is None if not specified
+        enable_thinking = data.get('enable_thinking', (data.get('think', None)))  # Ollama now uses 'think' in some versions
+        images = data.get('images', None)  # For multimodal inputs
+
+        full_model_parameters: FullModelParameters = modelfile.full_model_parameters
+        # Get Thinking setting from modelfile if not provided
+        if enable_thinking is None:
+            enable_thinking = full_model_parameters.enable_thinking if (full_model_parameters.enable_thinking is not None) else False # Disabled by default
+
+        full_model_parameters: FullModelParameters = FullModelParameters.ollama_override(full_model_parameters=full_model_parameters, ollama_options=ollama_generate_request.options,enable_thinking=enable_thinking)
+
+        model: Model = modelfile.model
+        model_type: ModelType = model.model_type
+        worker_manager: WorkerManager = get_worker_manager(backend_type=BackendType.from_model_type(model_type=model_type))
+
+        # Model loaded into memory
+        model_worker, model_process = worker_manager.add_worker(modelfile=modelfile, full_model_parameters=full_model_parameters)
+
+        GenerateEndpointHandler.handle_request(
+            model_worker=model_worker,
+            api_handler=OllamaGenerateAPIHandler(),
+            prompt=ollama_generate_request.prompt,
+            system=ollama_generate_request.system,
+            stream=ollama_generate_request.stream,
+            images=images,
+            # format_spec=format_spec,
+        )
+
+        # Default response for demonstration
+        if ollama_generate_request.stream:
+            # Return a streaming response (implementation would depend on your backend)
+            async def generate_stream():
+                yield OllamaGenerateResponse(
+                    model=ollama_generate_request.model,
+                    created_at="2025-09-11T12:00:00Z",
+                    response="This is a streaming response...",
+                    done=False,
+                    total_duration=1000000,
+                    eval_count=10,
+                ).model_dump_json().encode() + b"\n"
+
+                yield OllamaGenerateResponse(
+                    model=ollama_generate_request.model,
+                    created_at="2025-09-11T12:00:01Z",
+                    response="Generation complete.",
+                    done=True,
+                    total_duration=2000000,
+                    eval_count=20,
+                ).model_dump_json().encode() + b"\n"
+
+            return StreamingResponse(generate_stream(), media_type="application/json")
+
+        # Non-streaming response
+        return OllamaGenerateResponse(
+            model=ollama_generate_request.model,
+            created_at="2025-09-11T12:00:00Z",
+            response="This is a sample generated response based on your prompt: " + ollama_generate_request.prompt,
+            done=True,
+            total_duration=1500000,
+            load_duration=200000,
+            prompt_eval_duration=300000,
+            eval_duration=1000000,
+            eval_count=20,
+            prompt_eval_count=10,
+        )
+    except ModelException as me:
+        return JSONResponse(
+            jsonable_encoder({"error": f"{str(me)}."}),
+            status_code=500,
+        )
 
 
 @router.post("/api/chat", response_model=OllamaChatResponse)
-async def chat(request: Request, data: OllamaChatRequest):
+async def chat(request: Request, ollama_chat_request: OllamaChatRequest):
     """
     Chat with a model, providing a list of messages.
 
@@ -342,7 +412,120 @@ async def chat(request: Request, data: OllamaChatRequest):
     """
     from core.api.parameters.commons import Role, Message
 
-    # Default response
+    # lock_acquired = False  # Track lock status
+
+    global settings
+    if settings is None:
+        from core.config import config_utils
+        settings = config_utils.get_settings()
+
+    global DEBUG_MODE
+    if DEBUG_MODE is None:
+        DEBUG_MODE = settings.is_debug_mode()
+
+    if DEBUG_MODE:
+        logger.debug(f"API chat request OllamaChatRequest: {ollama_chat_request}")
+
+    if not ollama_chat_request.messages:
+        return JSONResponse(
+            jsonable_encoder({"error": "Missing messages"}),
+            status_code=400,
+        )
+
+    messages: List[Message] = ollama_chat_request.messages
+    try:
+        # modelfile can be search
+        model_path: ModelPath = ModelPath.from_model_id(model_id=ollama_chat_request.model)
+        modelfile: ModelFile = ModelFile.load(model_path=model_path)
+
+        # optional non formatted values
+        data = request.get_json(force=True)
+        # enable_thinking is None if not specified
+        enable_thinking = data.get('enable_thinking', (data.get('think', None)))  # Ollama now uses 'think' in some versions
+        # Review the images in messages
+        images = data.get('images', None)  # For multimodal inputs
+        tools = data.get('tools', None)
+
+        full_model_parameters: FullModelParameters = modelfile.full_model_parameters
+        # Get Thinking setting from modelfile if not provided
+        if enable_thinking is None:
+            enable_thinking = full_model_parameters.enable_thinking if (full_model_parameters.enable_thinking is not None) else False # Disabled by default
+
+        full_model_parameters: FullModelParameters = FullModelParameters.ollama_override(full_model_parameters=full_model_parameters, ollama_options=ollama_chat_request.options,enable_thinking=enable_thinking)
+
+        model: Model = modelfile.model
+        model_type: ModelType = model.model_type
+        worker_manager: WorkerManager = get_worker_manager(backend_type=BackendType.from_model_type(model_type=model_type))
+
+        # Check if we're starting a new conversation
+        # A new conversation is one that doesn't include any assistant messages
+        is_new_conversation = not any(msg.role == 'assistant' for msg in ollama_chat_request.messages)
+
+        # Always reset system prompt for new conversations
+        if is_new_conversation:
+            system = modelfile.SYSTEM if modelfile.SYSTEM else model.model_metadata.system_prompt
+            if DEBUG_MODE:
+                logger.debug("New conversation detected, resetting system prompt")
+
+        # Extract system message from messages array if present
+        system_in_messages = False
+        filtered_messages = []
+
+        for message in ollama_chat_request.messages:
+            if message.role == 'system':
+                msg_system = message.content if message.content else ''
+                system_in_messages = True
+                # Don't add system message to filtered messages
+            else:
+                filtered_messages.append(message)
+                # CHeck for images in user messages for multimodal
+                if message.role == 'user' and 'images' in message:
+                    if 'images' not in data:
+                        data['images'] = []
+                    data['images'].extend(message['images'])
+
+
+        # Only use the extracted system message or explicit system parameter if provided
+        if system_in_messages or msg_system:
+            system = msg_system
+            messages = filtered_messages
+            if DEBUG_MODE:
+                logger.debug(f"Using system message: {system}")
+
+        if system is None:
+            system = modelfile.SYSTEM if modelfile.SYSTEM else model.model_metadata.system_prompt
+
+        # Model loaded into memory
+        model_worker, model_process = worker_manager.add_worker(modelfile=modelfile,
+                                                                full_model_parameters=full_model_parameters)
+
+        # Store format settings in model instance
+        # if rkllm_model_request:
+        #    rkllm_model_request.format_schema = format_spec
+        #    rkllm_model_request.format_options = options
+
+        # Process the request - this won't release the lock
+        return ChatEndpointHandler.handle_request(
+            model_worker=model_worker,
+            api_handler=OllamaChatAPIHandler(),
+            modelfile=modelfile,
+            messages=messages,
+            system=system,
+            stream=ollama_chat_request.stream,
+            tools=tools,
+            images=images,
+            options=full_model_parameters,
+            enable_thinking=enable_thinking,
+            format_spec=ollama_chat_request.format,
+        )
+
+    except ModelException as me:
+        return JSONResponse(
+            jsonable_encoder({"error": f"{str(me)}."}),
+            status_code=500,
+        )
+
+# Default response
     if data.stream:
         # Return a streaming response
         async def chat_stream():

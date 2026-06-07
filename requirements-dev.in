@@ -3,3 +3,10 @@ pytest
 pytest-asyncio
 httpx
 pre-commit
+pytest-bdd
+deepeval
+black
+yamllint
+interrogate
+pydocstyle
+toml

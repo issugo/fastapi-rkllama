@@ -57,24 +57,26 @@ class OllamaManifestLayer(BaseModel):
     from_: Optional[str] = None
 
     class Config:
-        fields = {
-            'from_': 'from'  # Map Python field 'from_' to JSON field 'from'
-        }
+        fields = {"from_": "from"}  # Map Python field 'from_' to JSON field 'from'
+
 
 class OllamaManifestModelLayer(OllamaManifestLayer):
     pass
     # mediaType: str = "application/vnd.ollama.image.model"
     # with from
 
+
 class OllamaManifestLicenseLayer(OllamaManifestLayer):
     pass
     # mediaType: str = "application/vnd.ollama.image.license"
     # with from
 
+
 class OllamaManifestSystemLayer(OllamaManifestLayer):
     pass
     # mediaType: str = "application/vnd.ollama.image.system"
     # no from
+
 
 class OllamaManifestTemplateLayer(OllamaManifestLayer):
     pass
@@ -111,7 +113,11 @@ class OllamaManifest(SupplierFileInfo):
         if self._ollama_manifest_model_layer is None:
             for layer in self.layers:
                 if layer.mediaType == VND_OLLAMA_IMAGE_MODEL:
-                    self._ollama_manifest_model_layer = OllamaManifestModelLayer.model_validate_json(layer.model_dump_json())
+                    self._ollama_manifest_model_layer = (
+                        OllamaManifestModelLayer.model_validate_json(
+                            layer.model_dump_json()
+                        )
+                    )
                     break
         return self._ollama_manifest_model_layer
 
@@ -120,7 +126,11 @@ class OllamaManifest(SupplierFileInfo):
         if self._ollama_manifest_model_layer is None:
             for layer in self.layers:
                 if layer.mediaType == VND_OLLAMA_IMAGE_LICENSE:
-                    self._ollama_manifest_license_layer = OllamaManifestLicenseLayer.model_validate_json(layer.model_dump_json())
+                    self._ollama_manifest_license_layer = (
+                        OllamaManifestLicenseLayer.model_validate_json(
+                            layer.model_dump_json()
+                        )
+                    )
                     break
         return self._ollama_manifest_license_layer
 
@@ -129,7 +139,11 @@ class OllamaManifest(SupplierFileInfo):
         if self._ollama_manifest_system_layer is None:
             for layer in self.layers:
                 if layer.mediaType == VND_OLLAMA_IMAGE_SYSTEM:
-                    self._ollama_manifest_system_layer = OllamaManifestSystemLayer.model_validate_json(layer.model_dump_json())
+                    self._ollama_manifest_system_layer = (
+                        OllamaManifestSystemLayer.model_validate_json(
+                            layer.model_dump_json()
+                        )
+                    )
                     break
         return self._ollama_manifest_system_layer
 
@@ -138,7 +152,11 @@ class OllamaManifest(SupplierFileInfo):
         if self._ollama_manifest_template_layer is None:
             for layer in self.layers:
                 if layer.mediaType == VND_OLLAMA_IMAGE_TEMPLATE:
-                    self._ollama_manifest_template_layer = OllamaManifestTemplateLayer.model_validate_json(layer.model_dump_json())
+                    self._ollama_manifest_template_layer = (
+                        OllamaManifestTemplateLayer.model_validate_json(
+                            layer.model_dump_json()
+                        )
+                    )
                     break
         return self._ollama_manifest_template_layer
 
@@ -147,10 +165,15 @@ class OllamaManifest(SupplierFileInfo):
         if self._template:
             return self._template
         if self.ollama_manifest_template_layer:
-            from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
-            local_filename = OllamaModelStorageHelper.blob_path(self.ollama_manifest_template_layer.digest)
+            from core.model.storage_helpers.OllamaModelStorageHelper import (
+                OllamaModelStorageHelper,
+            )
+
+            local_filename = OllamaModelStorageHelper.blob_path(
+                self.ollama_manifest_template_layer.digest
+            )
             if Path(local_filename).exists():
-                with open(local_filename, 'r') as f:
+                with open(local_filename, "r") as f:
                     self._template = f.read()
             return self._template
         return None
@@ -164,10 +187,15 @@ class OllamaManifest(SupplierFileInfo):
         if self._system:
             return self._system
         if self.ollama_manifest_system_layer:
-            from core.model.storage_helpers.OllamaModelStorageHelper import OllamaModelStorageHelper
-            local_filename = OllamaModelStorageHelper.blob_path(self.ollama_manifest_system_layer.digest)
+            from core.model.storage_helpers.OllamaModelStorageHelper import (
+                OllamaModelStorageHelper,
+            )
+
+            local_filename = OllamaModelStorageHelper.blob_path(
+                self.ollama_manifest_system_layer.digest
+            )
             if Path(local_filename).exists():
-                with open(local_filename, 'r') as f:
+                with open(local_filename, "r") as f:
                     self._system = f.read()
             return self._system
         return None
@@ -190,12 +218,16 @@ class OllamaManifest(SupplierFileInfo):
     @property
     def ollama_model_config_path(self) -> str:
         if self.config:
-            from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
-            return str(OllamaStorageHelper.ollama_model_info_path(
-                model_path=None,
-                ollama_manifest=self
-            ))
-        raise ValueError(f"missing config in manifest")
+            from core.model.storage_helpers.OllamaStorageHelper import (
+                OllamaStorageHelper,
+            )
+
+            return str(
+                OllamaStorageHelper.ollama_model_info_path(
+                    model_path=None, ollama_manifest=self
+                )
+            )
+        raise ValueError("missing config in manifest")
 
     @classmethod
     def create(cls):
@@ -209,8 +241,6 @@ class OllamaManifest(SupplierFileInfo):
         return OllamaManifest.model_validate_json(json_string)
 
     def save(self, ollama_manifest_path: str | Path):
-        """ write in <MODELS>/manifests/registry/library/<MODEL_NAME>:<TAG>"""
+        """write in <MODELS>/manifests/registry/library/<MODEL_NAME>:<TAG>"""
         with open(ollama_manifest_path, "w") as f:
             f.write(self.model_dump_json(indent=2))
-
-

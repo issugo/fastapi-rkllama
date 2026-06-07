@@ -5,7 +5,7 @@ models = {
         "pad": "<|pad|>",
         "bos": "<|begin_of_sentence|>",
         "bot": "<|begin_of_thinking|>",
-        "eot": "<|end_of_thinking|>"
+        "eot": "<|end_of_thinking|>",
     },
     "deepseek_v2": {
         "unk": None,
@@ -13,7 +13,7 @@ models = {
         "pad": "<|pad_v2|>",
         "bos": "<|begin_of_sentence_v2|>",
         "bot": "<|begin_of_thinking_v2|>",
-        "eot": "<|end_of_thinking_v2|>"
+        "eot": "<|end_of_thinking_v2|>",
     },
     "deepseek_v3": {
         "unk": None,
@@ -21,7 +21,7 @@ models = {
         "pad": "<|pad_v3|>",
         "bos": "<|begin_of_sentence_v3|>",
         "bot": "<|begin_of_thinking_v3|>",
-        "eot": "<|end_of_thinking_v3|>"
+        "eot": "<|end_of_thinking_v3|>",
     },
     "llama": {
         "unk": "<unk>",
@@ -29,7 +29,7 @@ models = {
         "eos": "</s>",
         "pad": None,
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "llama2": {
         "unk": "<unk>",
@@ -37,7 +37,7 @@ models = {
         "eos": "</s>",
         "pad": None,
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "qwen": {
         "unk": "<unk>",
@@ -45,7 +45,7 @@ models = {
         "eos": "</s>",
         "pad": None,
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "bloom": {
         "unk": "<unk>",
@@ -53,23 +53,16 @@ models = {
         "eos": "</s>",
         "pad": "<pad>",
         "eot": None,
-        "bot": None
+        "bot": None,
     },
-    "gpt2": {
-        "unk": "",
-        "bos": "",
-        "eos": "",
-        "pad": None,
-        "eot": None,
-        "bot": None
-    },
+    "gpt2": {"unk": "", "bos": "", "eos": "", "pad": None, "eot": None, "bot": None},
     "opt": {
         "unk": "",
         "bos": "<s>",
         "eos": "</s>",
         "pad": "<pad>",
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "t5": {
         "unk": "<unk>",
@@ -77,7 +70,7 @@ models = {
         "eos": "</s>",
         "pad": "<pad>",
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "bert": {
         "unk": "[UNK]",
@@ -85,7 +78,7 @@ models = {
         "eos": "[SEP]",
         "pad": "[PAD]",
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "tinyllama": {
         "unk": None,
@@ -93,7 +86,7 @@ models = {
         "eos": None,
         "pad": None,
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "qwen_1.8b": {
         "unk": None,
@@ -101,7 +94,7 @@ models = {
         "eos": None,
         "pad": None,
         "eot": None,
-        "bot": None
+        "bot": None,
     },
     "qwen2": {
         "unk": "<unk>",
@@ -112,7 +105,7 @@ models = {
         "bot": "<|im_think|>",
         "system": "<|im_system|>",
         "user": "<|im_user|>",
-        "assistant": "<|im_assistant|>"
+        "assistant": "<|im_assistant|>",
     },
     "phi2_2.7b": {
         "unk": None,
@@ -120,6 +113,6 @@ models = {
         "eos": None,
         "pad": None,
         "eot": None,
-        "bot": None
-    }
+        "bot": None,
+    },
 }

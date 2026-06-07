@@ -36,9 +36,6 @@ app.add_middleware(
 app.include_router(api_router)
 
 
-
-
-
 # Launch function
 def main():
     settings = config_utils.get_settings()
@@ -73,12 +70,12 @@ def main():
         sys.exit(1)
     else:
         if processor not in ["rk3588", "rk3576"]:
-            logger.error(
-                "Error: Invalid processor. Please enter rk3588 or rk3576."
-            )
+            logger.error("Error: Invalid processor. Please enter rk3588 or rk3576.")
             sys.exit(1)
         logger.info(f"Setting the frequency for the {processor} platform...")
-        library_path = os.path.join(settings.get_path("lib"), f"fix_freq_{processor}.sh")
+        library_path = os.path.join(
+            settings.get_path("lib"), f"fix_freq_{processor}.sh"
+        )
 
         # Pass debug flag as parameter to the shell script
         debug_param = "1" if DEBUG_MODE else "0"

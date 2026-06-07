@@ -19,11 +19,15 @@ class StorageHelper:
             self.logger = pkg_logger
 
     @staticmethod
-    def build_relative_link_path(target_file_path: str, link_path: str, root_common_path: str) -> Path:
+    def build_relative_link_path(
+        target_file_path: str, link_path: str, root_common_path: str
+    ) -> Path:
         """
         Builds a relative link path from a target file path, a link path, and a root common path.
         """
-        pkg_logger.debug(f"build_relative_link_path(): target_file_path={target_file_path}, link_path={link_path}, root_common_path={root_common_path}")
+        pkg_logger.debug(
+            f"build_relative_link_path(): target_file_path={target_file_path}, link_path={link_path}, root_common_path={root_common_path}"
+        )
 
         if not target_file_path:
             raise ValueError("target_file_path cannot be empty")
@@ -34,9 +38,13 @@ class StorageHelper:
         if not root_common_path.endswith("/"):
             raise ValueError("root_common_path must end with /")
         if not target_file_path.startswith(root_common_path):
-            raise ValueError(f"target_file_path must start with root_common_path: {root_common_path}")
+            raise ValueError(
+                f"target_file_path must start with root_common_path: {root_common_path}"
+            )
         if not link_path.startswith(root_common_path):
-            raise ValueError(f"link_path must start with root_common_path: {root_common_path}")
+            raise ValueError(
+                f"link_path must start with root_common_path: {root_common_path}"
+            )
         current_file = Path(link_path).name
         current_dir = Path(link_path.removesuffix(current_file))
         target_file = Path(target_file_path)
@@ -45,7 +53,6 @@ class StorageHelper:
     @property
     def model_link(self) -> Path:
         raise NotImplementedError()
-
 
     def _store_model_link(self):
         model_link = self.model_link
@@ -59,14 +66,18 @@ class StorageHelper:
             if not model_link.parent.exists():
                 model_link.parent.mkdir(parents=True)
             target_file_path, _ = self.ollama_model_storage_helper.model_blob_path
-            model_link.symlink_to(self.build_relative_link_path(
+            model_link.symlink_to(
+                self.build_relative_link_path(
                     target_file_path=target_file_path,
                     link_path=str(model_link),
-                    root_common_path=f"{str(root_common_path)}/"
-                ))
+                    root_common_path=f"{str(root_common_path)}/",
+                )
+            )
 
     def store(self):
         raise NotImplementedError
 
-    def clean(self, generic_model_file: ModelFile, generic_model_file_info: ModelFileInfo):
+    def clean(
+        self, generic_model_file: ModelFile, generic_model_file_info: ModelFileInfo
+    ):
         raise NotImplementedError

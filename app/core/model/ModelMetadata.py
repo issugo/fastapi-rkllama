@@ -10,14 +10,22 @@ from pydantic import BaseModel, Field
 from core.backends.backend import BACKEND_SUPPORTED_LIB_VERSION
 from core.config.PlatformConfig import PlatformProcessor
 from core.model import logger
-from core.model.ModelFileInfo import ModelFileInfo
 from core.model.ModelInfo import ModelDetails
 from core.model.ModelLicense import ModelLicense
 from core.model.ModelPath import ModelPath, int_parameters_size, ModelException
 from core.model.ModelType import ModelType
-from core.model.converter.quantization_constants import RK_QUANT_FORMAT, ollama_quant_mapping, OLLAMA_QUANT_FORMAT
-from core.model.models_constants import MODEL_SPECS, RK_TAGS_LIST, default_context_length, validate_model_id, \
-    DEFAULT_SYSTEM
+from core.model.converter.quantization_constants import (
+    RK_QUANT_FORMAT,
+    ollama_quant_mapping,
+    OLLAMA_QUANT_FORMAT,
+)
+from core.model.models_constants import (
+    MODEL_SPECS,
+    RK_TAGS_LIST,
+    default_context_length,
+    validate_model_id,
+    DEFAULT_SYSTEM,
+)
 from core.model.suppliers_model_info import OllamaModelInfo, HFModelInfo
 
 
@@ -48,6 +56,7 @@ class ModelMetadataFormat(str, Enum):
 
 METADATA_FILENAME = "metadata.json"
 
+
 class ModelMetadataNotFoundException(ModelException):
     model_name: str
 
@@ -64,12 +73,16 @@ class ModelMetadataParameters(BaseModel):
 
 
 class BasicModelMetadata(BaseModel):
-    model_id: Optional[str] = Field(default=None, description="Unique identifier of the model (ex: qwen2.5:0.5B).")
-    quantization: str = Field(description="Quantization format of the model(like w8a8, opt, hybrid, etc.)")
+    model_id: Optional[str] = Field(
+        default=None, description="Unique identifier of the model (ex: qwen2.5:0.5B)."
+    )
+    quantization: str = Field(
+        description="Quantization format of the model(like w8a8, opt, hybrid, etc.)"
+    )
 
     @classmethod
     def factory_helper(cls) -> dict:
-        return { "format": ModelMetadataFormat.BASIC }
+        return {"format": ModelMetadataFormat.BASIC}
 
     def get_format(self) -> ModelMetadataFormat:
         return self.__class__.factory_helper().get("format")
@@ -83,16 +96,24 @@ class BasicModelMetadata(BaseModel):
         if factory_helper is None:
             factory_helper = self.__class__.factory_helper()
 
-        model_metadata_format: ModelMetadataFormat | None = ModelMetadataFormat.get_format(metadata_path)
-        if model_metadata_format is None or model_metadata_format == factory_helper.get("format"):
+        model_metadata_format: ModelMetadataFormat | None = (
+            ModelMetadataFormat.get_format(metadata_path)
+        )
+        if (
+            model_metadata_format is None
+            or model_metadata_format == factory_helper.get("format")
+        ):
             try:
                 # Save to JSON file
                 with open(str(metadata_path), "w") as f:
-                    f.write(self.model_dump_json(indent=2,
-                                                 exclude_unset=True,
-                                                 exclude_defaults=True,
-                                                 exclude_none=True,
-                                                 ))
+                    f.write(
+                        self.model_dump_json(
+                            indent=2,
+                            exclude_unset=True,
+                            exclude_defaults=True,
+                            exclude_none=True,
+                        )
+                    )
 
                 logger.info(f"Metadata saved to {metadata_path}")
             except Exception as e:
@@ -100,7 +121,8 @@ class BasicModelMetadata(BaseModel):
                 raise
         else:
             raise ValueError(
-                f"Metadata file is already in a different format (search for {factory_helper.get("format")}, is {model_metadata_format}).")
+                f"Metadata file is already in a different format (search for {factory_helper.get('format')}, is {model_metadata_format})."
+            )
 
     @classmethod
     def load(cls, model_path: ModelPath, factory_helper: dict = None):
@@ -112,14 +134,17 @@ class BasicModelMetadata(BaseModel):
         if factory_helper is None:
             factory_helper = cls.factory_helper()
 
-        if ModelMetadataFormat.get_format(metadata_path) != factory_helper.get("format"):
+        if ModelMetadataFormat.get_format(metadata_path) != factory_helper.get(
+            "format"
+        ):
             raise ValueError(
-                f"Metadata file is not in the correct format (search for {factory_helper.get("format")}, is {ModelMetadataFormat.get_format(metadata_path)}).")
+                f"Metadata file is not in the correct format (search for {factory_helper.get('format')}, is {ModelMetadataFormat.get_format(metadata_path)})."
+            )
 
         try:
             with open(str(metadata_path), "r") as f:
                 json_data = json.load(f)
-                json_data['model_id'] = validate_model_id(model_path.model_id)
+                json_data["model_id"] = validate_model_id(model_path.model_id)
                 logger.debug(f"Metadata loaded from {metadata_path}: {json_data}")
                 if factory_helper.get("format") is ModelMetadataFormat.COMPLETE:
                     return ModelMetadata(**json_data)
@@ -135,23 +160,34 @@ class BasicModelMetadata(BaseModel):
 
 class SimpleModelMetadata(BasicModelMetadata):
     """Metadata for a converted model."""
+
     name: str
-    architecture: str = Field(description="Architecture of the model(like Qwen, OPT, etc.)")
+    architecture: str = Field(
+        description="Architecture of the model(like Qwen, OPT, etc.)"
+    )
     quantization_opt: Optional[int] = None
     quantization_hybrid_ratio: Optional[float] = None
-    parameters: int = Field(description="Number of parameters in the model (converted to int)")
+    parameters: int = Field(
+        description="Number of parameters in the model (converted to int)"
+    )
     context_length: int
     system_prompt: Optional[str] = None
     template: Optional[str] = None
     temperature: float
     model_type: Optional[ModelType]
-    description: Optional[str] = Field(default=None, description="Description of the model")
-    finetune: Optional[str] = Field(default=None, description="Type of finetune (like Instruct, Chat)")
-    license: Optional[ModelLicense] = Field(default=None, description="License of the model")
+    description: Optional[str] = Field(
+        default=None, description="Description of the model"
+    )
+    finetune: Optional[str] = Field(
+        default=None, description="Type of finetune (like Instruct, Chat)"
+    )
+    license: Optional[ModelLicense] = Field(
+        default=None, description="License of the model"
+    )
 
     @classmethod
     def factory_helper(cls) -> dict:
-        return { "format": ModelMetadataFormat.SIMPLE }
+        return {"format": ModelMetadataFormat.SIMPLE}
 
     # model_name=Qwen3-1.7B-rk3588-1.2.1-unsloth-16k,
     @staticmethod
@@ -162,17 +198,22 @@ class SimpleModelMetadata(BasicModelMetadata):
         splitted = model_name.split("-")
         start_pos = 0
 
-        model_metadata, model_details, model_tags, start_pos = \
+        model_metadata, model_details, model_tags, start_pos = (
             SimpleModelMetadata.parse_splitted_for_model_family(
-                splitted=splitted, start_pos=start_pos,
-                model_metadata=model_metadata, model_details=model_details, model_tags=model_tags)
+                splitted=splitted,
+                start_pos=start_pos,
+                model_metadata=model_metadata,
+                model_details=model_details,
+                model_tags=model_tags,
+            )
+        )
 
         if len(splitted) > start_pos:
             if ModelPath.get_parameter_size(splitted[start_pos]):
                 parameters = ModelPath.get_parameter_size(splitted[start_pos])
-                model_metadata.update({'parameters': parameters})
+                model_metadata.update({"parameters": parameters})
                 model_tags.append(parameters)
-                model_details.update({'parameter_size': parameters})
+                model_details.update({"parameter_size": parameters})
                 start_pos += 1
 
         if len(splitted) > start_pos:
@@ -181,15 +222,20 @@ class SimpleModelMetadata(BasicModelMetadata):
                 if rk_tag in splitted[start_pos]:
                     founded_rk_tag = rk_tag
                     model_tags.append(rk_tag)
-                    model_details.update({'architecture': rk_tag})
+                    model_details.update({"architecture": rk_tag})
                     start_pos += 1
                     if len(splitted) > start_pos + 1:
-                        lib_vers_match = re.search(r"(\d+\.\d+\.\d+)", splitted[start_pos + 1])
+                        lib_vers_match = re.search(
+                            r"(\d+\.\d+\.\d+)", splitted[start_pos + 1]
+                        )
                         if lib_vers_match:
                             lib_vers = lib_vers_match.group(1)
-                            if lib_vers not in BACKEND_SUPPORTED_LIB_VERSION.get(founded_rk_tag, []):
+                            if lib_vers not in BACKEND_SUPPORTED_LIB_VERSION.get(
+                                founded_rk_tag, []
+                            ):
                                 raise ValueError(
-                                    f"Library version {lib_vers} is not supported for {founded_rk_tag} backend.")
+                                    f"Library version {lib_vers} is not supported for {founded_rk_tag} backend."
+                                )
                             else:
                                 model_tags.append(lib_vers)
                             start_pos += 1
@@ -200,28 +246,28 @@ class SimpleModelMetadata(BasicModelMetadata):
             if re.search(r"(\d+k)", splitted[start_pos]):
                 context_length = re.search(r"(\d+k)", splitted[start_pos]).group(1)
                 int_context_length = int(context_length[:-1]) * 1024
-                model_metadata.update({'context_length': int_context_length})
-                model_details.update({'context_length': int_context_length})
+                model_metadata.update({"context_length": int_context_length})
+                model_details.update({"context_length": int_context_length})
                 start_pos += 1
-            elif 'unsloth' in splitted[start_pos]:
-                model_tags.append('unsloth')
+            elif "unsloth" in splitted[start_pos]:
+                model_tags.append("unsloth")
                 start_pos += 1
                 if re.search(r"(\d+k)", splitted[start_pos]):
                     context_length = re.search(r"(\d+k)", splitted[start_pos]).group(1)
                     int_context_length = int(context_length[:-1]) * 1024
-                    model_metadata.update({'context_length': int_context_length})
-                    model_details.update({'context_length': int_context_length})
+                    model_metadata.update({"context_length": int_context_length})
+                    model_details.update({"context_length": int_context_length})
                     start_pos += 1
 
         for rk_tag in RK_TAGS_LIST:
             if rk_tag in splitted and rk_tag not in model_tags:
                 model_tags.append(rk_tag)
 
-        if 'architecture' not in model_details:
+        if "architecture" not in model_details:
             for rk_tag in model_tags:
                 for platform_processor in PlatformProcessor:
                     if rk_tag == platform_processor.value:
-                        model_details.update({'architecture': rk_tag})
+                        model_details.update({"architecture": rk_tag})
                         break
 
         # Determine finetune type if present
@@ -231,7 +277,7 @@ class SimpleModelMetadata(BasicModelMetadata):
         elif "chat" in model_name.lower():
             finetune = "Chat"
         if finetune:
-            model_metadata.update({'finetune': finetune})
+            model_metadata.update({"finetune": finetune})
 
         logger.debug(f"parse_model_name: Model metadata={model_metadata}")
         logger.debug(f"parse_model_name: Model details={model_details}")
@@ -239,30 +285,38 @@ class SimpleModelMetadata(BasicModelMetadata):
         return model_metadata, model_details, model_tags
 
     @staticmethod
-    def parse_splitted_for_model_family(splitted: List[str], start_pos: int,
-                                        model_metadata: dict, model_details: dict, model_tags: List[str]) -> Tuple[
-        dict, dict, List[str], int]:
+    def parse_splitted_for_model_family(
+        splitted: List[str],
+        start_pos: int,
+        model_metadata: dict,
+        model_details: dict,
+        model_tags: List[str],
+    ) -> Tuple[dict, dict, List[str], int]:
         new_pos = start_pos
         if len(splitted) > start_pos:
-            if MODEL_SPECS.get(splitted[start_pos].split('.')[0].lower()):
+            if MODEL_SPECS.get(splitted[start_pos].split(".")[0].lower()):
                 name = splitted[start_pos].lower()
-                model_metadata.update({'name': name})
+                model_metadata.update({"name": name})
                 model_tags.append(name)
-                model_details.update({'model_family': name.split('.')[0]})
+                model_details.update({"model_family": name.split(".")[0]})
                 new_pos += 1
 
         if new_pos == start_pos and len(splitted) > start_pos + 1:
-            if MODEL_SPECS.get(f"{splitted[start_pos]}-{splitted[start_pos + 1]}".lower()):
+            if MODEL_SPECS.get(
+                f"{splitted[start_pos]}-{splitted[start_pos + 1]}".lower()
+            ):
                 name = f"{splitted[start_pos]}-{splitted[start_pos + 1]}".lower()
-                model_metadata.update({'name': name})
+                model_metadata.update({"name": name})
                 model_tags.append(name)
-                model_details.update({'model_family': name})
+                model_details.update({"model_family": name})
                 new_pos += 2
-            elif MODEL_SPECS.get(f"{splitted[start_pos]}_{splitted[start_pos + 1]}".lower()):
+            elif MODEL_SPECS.get(
+                f"{splitted[start_pos]}_{splitted[start_pos + 1]}".lower()
+            ):
                 name = f"{splitted[start_pos]}_{splitted[start_pos + 1]}".lower()
-                model_metadata.update({'name': name})
+                model_metadata.update({"name": name})
                 model_tags.append(name)
-                model_details.update({'model_family': name})
+                model_details.update({"model_family": name})
                 new_pos += 2
 
         return model_metadata, model_details, model_tags, new_pos
@@ -277,7 +331,7 @@ class SimpleModelMetadata(BasicModelMetadata):
 
         for mtype in ModelType:
             if file.endswith(mtype.get_extension()):
-                model_metadata.update({'model_type': mtype})
+                model_metadata.update({"model_type": mtype})
                 file = re.sub(f"{mtype.get_extension()}$", "", file)
                 logger.debug(f"parse_file: Model type={mtype}, file reduce to {file}")
                 break
@@ -285,17 +339,22 @@ class SimpleModelMetadata(BasicModelMetadata):
         splitted = file.split("-")
         start_pos = 0
 
-        model_metadata, model_details, model_tags, start_pos = \
+        model_metadata, model_details, model_tags, start_pos = (
             SimpleModelMetadata.parse_splitted_for_model_family(
-                splitted=splitted, start_pos=start_pos,
-                model_metadata=model_metadata, model_details=model_details, model_tags=model_tags)
+                splitted=splitted,
+                start_pos=start_pos,
+                model_metadata=model_metadata,
+                model_details=model_details,
+                model_tags=model_tags,
+            )
+        )
 
         if len(splitted) > start_pos:
             if ModelPath.get_parameter_size(splitted[start_pos]):
                 parameters = ModelPath.get_parameter_size(splitted[start_pos])
-                model_metadata.update({'parameters': parameters})
+                model_metadata.update({"parameters": parameters})
                 model_tags.append(parameters)
-                model_details.update({'parameter_size': parameters})
+                model_details.update({"parameter_size": parameters})
                 start_pos += 1
 
         if len(splitted) > start_pos:
@@ -305,7 +364,7 @@ class SimpleModelMetadata(BasicModelMetadata):
                     model_tags.append(rk_tag)
                     for platform_processor in PlatformProcessor:
                         if rk_tag == platform_processor.value:
-                            model_details.update({'architecture': rk_tag})
+                            model_details.update({"architecture": rk_tag})
                             break
                     start_pos += 1
                     break
@@ -316,33 +375,49 @@ class SimpleModelMetadata(BasicModelMetadata):
                 rk_quant_format = splitted[start_pos].lower()
                 start_pos += 1
                 if len(splitted) > start_pos:
-                    if f"{splitted[start_pos - 1]}_{splitted[start_pos]}".lower() in RK_QUANT_FORMAT:
-                        rk_quant_format = f"{splitted[start_pos - 1]}_{splitted[start_pos]}".lower()
+                    if (
+                        f"{splitted[start_pos - 1]}_{splitted[start_pos]}".lower()
+                        in RK_QUANT_FORMAT
+                    ):
+                        rk_quant_format = (
+                            f"{splitted[start_pos - 1]}_{splitted[start_pos]}".lower()
+                        )
                         start_pos += 1
-                model_metadata.update({'quantization': rk_quant_format})
+                model_metadata.update({"quantization": rk_quant_format})
                 model_tags.append(rk_quant_format)
 
                 if len(splitted) > start_pos + 1:
-                    if "opt" == splitted[start_pos] and re.search(r"(\d+)", splitted[start_pos + 1]):
-                        quant_opt = re.search(r"(\d+)", splitted[start_pos + 1]).group(1)
-                        model_metadata.update({'quantization_opt': int(quant_opt)})
+                    if "opt" == splitted[start_pos] and re.search(
+                        r"(\d+)", splitted[start_pos + 1]
+                    ):
+                        quant_opt = re.search(r"(\d+)", splitted[start_pos + 1]).group(
+                            1
+                        )
+                        model_metadata.update({"quantization_opt": int(quant_opt)})
                         start_pos += 2
                 if len(splitted) > start_pos + 2:
-                    if "hybrid" == splitted[start_pos] and "ratio" == splitted[start_pos + 1] and re.search(
-                            r"(\d+\.\d+)", splitted[start_pos + 2]):
-                        quant_hybrid_ratio = re.search(r"(\d+\.\d+)", splitted[start_pos + 2]).group(1)
-                        model_metadata.update({'quantization_hybrid_ratio': float(quant_hybrid_ratio)})
+                    if (
+                        "hybrid" == splitted[start_pos]
+                        and "ratio" == splitted[start_pos + 1]
+                        and re.search(r"(\d+\.\d+)", splitted[start_pos + 2])
+                    ):
+                        quant_hybrid_ratio = re.search(
+                            r"(\d+\.\d+)", splitted[start_pos + 2]
+                        ).group(1)
+                        model_metadata.update(
+                            {"quantization_hybrid_ratio": float(quant_hybrid_ratio)}
+                        )
                         start_pos += 2
 
         for rk_tag in RK_TAGS_LIST:
             if rk_tag in splitted and rk_tag not in model_tags:
                 model_tags.append(rk_tag)
 
-        if 'architecture' not in model_details:
+        if "architecture" not in model_details:
             for rk_tag in model_tags:
                 for platform_processor in PlatformProcessor:
                     if rk_tag == platform_processor.value:
-                        model_details.update({'architecture': rk_tag})
+                        model_details.update({"architecture": rk_tag})
                         break
 
         logger.debug(f"parse_file: Model metadata={model_metadata}")
@@ -351,14 +426,20 @@ class SimpleModelMetadata(BasicModelMetadata):
         return model_metadata, model_details, model_tags
 
     @classmethod
-    def compute(cls, model_path: ModelPath, model_details: ModelDetails,
-                system_prompt: str = None,
-                temperature: float = None) -> dict:
-        model_metadata_from_name, model_details_from_name, model_tags_from_name = \
+    def compute(
+        cls,
+        model_path: ModelPath,
+        model_details: ModelDetails,
+        system_prompt: str = None,
+        temperature: float = None,
+    ) -> dict:
+        model_metadata_from_name, model_details_from_name, model_tags_from_name = (
             SimpleModelMetadata.parse_model_name(model_path.model_name)
+        )
 
-        model_metadata_from_file, model_details_from_file, model_tags_from_file = \
+        model_metadata_from_file, model_details_from_file, model_tags_from_file = (
             SimpleModelMetadata.parse_file(model_path.endpoint_model_file)
+        )
 
         model_metadata_from_name.update(model_metadata_from_file)
         model_details_from_name.update(model_details_from_file)
@@ -373,45 +454,65 @@ class SimpleModelMetadata(BasicModelMetadata):
             except Exception as e:
                 logger.warning(f"Cannot set model details attribute {attr}: {str(e)}")
 
-        model_architecture = model_details.model_family \
-            if model_details.model_family is not None \
+        model_architecture = (
+            model_details.model_family
+            if model_details.model_family is not None
             else get_model_architecture(model_path.endpoint_model_file)
+        )
 
-        if model_architecture is None and 'model_family' in model_details_from_name:
-            model_architecture = model_details_from_name['model_family']
+        if model_architecture is None and "model_family" in model_details_from_name:
+            model_architecture = model_details_from_name["model_family"]
 
-        _, _, int_size_value = int_parameters_size(model_metadata_from_name.get('parameters',
-                                                                                model_details.parameter_size))
+        _, _, int_size_value = int_parameters_size(
+            model_metadata_from_name.get("parameters", model_details.parameter_size)
+        )
 
         model_type = model_path.model_type
-        if model_type is None and 'model_type' in model_metadata_from_name:
-            model_type = model_metadata_from_name['model_type']
+        if model_type is None and "model_type" in model_metadata_from_name:
+            model_type = model_metadata_from_name["model_type"]
 
         from core.model.ModelFile import DEFAULT_SYSTEM
+
         to_return = {
-            "name": model_metadata_from_name['name'],
+            "name": model_metadata_from_name["name"],
             "architecture": model_architecture,
-            "quantization": model_metadata_from_name.get('quantization',
-                                                         ollama_quant_mapping.get(model_details.quantization_level)),
+            "quantization": model_metadata_from_name.get(
+                "quantization",
+                ollama_quant_mapping.get(model_details.quantization_level),
+            ),
             "parameters": int_size_value,
             "context_length": default_context_length(model_architecture),
             "system_prompt": system_prompt or DEFAULT_SYSTEM,
             "temperature": temperature or ModelMetadataParameters().temperature,
             "model_type": model_type,
         }
-        if 'context_length' in model_metadata_from_name:
-            to_return.update({'context_length': model_metadata_from_name['context_length']})
-        if 'quantization_opt' in model_metadata_from_name:
-            to_return.update({'quantization_opt': model_metadata_from_name['quantization_opt']})
-        if 'quantization_hybrid_ratio' in model_metadata_from_name:
-            to_return.update({'quantization_hybrid_ratio': model_metadata_from_name['quantization_hybrid_ratio']})
-        if 'finetune' in model_metadata_from_name:
-            to_return.update({'finetune': model_metadata_from_name['finetune']})
+        if "context_length" in model_metadata_from_name:
+            to_return.update(
+                {"context_length": model_metadata_from_name["context_length"]}
+            )
+        if "quantization_opt" in model_metadata_from_name:
+            to_return.update(
+                {"quantization_opt": model_metadata_from_name["quantization_opt"]}
+            )
+        if "quantization_hybrid_ratio" in model_metadata_from_name:
+            to_return.update(
+                {
+                    "quantization_hybrid_ratio": model_metadata_from_name[
+                        "quantization_hybrid_ratio"
+                    ]
+                }
+            )
+        if "finetune" in model_metadata_from_name:
+            to_return.update({"finetune": model_metadata_from_name["finetune"]})
 
         return to_return
 
     @staticmethod
-    def create_using_huggingface_model_info(model_path: ModelPath, model_metadata_data: dict, huggingface_model_info: HFModelInfo) -> Any:
+    def create_using_huggingface_model_info(
+        model_path: ModelPath,
+        model_metadata_data: dict,
+        huggingface_model_info: HFModelInfo,
+    ) -> Any:
         """
         for all fields in HFModelInfo, check if they are existing in the model metadata and if, then update them
 
@@ -490,35 +591,45 @@ class SimpleModelMetadata(BasicModelMetadata):
         # architecture
         if huggingface_model_info.config.model_type:
             if MODEL_SPECS.get(huggingface_model_info.config.model_type):
-                model_metadata_data['architecture'] = huggingface_model_info.config.model_type
+                model_metadata_data["architecture"] = (
+                    huggingface_model_info.config.model_type
+                )
             else:
-                raise Exception(f"model type {huggingface_model_info.config.model_type} not yet supported")
-        elif 'architecture' not in model_metadata_data:
+                raise Exception(
+                    f"model type {huggingface_model_info.config.model_type} not yet supported"
+                )
+        elif "architecture" not in model_metadata_data:
             # search from tag
             for tag in huggingface_model_info.tags:
                 if tag in MODEL_SPECS:
-                    model_metadata_data['architecture'] = tag
+                    model_metadata_data["architecture"] = tag
                     break
 
         # parameters
         if huggingface_model_info.cardData:
             if huggingface_model_info.cardData.params > 0:
-                model_metadata_data['parameters'] = huggingface_model_info.cardData.params
+                model_metadata_data["parameters"] = (
+                    huggingface_model_info.cardData.params
+                )
 
         # description
         if huggingface_model_info.description:
-            model_metadata_data['description'] = huggingface_model_info.description
+            model_metadata_data["description"] = huggingface_model_info.description
 
         # license
         if huggingface_model_info.license:
-            model_metadata_data['license'] = huggingface_model_info.license
+            model_metadata_data["license"] = huggingface_model_info.license
 
         logger.debug(f"model_metadata_data: {model_metadata_data}")
 
         return SimpleModelMetadata(**model_metadata_data)
 
     @staticmethod
-    def create_using_ollama_model_info(model_path: ModelPath, model_metadata_data: dict, ollama_model_info: OllamaModelInfo) -> Any:
+    def create_using_ollama_model_info(
+        model_path: ModelPath,
+        model_metadata_data: dict,
+        ollama_model_info: OllamaModelInfo,
+    ) -> Any:
         """
         for all fields in OllamaModelInfo, check if they are existing in the model metadata and if, then update them
         ollama_model_info = {
@@ -552,46 +663,52 @@ class SimpleModelMetadata(BasicModelMetadata):
         # architecture
         if ollama_model_info.model_family:
             if MODEL_SPECS.get(ollama_model_info.model_family):
-                model_metadata_data['architecture'] = ollama_model_info.model_family
+                model_metadata_data["architecture"] = ollama_model_info.model_family
             else:
-                raise Exception(f"model type {ollama_model_info.model_type} not yet supported")
+                raise Exception(
+                    f"model type {ollama_model_info.model_type} not yet supported"
+                )
 
         # file_type = 'Q4_K_M'
         # quantization: str
         if ollama_model_info.file_type:
             if ollama_model_info.file_type in OLLAMA_QUANT_FORMAT:
-                model_metadata_data['quantization'] = ollama_model_info.file_type
+                model_metadata_data["quantization"] = ollama_model_info.file_type
             else:
-                raise Exception(f"model quantization {ollama_model_info.file_type} not yet supported")
+                raise Exception(
+                    f"model quantization {ollama_model_info.file_type} not yet supported"
+                )
 
         # model_type = '494.03M'
         # parameters: int
         if ollama_model_info.model_type:
             size_value, size_unit, int_size_value = int_parameters_size(
-                ModelPath.get_parameter_size(ollama_model_info.model_type))
+                ModelPath.get_parameter_size(ollama_model_info.model_type)
+            )
             if ollama_model_info.model_type.startswith(str(size_value)):
-                model_metadata_data['parameters'] = int_size_value
+                model_metadata_data["parameters"] = int_size_value
 
         # model_format = 'gguf'
         # model_type: Optional[ModelType]
         if ollama_model_info.model_format:
             for mt in ModelType:
                 if mt.value.lower() == ollama_model_info.model_format.lower():
-                    model_metadata_data['model_type'] = mt
+                    model_metadata_data["model_type"] = mt
                     break
 
         # license
         if ollama_model_info.license:
-            model_metadata_data['license'] = ollama_model_info.license
+            model_metadata_data["license"] = ollama_model_info.license
 
         # system prompt
         system_prompt = ollama_model_info.system_prompt
         if system_prompt:
-            model_metadata_data['system_prompt'] = system_prompt
+            model_metadata_data["system_prompt"] = system_prompt
 
         logger.debug(f"model_metadata_data: {model_metadata_data}")
 
         return SimpleModelMetadata(**model_metadata_data)
+
 
 class ModelMetadata(SimpleModelMetadata):
     conversion_date: str
@@ -599,11 +716,10 @@ class ModelMetadata(SimpleModelMetadata):
 
     @classmethod
     def factory_helper(cls) -> dict:
-        return { "format": ModelMetadataFormat.COMPLETE }
-
+        return {"format": ModelMetadataFormat.COMPLETE}
 
     @classmethod
-    def create(cls, model_metadata_data: dict, metadata = None):
+    def create(cls, model_metadata_data: dict, metadata=None):
         if model_metadata_data is None:
             model_metadata_data = {}
         if metadata is not None:
@@ -611,12 +727,12 @@ class ModelMetadata(SimpleModelMetadata):
         return cls(**model_metadata_data)
 
     @classmethod
-    def build(cls, hf_model_info: HFModelInfo,ollama_model_info: OllamaModelInfo):
+    def build(cls, hf_model_info: HFModelInfo, ollama_model_info: OllamaModelInfo):
         data: dict = {}
         # TODO: load if persistent file is existing, and get the data as dict
         # TODO: compute simple metadate using ollama_model_info, and update the data
         # TODO: compute simple metadate using hf_model_info, and update the data
-        raise NotImplemented
+        raise NotImplementedError
         return cls(**data)
 
 
@@ -627,7 +743,7 @@ def get_model_size(model_path: str) -> int:
 
 def format_size(size_bytes: int) -> str:
     """Format size in bytes to human readable string."""
-    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
         if size_bytes < 1024.0:
             return f"{size_bytes:.2f} {unit}"
         size_bytes /= 1024.0
@@ -639,46 +755,69 @@ def get_model_architecture(model_path: str) -> Optional[str]:
     # TODO: Implement architecture detection
     pass
 
-def create_metadata(model_path: ModelPath, system_prompt: str = DEFAULT_SYSTEM,
-                    hf_model_info = None, ollama_model_info = None) -> Tuple[ModelMetadata | SimpleModelMetadata | BasicModelMetadata | None, ModelMetadataFormat, Path]:
+
+def create_metadata(
+    model_path: ModelPath,
+    system_prompt: str = DEFAULT_SYSTEM,
+    hf_model_info=None,
+    ollama_model_info=None,
+) -> Tuple[
+    ModelMetadata | SimpleModelMetadata | BasicModelMetadata | None,
+    ModelMetadataFormat,
+    Path,
+]:
     metadata_path = model_path.model_metadata_path
     md_format = ModelMetadataFormat.get_format(metadata_path)
     logger.debug(f"Searching for Metadata: get {md_format}")
     if md_format == ModelMetadataFormat.SIMPLE:
-        model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(model_path=model_path)
+        model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(
+            model_path=model_path
+        )
     elif md_format is None:
-        if (hf_model_info and ollama_model_info) or (model_path.huggingface_model_info_exists and model_path.ollama_model_info_exists):
+        if (hf_model_info and ollama_model_info) or (
+            model_path.huggingface_model_info_exists
+            and model_path.ollama_model_info_exists
+        ):
             model_metadata: ModelMetadata = ModelMetadata.create(
                 model_metadata_data=SimpleModelMetadata.compute(
                     model_path=model_path,
                     model_details=ModelDetails.from_model_path(model_path=model_path),
-                    system_prompt=system_prompt
+                    system_prompt=system_prompt,
                 ),
                 metadata=ModelMetadata.build(
                     hf_model_info=hf_model_info or model_path.huggingface_model_info,
-                    ollama_model_info=ollama_model_info or model_path.ollama_model_info
-                )
+                    ollama_model_info=ollama_model_info or model_path.ollama_model_info,
+                ),
             )
         else:
             model_metadata: SimpleModelMetadata | None = None
             if hf_model_info or model_path.huggingface_model_info_exists:
-                model_metadata = SimpleModelMetadata.create_using_huggingface_model_info(
-                    model_path=model_path,
-                    model_metadata_data=SimpleModelMetadata.compute(
+                model_metadata = (
+                    SimpleModelMetadata.create_using_huggingface_model_info(
                         model_path=model_path,
-                        model_details=ModelDetails.from_model_path(model_path=model_path),
-                        system_prompt=system_prompt
-                    ),
-                    huggingface_model_info=hf_model_info or model_path.huggingface_model_info)
+                        model_metadata_data=SimpleModelMetadata.compute(
+                            model_path=model_path,
+                            model_details=ModelDetails.from_model_path(
+                                model_path=model_path
+                            ),
+                            system_prompt=system_prompt,
+                        ),
+                        huggingface_model_info=hf_model_info
+                        or model_path.huggingface_model_info,
+                    )
+                )
             elif ollama_model_info or model_path.ollama_model_info_exists:
                 model_metadata = SimpleModelMetadata.create_using_ollama_model_info(
                     model_path=model_path,
                     model_metadata_data=SimpleModelMetadata.compute(
                         model_path=model_path,
-                        model_details=ModelDetails.from_model_path(model_path=model_path),
-                        system_prompt=system_prompt
+                        model_details=ModelDetails.from_model_path(
+                            model_path=model_path
+                        ),
+                        system_prompt=system_prompt,
                     ),
-                    ollama_model_info=ollama_model_info or model_path.ollama_model_info)
+                    ollama_model_info=ollama_model_info or model_path.ollama_model_info,
+                )
     else:
         # from conversion
         model_metadata: SimpleModelMetadata = SimpleModelMetadata.from_complete(

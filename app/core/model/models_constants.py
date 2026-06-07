@@ -14,6 +14,7 @@ MODEL_SPECS = {
     "llama": (4096, []),  # fallback
 }
 
+
 def detect_family(text: str) -> str:
     return next(
         (
@@ -25,6 +26,7 @@ def detect_family(text: str) -> str:
         "llama",
     )
 
+
 # "qwen2.context_length": 32768,
 # ["llama", "llama2", "llama3"] f"{family}.context_length": 4096,
 # "mistral.context_length": 8192,
@@ -33,6 +35,7 @@ def default_context_length(family: str):
         if name == family:
             return ctx_len
     return 4096
+
 
 MODEL_WITH_TOOLS = ["qwen2", "qwen3", "phi", "llama3", "mistral"]
 
@@ -60,7 +63,9 @@ MODEL_ARCHITECTURE_MAPPING = {
 
 # validation process
 for model_family, model_list in MODEL_ARCHITECTURE_MAPPING.items():
-    assert model_family in MODEL_ARCHITECTURES, f"Missing {model_family} in MODEL_ARCHITECTURES"
+    assert (
+        model_family in MODEL_ARCHITECTURES
+    ), f"Missing {model_family} in MODEL_ARCHITECTURES"
     for model in model_list:
         assert model in MODEL_SPECS, f"Missing {model} in MODEL_SPECS"
 # validation process
@@ -100,7 +105,7 @@ LANGUAGE_PATTERNS = {
     "japanese": "ja",
 }
 
-MODELFILE_NAME:str = "Modelfile"
+MODELFILE_NAME: str = "Modelfile"
 
 B_PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([bB])"
 M_PARAM_SIZE_PATTERN = r"(\d+\.?\d*)([mM])"
@@ -117,7 +122,7 @@ COMMON_LICENSES = [APACHE2_COMMON_LICENSE, MIT_COMMON_LICENSE, QWEN_COMMON_LICEN
 COMMON_LICENSE = {
     APACHE2_COMMON_LICENSE: "apache",
     MIT_COMMON_LICENSE: "mit",
-    QWEN_COMMON_LICENSE:"qwen-research",
+    QWEN_COMMON_LICENSE: "qwen-research",
 }
 
 # validation process
@@ -126,10 +131,13 @@ for common_lic in COMMON_LICENSES:
 for common_lic in COMMON_LICENSE.keys():
     assert common_lic in COMMON_LICENSES, f"Missing {common_lic} in COMMON_LICENSES"
 
+
 def validate_model_id(model_id: str):
     """Check that FROM contains a valid model name or path to a model file."""
     if len(model_id.split("/")) == 0 and len(model_id.split(":")) == 0:
-        raise ValueError(f"FROM and model_id must be a valid model name or path to a model file.")
+        raise ValueError(
+            "FROM and model_id must be a valid model name or path to a model file."
+        )
     return model_id
 
 

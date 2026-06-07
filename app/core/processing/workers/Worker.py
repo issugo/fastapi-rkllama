@@ -1,17 +1,16 @@
 import logging
-from datetime import datetime
+import time
 from multiprocessing import Process, Queue
 from abc import ABC, abstractmethod
 from typing import Any
 
 from core.backends.backend import BackendType, Backend
-from core.backends.rkllm.rkllm_backend import RKLLMBackend
-from core.model.Model import Model
 from core.model.ModelConfig import FullModelParameters
 from core.model.ModelFile import ModelFile
 from core.processing.BaseDomainId import BaseDomainId
 from core.processing.tasks.Tasks import Tasks
 from core.processing.workers.WorkerModelInfo import WorkerModelInfo
+from core.processing.variables import global_text
 
 logger = logging.getLogger("rkllama.worker")
 
@@ -21,12 +20,20 @@ class Worker(ABC):
     BACKEND_TYPE: BackendType | None = None
     _backend_type: BackendType | None = None
 
-    def __init__(self, modelfile: ModelFile, full_model_parameters: FullModelParameters, base_domain_id: BaseDomainId):
-        self.worker_model_info = WorkerModelInfo(modelfile=modelfile, base_domain_id=base_domain_id)
+    def __init__(
+        self,
+        modelfile: ModelFile,
+        full_model_parameters: FullModelParameters,
+        base_domain_id: BaseDomainId,
+    ):
+        self.worker_model_info = WorkerModelInfo(
+            modelfile=modelfile, base_domain_id=base_domain_id
+        )
         self.full_model_parameters = full_model_parameters
         self.process = None
         self.task_q = Queue()
         self.result_q = Queue()
+        self.model_backend = None
 
     @property
     def modelfile(self) -> ModelFile:
@@ -44,7 +51,6 @@ class Worker(ABC):
             self._backend_type = BackendType.from_model_type(self.modelfile.model_type)
         return self._backend_type
 
-
     @abstractmethod
     def create_worker_process(self) -> Process | None:
         """
@@ -52,18 +58,19 @@ class Worker(ABC):
         """
         pass
 
-
     @abstractmethod
-    def create_inference_thread(self, inference_mode, model_input, model_input_type) -> Any:
+    def create_inference_thread(
+        self, inference_mode, model_input, model_input_type
+    ) -> Any:
         pass
 
-
-    def task_wait_loop(self, model_backend: Backend, name: str, result_queue: Queue, task_queue: Queue):
+    def task_wait_loop(
+        self, model_backend: Backend, name: str, result_queue: Queue, task_queue: Queue
+    ):
+        self.model_backend = model_backend
         # Loop to wait for tasks
         while True:
-
             try:
-
                 # Get the instruction to the worker
                 task_obj = task_queue.get()
                 task = task_obj.task
@@ -94,7 +101,9 @@ class Worker(ABC):
                     # Run inference
 
                     # TODO: use workermanager
-                    thread_model = self.create_inference_thread(inference_mode, model_input, model_input_type)
+                    thread_model = self.create_inference_thread(
+                        inference_mode, model_input, model_input_type
+                    )
                     thread_model.start()
 
                     # Looping until execution of the thread
@@ -159,8 +168,8 @@ class Worker(ABC):
                     # Send final signal of the inference
                     result_queue.put(Tasks.WORKER_TASK_FINISHED)
             except Exception as e:
-                logger.error(f"Failed executing task the worker for model '{name}' for task '{task}': {str(e)}")
+                logger.error(
+                    f"Failed executing task the worker for model '{name}' for task '{task}': {str(e)}"
+                )
                 # Announce the creation of the RKLLM modelfile in memory
                 result_queue.put(Tasks.WORKER_TASK_ERROR)
-
-

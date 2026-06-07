@@ -1,6 +1,5 @@
 import struct
 from dataclasses import dataclass
-from typing import Dict, Any
 
 import numpy as np
 import torch
@@ -13,10 +12,12 @@ class RKLLMConverterConfig(BaseModel):
     quantization: str
     max_context_len: int
 
+
 @dataclass
 class RKLLMHeader:
     """Header structure for RKLLM format."""
-    magic: bytes = b'RKLL'
+
+    magic: bytes = b"RKLL"
     version: int = 1
     model_type: str = ""
     vocab_size: int = 0
@@ -31,23 +32,24 @@ class RKLLMHeader:
         header = self.magic
 
         # Version (4 bytes)
-        header += struct.pack('<I', self.version)
+        header += struct.pack("<I", self.version)
 
         # Model type (32 bytes, padded with zeros)
-        model_type_bytes = self.model_type.encode('utf-8')
-        header += model_type_bytes.ljust(32, b'\0')
+        model_type_bytes = self.model_type.encode("utf-8")
+        header += model_type_bytes.ljust(32, b"\0")
 
         # Model parameters (4 bytes each)
-        header += struct.pack('<IIII',
+        header += struct.pack(
+            "<IIII",
             self.vocab_size,
             self.hidden_size,
             self.num_layers,
-            self.max_seq_len
+            self.max_seq_len,
         )
 
         # Quantization type (16 bytes, padded with zeros)
-        quant_bytes = self.quantization.encode('utf-8')
-        header += quant_bytes.ljust(16, b'\0')
+        quant_bytes = self.quantization.encode("utf-8")
+        header += quant_bytes.ljust(16, b"\0")
 
         return header
 
@@ -83,8 +85,8 @@ class RKLLMConverter:
             vocab_size=model_config.vocab_size,
             hidden_size=model_config.hidden_size,
             num_layers=model_config.num_hidden_layers,
-            max_seq_len=self.config.get('max_context_len', 16385),
-            quantization=self.config.get('quantization', 'Q4_0')
+            max_seq_len=self.config.get("max_context_len", 16385),
+            quantization=self.config.get("quantization", "Q4_0"),
         )
 
     def _convert_weights(self) -> bytes:
@@ -93,21 +95,21 @@ class RKLLMConverter:
 
         # Convert each layer's weights
         for name, param in self.model.named_parameters():
-            if 'weight' in name:
+            if "weight" in name:
                 logger.info(f"Converting weights for layer: {name}")
                 # Convert tensor to numpy array
                 weight_array = param.detach().cpu().numpy()
                 logger.info(f"Weight shape: {weight_array.shape}")
 
                 # Convert to RKLLM format based on quantization
-                quant_type = self.config.get('quantization', 'Q4_0')
-                if quant_type == 'Q4_0':
+                quant_type = self.config.get("quantization", "Q4_0")
+                if quant_type == "Q4_0":
                     weight_bytes = self._convert_to_q4_0(weight_array)
-                elif quant_type == 'Q4_K_M':
+                elif quant_type == "Q4_K_M":
                     weight_bytes = self._convert_to_q4_k_m(weight_array)
-                elif quant_type == 'Q8_0':
+                elif quant_type == "Q8_0":
                     weight_bytes = self._convert_to_q8_0(weight_array)
-                elif quant_type == 'Q8_K_M':
+                elif quant_type == "Q8_K_M":
                     weight_bytes = self._convert_to_q8_k_m(weight_array)
                 else:
                     raise ValueError(f"Unsupported quantization type: {quant_type}")
@@ -138,7 +140,7 @@ class RKLLMConverter:
         if weight_array.shape[1] % 2 != 0:
             # Pad with zeros if needed
             pad_width = ((0, 0), (0, 1))
-            weight_array = np.pad(weight_array, pad_width, mode='constant')
+            weight_array = np.pad(weight_array, pad_width, mode="constant")
             logger.info(f"Padded shape: {weight_array.shape}")
 
         # Scale weights to int8 range (-8 to 7)
@@ -162,10 +164,11 @@ class RKLLMConverter:
                 packed_weights[:, i // 2] = (high_nibble << 4) | low_nibble
 
             # Add metadata
-            metadata = struct.pack('<III',
+            metadata = struct.pack(
+                "<III",
                 original_shape[0] if len(original_shape) > 1 else 1,
                 original_shape[1] if len(original_shape) > 1 else original_shape[0],
-                len(original_shape)
+                len(original_shape),
             )
             logger.info(f"Metadata size: {len(metadata)} bytes")
 
@@ -195,9 +198,11 @@ class RKLLMConverter:
         # TODO: Implement Q8_K_M conversion
         raise NotImplementedError("Q8_K_M conversion not yet implemented")
 
-    def _write_to_file(self, header: RKLLMHeader, weights: bytes, output_path: str) -> None:
+    def _write_to_file(
+        self, header: RKLLMHeader, weights: bytes, output_path: str
+    ) -> None:
         """Write RKLLM format to file."""
-        with open(output_path, 'wb') as f:
+        with open(output_path, "wb") as f:
             # Write header
             f.write(header.to_bytes())
 

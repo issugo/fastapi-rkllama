@@ -4,15 +4,20 @@ from enum import Enum
 from pathlib import Path
 from typing import Union, Optional, Any, Tuple
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from core.config.warnings import deprecated
 from core.model import logger
 from core.model.ModelName import ModelName, ModelNameException
 from core.model.ModelType import ModelType
 from core.model.converter.quantization_constants import quant_patterns, quant_mapping
-from core.model.models_constants import MODELFILE_NAME, B_PARAM_SIZE_PATTERN, \
-    UNKNOWN_VAL_STR, M_PARAM_SIZE_PATTERN, validate_model_id
+from core.model.models_constants import (
+    MODELFILE_NAME,
+    B_PARAM_SIZE_PATTERN,
+    UNKNOWN_VAL_STR,
+    M_PARAM_SIZE_PATTERN,
+    validate_model_id,
+)
 
 from core.model.HfFileInfo import HfFileInfo
 from core.model.OllamaManifest import OllamaManifest
@@ -50,8 +55,12 @@ class ModelPath(ModelName):
     endpoint_model_file: str
     endpoint_model_file_size: int
 
-    huggingface_path: Optional[str] = Field(default=None, description="Hugging Face repository path")
-    ollama_path: Optional[str] = Field(default=None, description="Ollama repository path")
+    huggingface_path: Optional[str] = Field(
+        default=None, description="Hugging Face repository path"
+    )
+    ollama_path: Optional[str] = Field(
+        default=None, description="Ollama repository path"
+    )
 
     _huggingface_file_info: Union[HfFileInfo | None] = None
     _huggingface_model_info: Union[HFModelInfo | None] = None
@@ -60,17 +69,23 @@ class ModelPath(ModelName):
 
     @classmethod
     def from_model_id(cls, model_id: str) -> Any:
-        model_id=validate_model_id(model_id=model_id)
+        model_id = validate_model_id(model_id=model_id)
         try:
             model_name: ModelName = ModelName.from_model_id(model_id)
-            endpoint_model_file = model_id[len(model_name.model_name)+1:]
-            endpoint_model_file_path: Path = model_name.endpoint_model_file_path_with_endpoint(endpoint_model_file)
-            if endpoint_model_file_path.is_file() or endpoint_model_file_path.is_symlink():
+            endpoint_model_file = model_id[len(model_name.model_name) + 1 :]
+            endpoint_model_file_path: Path = (
+                model_name.endpoint_model_file_path_with_endpoint(endpoint_model_file)
+            )
+            if (
+                endpoint_model_file_path.is_file()
+                or endpoint_model_file_path.is_symlink()
+            ):
                 endpoint_model_file_size = endpoint_model_file_path.stat().st_size
-                model_path: ModelPath = ModelPath(model_name=model_name.model_name,
-                                                  endpoint_model_file=endpoint_model_file,
-                                                  endpoint_model_file_size=endpoint_model_file_size,
-                                                 )
+                model_path: ModelPath = ModelPath(
+                    model_name=model_name.model_name,
+                    endpoint_model_file=endpoint_model_file,
+                    endpoint_model_file_size=endpoint_model_file_size,
+                )
                 if model_name.model_format:
                     model_path.model_format = model_name.model_format
                 return model_path
@@ -79,23 +94,29 @@ class ModelPath(ModelName):
             raise ModelNotFoundException(model_id) from e
 
     @staticmethod
-    def compute_model_id(model_name: str, endpoint_model_file: str,
-                         is_ollama: bool = False) -> str:
+    def compute_model_id(
+        model_name: str, endpoint_model_file: str, is_ollama: bool = False
+    ) -> str:
         if is_ollama:
             return validate_model_id(f"{model_name}:{endpoint_model_file}")
         return validate_model_id(f"{model_name}/{endpoint_model_file}")
 
     @property
     def model_id(self):
-        return validate_model_id(self.compute_model_id(model_name=self.model_name,
-                                     endpoint_model_file=self.endpoint_model_file,
-                                     is_ollama=self.ollama_path is not None))
+        return validate_model_id(
+            self.compute_model_id(
+                model_name=self.model_name,
+                endpoint_model_file=self.endpoint_model_file,
+                is_ollama=self.ollama_path is not None,
+            )
+        )
 
     def validate_FROM_with_endpoint_file(self, FROM: str) -> bool | Any:
-        return self.endpoint_model_file is not None \
-            and not FROM.endswith(self.endpoint_model_file) \
-            and FROM.replace(':', '/') != self.model_id.replace(':', '/')
-
+        return (
+            self.endpoint_model_file is not None
+            and not FROM.endswith(self.endpoint_model_file)
+            and FROM.replace(":", "/") != self.model_id.replace(":", "/")
+        )
 
     @property
     def endpoint_model_file_path(self) -> Path:
@@ -112,7 +133,10 @@ class ModelPath(ModelName):
         # use metadata file if available
         if self.model_metadata_path.exists():
             from core.model.ModelMetadata import SimpleModelMetadata
-            model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(model_path=self)
+
+            model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(
+                model_path=self
+            )
             mtype: ModelType = model_metadata.model_type
             self.model_format = mtype
             return mtype
@@ -122,7 +146,10 @@ class ModelPath(ModelName):
     @property
     def model_exists(self) -> bool:
         if self.model_dir_path.exists():
-            if self.endpoint_model_file_path.is_file() or self.endpoint_model_file_path.is_symlink():
+            if (
+                self.endpoint_model_file_path.is_file()
+                or self.endpoint_model_file_path.is_symlink()
+            ):
                 return self.model_type is not None
         return False
 
@@ -132,7 +159,6 @@ class ModelPath(ModelName):
     @property
     def model_metadata_path(self) -> Path:
         return self.model_metadata_path_using_model_dir_path(self.model_dir_path)
-
 
     @staticmethod
     def __modelfile_path(model_name: str) -> Path:
@@ -160,7 +186,9 @@ class ModelPath(ModelName):
             with open(self.modelfile_path, "r") as f:
                 for line in f.readlines():
                     if line.startswith("FROM "):
-                        mfile_endpoint_model_file = line.split(" ", maxsplit=1)[1].strip()
+                        mfile_endpoint_model_file = line.split(" ", maxsplit=1)[
+                            1
+                        ].strip()
                         if mfile_endpoint_model_file.endswith(self.endpoint_model_file):
                             return True
         return False
@@ -173,10 +201,14 @@ class ModelPath(ModelName):
 
     def get_model_family(self) -> str:
         from core.model.ModelMetadata import SimpleModelMetadata
-        model_metadata, _, _, _ = \
-            SimpleModelMetadata.parse_splitted_for_model_family(
-                splitted=self.model_name.split("-"), start_pos=0,
-                model_metadata={}, model_details={}, model_tags=[])
+
+        model_metadata, _, _, _ = SimpleModelMetadata.parse_splitted_for_model_family(
+            splitted=self.model_name.split("-"),
+            start_pos=0,
+            model_metadata={},
+            model_details={},
+            model_tags=[],
+        )
         if model_metadata:
             return model_metadata.get("model_family", UNKNOWN_VAL_STR)
         return UNKNOWN_VAL_STR
@@ -217,16 +249,22 @@ class ModelPath(ModelName):
     @property
     def huggingface_file_info_exists(self) -> bool:
         from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+
         if self._huggingface_file_info:
             return True
-        huggingface_file_info_path = RkllamaStorageHelper.huggingface_file_info_path(self)
+        huggingface_file_info_path = RkllamaStorageHelper.huggingface_file_info_path(
+            self
+        )
         if huggingface_file_info_path is None:
             return False
         logger.debug(f"Checking if HF file info exists: {huggingface_file_info_path}")
         if os.path.exists(huggingface_file_info_path):
             if self.huggingface_path is None:
                 import json
-                self.huggingface_path = json.loads(huggingface_file_info_path.read_text()).get('name')
+
+                self.huggingface_path = json.loads(
+                    huggingface_file_info_path.read_text()
+                ).get("name")
             return self.huggingface_file_info is not None
         return False
 
@@ -240,13 +278,17 @@ class ModelPath(ModelName):
 
         from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
 
-        huggingface_file_info_path = RkllamaStorageHelper.huggingface_file_info_path(self)
+        huggingface_file_info_path = RkllamaStorageHelper.huggingface_file_info_path(
+            self
+        )
         if huggingface_file_info_path is None:
             return None
 
         try:
             if os.path.exists(huggingface_file_info_path):
-                self._huggingface_file_info = HfFileInfo.load(huggingface_file_info_path)
+                self._huggingface_file_info = HfFileInfo.load(
+                    huggingface_file_info_path
+                )
                 return self._huggingface_file_info
         except Exception as e:
             logger.exception(f"Error loading Huggingface file info: {str(e)}")
@@ -261,15 +303,21 @@ class ModelPath(ModelName):
 
             # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.HUGGINGFACE
             file_info, repo, model_type, error = huggingface_pull_supplier.file_info(
-                model_name=self.model_name, file=self.endpoint_file_file,
-                repo=None, model_type=self.model_type, supplier=Supplier.HUGGINGFACE)
+                model_name=self.model_name,
+                file=self.endpoint_file_file,
+                repo=None,
+                model_type=self.model_type,
+                supplier=Supplier.HUGGINGFACE,
+            )
 
             if error:
                 logger.debug(f"Failed to get HUGGINGFACE data: {error}")
                 return None
 
             self._huggingface_file_info = file_info
-            self._huggingface_file_info.save(RkllamaStorageHelper.huggingface_file_info_path(self))
+            self._huggingface_file_info.save(
+                RkllamaStorageHelper.huggingface_file_info_path(self)
+            )
             return self._huggingface_file_info
         except Exception as e:
             logger.exception(f"Error fetching HUGGINGFACE model info: {str(e)}")
@@ -282,9 +330,12 @@ class ModelPath(ModelName):
     @property
     def huggingface_model_info_exists(self) -> bool:
         from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+
         if self._huggingface_model_info:
             return True
-        huggingface_model_info_path = RkllamaStorageHelper.huggingface_model_info_path(self)
+        huggingface_model_info_path = RkllamaStorageHelper.huggingface_model_info_path(
+            self
+        )
         if huggingface_model_info_path is None:
             return False
         if os.path.exists(huggingface_model_info_path):
@@ -300,10 +351,14 @@ class ModelPath(ModelName):
             return self._huggingface_model_info
 
         try:
-            from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
+            from core.model.storage_helpers.RkllamaStorageHelper import (
+                RkllamaStorageHelper,
+            )
+
             if os.path.exists(RkllamaStorageHelper.huggingface_model_info_path(self)):
                 self._huggingface_model_info = HFModelInfo.load(
-                    file_path=RkllamaStorageHelper.huggingface_model_info_path(self))
+                    file_path=RkllamaStorageHelper.huggingface_model_info_path(self)
+                )
                 return self._huggingface_model_info
         except Exception as e:
             logger.exception(f"Error loading HF model info: {str(e)}")
@@ -318,18 +373,25 @@ class ModelPath(ModelName):
 
             # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.OLLAMA
 
-            model_file_info, file_info, repo, model_type, error = rk_pull_supplier.model_file_info(
-                model_name=self.model_name, file=self.endpoint_model_file,
-                repo=None, model_type=self.model_type,
-                file_info=self.huggingface_file_info,
-                supplier=Supplier.HUGGINGFACE)
+            model_file_info, file_info, repo, model_type, error = (
+                rk_pull_supplier.model_file_info(
+                    model_name=self.model_name,
+                    file=self.endpoint_model_file,
+                    repo=None,
+                    model_type=self.model_type,
+                    file_info=self.huggingface_file_info,
+                    supplier=Supplier.HUGGINGFACE,
+                )
+            )
 
             if error:
                 logger.debug(f"Failed to get HUGGINGFACE data: {error}")
                 return None
 
             self._huggingface_model_info = model_file_info
-            self._huggingface_model_info.save(RkllamaStorageHelper.huggingface_model_info_path(self))
+            self._huggingface_model_info.save(
+                RkllamaStorageHelper.huggingface_model_info_path(self)
+            )
             return self._huggingface_model_info
         except Exception as e:
             logger.exception(f"Error fetching HUGGINGFACE model info: {str(e)}")
@@ -342,6 +404,7 @@ class ModelPath(ModelName):
     @property
     def ollama_file_info_exists(self) -> bool:
         from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+
         if self._ollama_file_info:
             return True
         ollama_file_info_path = OllamaStorageHelper.ollama_file_info_path(self)
@@ -351,8 +414,18 @@ class ModelPath(ModelName):
         if os.path.exists(ollama_file_info_path):
             if self.ollama_path is None:
                 import json
-                if json.loads(ollama_file_info_path.read_text()).get('config', {}).get('digest', '').startswith('sha256:'):
-                    self.ollama_path = self.compute_model_id(model_name=self.model_name, endpoint_model_file=self.endpoint_model_file, is_ollama=True)
+
+                if (
+                    json.loads(ollama_file_info_path.read_text())
+                    .get("config", {})
+                    .get("digest", "")
+                    .startswith("sha256:")
+                ):
+                    self.ollama_path = self.compute_model_id(
+                        model_name=self.model_name,
+                        endpoint_model_file=self.endpoint_model_file,
+                        is_ollama=True,
+                    )
             return self.ollama_file_info is not None
         return False
 
@@ -387,8 +460,12 @@ class ModelPath(ModelName):
 
             # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.OLLAMA
             file_info, repo, model_type, error = ollama_pull_supplier.file_info(
-                model_name=self.model_name, file=self.endpoint_file_file,
-                repo=None, model_type=self.model_type, supplier=Supplier.OLLAMA)
+                model_name=self.model_name,
+                file=self.endpoint_file_file,
+                repo=None,
+                model_type=self.model_type,
+                supplier=Supplier.OLLAMA,
+            )
 
             if error:
                 logger.debug(f"Failed to get OLLAMA data: {error}")
@@ -408,6 +485,7 @@ class ModelPath(ModelName):
     @property
     def ollama_model_info_exists(self) -> bool:
         from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
+
         if self._ollama_model_info:
             return True
         ollama_model_info_path = OllamaStorageHelper.ollama_model_info_path(self)
@@ -452,18 +530,25 @@ class ModelPath(ModelName):
 
             # model_name=qwen2.5, file=1.5b, repo=None, supplier=Supplier.OLLAMA
 
-            model_file_info, file_info, repo, model_type, error = ollama_pull_supplier.model_file_info(
-                model_name=self.model_name, file=self.endpoint_model_file,
-                repo=None, model_type=self.model_type,
-                file_info=self.ollama_file_info,
-                supplier=Supplier.OLLAMA)
+            model_file_info, file_info, repo, model_type, error = (
+                ollama_pull_supplier.model_file_info(
+                    model_name=self.model_name,
+                    file=self.endpoint_model_file,
+                    repo=None,
+                    model_type=self.model_type,
+                    file_info=self.ollama_file_info,
+                    supplier=Supplier.OLLAMA,
+                )
+            )
 
             if error:
                 logger.debug(f"Failed to get OLLAMA data: {error}")
                 return None
 
             self._ollama_model_info = model_file_info
-            self._ollama_model_info.save(OllamaStorageHelper.ollama_model_info_path(self))
+            self._ollama_model_info.save(
+                OllamaStorageHelper.ollama_model_info_path(self)
+            )
             return self._ollama_model_info
         except Exception as e:
             logger.exception(f"Error fetching OLLAMA model info: {str(e)}")
@@ -476,10 +561,14 @@ class ModelPath(ModelName):
     @property
     def repo_url(self):
         if self.huggingface_path:
-            from core.model.storage_helpers.HuggingfaceFileSystem import HuggingfaceFileSystem
+            from core.model.storage_helpers.HuggingfaceFileSystem import (
+                HuggingfaceFileSystem,
+            )
+
             return HuggingfaceFileSystem.model_path(self.huggingface_path)
         elif self.ollama_path:
             from core.model.storage_helpers.OllamaFileSystem import OllamaFileSystem
+
             return OllamaFileSystem.model_path(self.ollama_path, api=False)
         else:
             return None
@@ -544,13 +633,13 @@ def find_rkllm_model_name(model_dir):
     return None
 
 
-
 def str_parameters_size(content: int) -> Tuple[float, str, int]:
     if content > 1_000_000_000:
         return float(content) / 1_000_000_000, "B", content
     if content > 1_000_000:
         return float(content) / 1_000_000, "M", content
     raise ValueError()
+
 
 def int_parameters_size(content: str) -> Tuple[float, str, int]:
     b_param_pattern = re.search(
@@ -579,4 +668,3 @@ def int_parameters_size(content: str) -> Tuple[float, str, int]:
         return size_value, size_unit.upper(), int_size_value
     else:
         raise ValueError()
-

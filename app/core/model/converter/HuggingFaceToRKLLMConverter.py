@@ -1,4 +1,3 @@
-import json
 import os
 from datetime import datetime
 
@@ -6,7 +5,6 @@ import torch
 from transformers import AutoTokenizer, AutoProcessor, AutoModelForCausalLM
 
 from core.api.parameters.converter.ConversionConfig import ConversionConfig
-from core.model.Model import Model
 from core.model.ModelInfo import ModelDetails
 from core.model.ModelMetadata import ModelMetadata, METADATA_FILENAME
 from core.model.ModelName import ModelName
@@ -17,7 +15,8 @@ from core.model.converter.quantization import QuantizationConverter
 from core.model.converter import logger, quantization_constants
 from core.model.models_constants import validate_model_id
 
-CONVERTION_AUTHOR="convertion"
+CONVERTION_AUTHOR = "convertion"
+
 
 class HuggingFaceToRKLLMConverter:
     """Converts Hugging Face models to RKLLM format."""
@@ -41,7 +40,7 @@ class HuggingFaceToRKLLMConverter:
 
     def _validate_config(self) -> None:
         """Validate the conversion configuration."""
-        if not self.config.quantization in self.OLLAMA_QUANTIZATION_MAPPING:
+        if self.config.quantization not in self.OLLAMA_QUANTIZATION_MAPPING:
             raise ValueError(f"Unsupported quantization: {self.config.quantization}")
 
     def convert(self) -> None:
@@ -49,23 +48,26 @@ class HuggingFaceToRKLLMConverter:
         logger.info(f"Starting conversion of {self.config.model_name}")
 
         # TODO: fulfill model_details using self.config and model_id
-        model_details: ModelDetails =ModelDetails(**{
-            'format': '?'
-        })
+        model_details: ModelDetails = ModelDetails(**{"format": "?"})
 
-        endpoint_model_file: str = ModelDetails.gen_endpoint_model_file_name_using_model_details(
-            model_name=self.config.model_name,
-            model_type=self.model_type,
-            model_details=model_details
+        endpoint_model_file: str = (
+            ModelDetails.gen_endpoint_model_file_name_using_model_details(
+                model_name=self.config.model_name,
+                model_type=self.model_type,
+                model_details=model_details,
+            )
         )
 
-        model_path: ModelPath = ModelPath(**{
-            'model_name': self.config.model_name,
-            'model_type': self.model_type,
-            'huggingface_path': ModelName.model_id_to_path(validate_model_id(self.config.model_id),
-                                                           author=CONVERTION_AUTHOR),
-            'endpoint_model_file': endpoint_model_file
-        })
+        model_path: ModelPath = ModelPath(
+            **{
+                "model_name": self.config.model_name,
+                "model_type": self.model_type,
+                "huggingface_path": ModelName.model_id_to_path(
+                    validate_model_id(self.config.model_id), author=CONVERTION_AUTHOR
+                ),
+                "endpoint_model_file": endpoint_model_file,
+            }
+        )
 
         lock_id = model_path.lock_model()
         if lock_id >= 0:
@@ -97,15 +99,13 @@ class HuggingFaceToRKLLMConverter:
         try:
             # Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(
-                validate_model_id(self.config.model_id),
-                token=self.config.token
+                validate_model_id(self.config.model_id), token=self.config.token
             )
 
             # Try to load processor for multimodal models
             try:
                 self.processor = AutoProcessor.from_pretrained(
-                    validate_model_id(self.config.model_id),
-                    token=self.config.token
+                    validate_model_id(self.config.model_id), token=self.config.token
                 )
                 logger.info("Loaded multimodal processor")
             except:
@@ -115,8 +115,10 @@ class HuggingFaceToRKLLMConverter:
             self.model = AutoModelForCausalLM.from_pretrained(
                 validate_model_id(self.config.model_id),
                 token=self.config.token,
-                torch_dtype=torch.float16 if self.config.dtype == 'float16' else torch.float32,
-                device_map=self.config.device
+                torch_dtype=(
+                    torch.float16 if self.config.dtype == "float16" else torch.float32
+                ),
+                device_map=self.config.device,
             )
 
             logger.info("Model and tokenizer loaded successfully")
@@ -133,9 +135,7 @@ class HuggingFaceToRKLLMConverter:
 
             # Convert weights using our quantization converter
             self.model = QuantizationConverter.convert_weights(
-                self.model,
-                self.config.quantization,
-                target_format
+                self.model, self.config.quantization, target_format
             )
             logger.info("Weights converted successfully")
         except Exception as e:
@@ -149,14 +149,19 @@ class HuggingFaceToRKLLMConverter:
             # Initialize RKLLM converter
             self.rkllm_converter = RKLLMConverter(
                 model=self.model,
-                config=RKLLMConverterConfig(**{
-                    'quantization': self.config.quantization,
-                    'max_context_len': self.config.max_context_len
-                })
+                config=RKLLMConverterConfig(
+                    **{
+                        "quantization": self.config.quantization,
+                        "max_context_len": self.config.max_context_len,
+                    }
+                ),
             )
 
             # Convert and save RKLLM file with model name
-            output_path = os.path.join(self.config.output_path, f'{endpoint_model_file}{self.MODEL_TYPE.get_extension()}')
+            output_path = os.path.join(
+                self.config.output_path,
+                f"{endpoint_model_file}{self.MODEL_TYPE.get_extension()}",
+            )
             self.rkllm_converter.convert(output_path)
 
             logger.info(f"RKLLM file generated at {output_path}")
@@ -171,7 +176,7 @@ class HuggingFaceToRKLLMConverter:
         # TODO: use ModelFile.dump
 
         # Extract model name from model_id
-        model_name = self.config.model_id.split('/')[-1]
+        model_name = self.config.model_id.split("/")[-1]
 
         modelfile_content = f"""FROM="{model_name}.rkllm"
 HUGGINGFACE_PATH="{self.config.model_id}"
@@ -185,21 +190,25 @@ TEMPERATURE=0.7
 
         logger.info(f"Modelfile created at {modelfile_path}")
 
-    def _save_metadata(self, model_path: ModelPath, model_details: ModelDetails) -> None:
+    def _save_metadata(
+        self, model_path: ModelPath, model_details: ModelDetails
+    ) -> None:
         """Save metadata about the conversion to a JSON file."""
         output_dir: str = model_path.model_dir
 
         # TODO: use model_details instead of config when possible
-        model_metadata: ModelMetadata = ModelMetadata(**{
-            "model_id": validate_model_id(self.config.model_id),
-            "quantization": self.config.quantization,
-            "conversion_date": datetime.now().isoformat(),
-            "parameters": {
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "max_tokens": 2048,
-                "stop_sequences": ["Human:", "Assistant:"]
+        model_metadata: ModelMetadata = ModelMetadata(
+            **{
+                "model_id": validate_model_id(self.config.model_id),
+                "quantization": self.config.quantization,
+                "conversion_date": datetime.now().isoformat(),
+                "parameters": {
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "max_tokens": 2048,
+                    "stop_sequences": ["Human:", "Assistant:"],
+                },
             }
-        })
+        )
         metadata_path = os.path.join(output_dir, METADATA_FILENAME)
         model_metadata.save(metadata_path)

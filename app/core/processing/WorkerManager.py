@@ -18,26 +18,31 @@ from core.model.ModelPath import ModelPath
 from core.processing.BaseDomainId import BaseDomainId
 from core.processing.tasks.Tasks import Tasks
 from core.processing.tasks import (
-    InferenceTask, EmbeddingTask, VisionEncoderTask,
-    AbortInferenceTask, UnloadModelTask, ClearCacheTask
+    InferenceTask,
+    EmbeddingTask,
+    VisionEncoderTask,
+    AbortInferenceTask,
+    UnloadModelTask,
+    ClearCacheTask,
 )
 from core.processing.workers import RkllmWorker, RknnWorker
 from core.processing.workers.Worker import Worker
 
 settings: RKLLAMASettings | None = None
-DEBUG_MODE: bool | None= None
+DEBUG_MODE: bool | None = None
 
 npu_lock: threading.Lock = threading.Lock()
 
 logger = logging.getLogger("rkllama.worker_manager")
 
+
 # Class to manage the workers for RKLLM models
 class WorkerManager:
     def __init__(self, backend_type: BackendType):
-
         global settings
         if settings is None:
             from core.config import config_utils
+
             settings = config_utils.get_settings()
 
         global DEBUG_MODE
@@ -45,7 +50,7 @@ class WorkerManager:
             DEBUG_MODE = settings.is_debug_mode()
 
         if DEBUG_MODE:
-            logger.debug(f"start WorkerManager")
+            logger.debug("start WorkerManager")
 
         self.workers = {}  # (name -> Worker)
         self.backend_type: BackendType = backend_type
@@ -64,8 +69,11 @@ class WorkerManager:
         Unload/stop workers for expired models
         """
         # Get all expired models
-        expired_models = [model for model in self.workers.keys() if
-                          datetime.now() > self.workers[model].worker_model_info.expires_at]
+        expired_models = [
+            model
+            for model in self.workers.keys()
+            if datetime.now() > self.workers[model].worker_model_info.expires_at
+        ]
 
         # Unload/stop the expired modelfile
         for model_name in expired_models:
@@ -85,17 +93,22 @@ class WorkerManager:
             int | None: The available base_domain_id or None if all are taken.
         """
         # Get all used base domain ids
-        used_base_domain_ids = [self.workers[model].worker_model_info.base_domain_id for model in self.workers.keys()]
+        used_base_domain_ids = [
+            self.workers[model].worker_model_info.base_domain_id
+            for model in self.workers.keys()
+        ]
 
         # Get the max id of a domain base:
-        max_domain_id = settings.server.max_number_models_loaded_in_memory # config.get("modelfile", "max_number_models_loaded_in_memory")
+        max_domain_id = (
+            settings.server.max_number_models_loaded_in_memory
+        )  # config.get("modelfile", "max_number_models_loaded_in_memory")
 
         if reverse_order:
             # CHeck fir available from the highest to the lowest
             candidates_range = range(max_domain_id, 0, -1)
         else:
             # CHeck first available from the lowest to the highest
-            candidates_range = range(1, max_domain_id)
+            candidates_range = range(1, max_domain_id + 1)
 
         # CHeck fir available
         for candidate in candidates_range:
@@ -113,9 +126,9 @@ class WorkerManager:
         return model_id in self.workers.keys()
 
     # TODO: add lora_model_path=None in model
-    def add_worker(self,
-                   modelfile: ModelFile,
-                   full_model_parameters: FullModelParameters) -> tuple[Worker, Process]:
+    def add_worker(
+        self, modelfile: ModelFile, full_model_parameters: FullModelParameters
+    ) -> tuple[Worker, Process]:
         """
         Add a process worker to run inferences call from a specific modelfile
 
@@ -124,23 +137,30 @@ class WorkerManager:
         """
         model_path: ModelPath = modelfile.model.model_path
         if model_path.model_id not in self.workers.keys():
-
             # Get the available domain id for the RKLLM process
             base_domain_id: BaseDomainId = self.get_available_base_domain_id()
 
             # Add the worker to the dictionary of workers
-            match(self.backend_type):
+            match self.backend_type:
                 case BackendType.RKLLM:
-                    worker_model: Worker = RkllmWorker(modelfile, full_model_parameters, base_domain_id)
+                    worker_model: Worker = RkllmWorker(
+                        modelfile, full_model_parameters, base_domain_id
+                    )
                 case BackendType.RKNN:
-                    worker_model: Worker = RknnWorker(modelfile, full_model_parameters, base_domain_id)
+                    worker_model: Worker = RknnWorker(
+                        modelfile, full_model_parameters, base_domain_id
+                    )
                 case _:
                     raise Exception(f"unsupported backend type {self.backend_type}")
 
             # Check if available memory in server
-            if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
+            if not self.is_memory_available_for_model(
+                worker_model.worker_model_info.size
+            ):
                 # Unload the oldest modelfile until memory avilable
-                self.unload_oldest_models_from_memory(worker_model.worker_model_info.size)
+                self.unload_oldest_models_from_memory(
+                    worker_model.worker_model_info.size
+                )
 
             # Initialize of worker/modelfile
             model_loaded = worker_model.create_worker_process()
@@ -152,7 +172,9 @@ class WorkerManager:
             else:
                 # Add the worker to the dictionary of workers
                 self.workers[model_path.model_id] = worker_model
-                logger.info(f"Worker for modelfile {model_path.model_id} created and running...")
+                logger.info(
+                    f"Worker for modelfile {model_path.model_id} created and running..."
+                )
                 return worker_model, model_loaded
         else:
             logger.info(f"Worker for modelfile {model_path.model_id} reused...")
@@ -166,11 +188,17 @@ class WorkerManager:
             memory_required (int) -> Size of memory need by the modelfile to load
         """
         # From the dictionary of workers, we create an array of worker info that holds the size of each one
-        worker_models_info = [self.workers[model].worker_model_info for model in self.workers.keys()]
+        worker_models_info = [
+            self.workers[model].worker_model_info for model in self.workers.keys()
+        ]
 
         # Loop over the array by the oldest worker modelfile
-        for worker_model_info in sorted(worker_models_info, key=attrgetter('last_call')):
-            logger.info(f"Unloading modelfile {worker_model_info.modelfile} to gain free memory (at least {memory_required})")
+        for worker_model_info in sorted(
+            worker_models_info, key=attrgetter("last_call")
+        ):
+            logger.info(
+                f"Unloading modelfile {worker_model_info.modelfile} to gain free memory (at least {memory_required})"
+            )
             # Stop the first oldest modelin memory
             self.stop_worker(worker_model_info.model)
 
@@ -187,7 +215,9 @@ class WorkerManager:
         Args:
             model_size (int) -> Size of the modelfile to load
         """
-        return (psutil.virtual_memory().available + psutil.virtual_memory().free) > model_size
+        return (
+            psutil.virtual_memory().available + psutil.virtual_memory().free
+        ) > model_size
 
     def send_task(self, model_id: str, task):
         """
@@ -203,8 +233,11 @@ class WorkerManager:
 
             # Update the worker modelfile info with the invocation
             self.workers[model_id].worker_model_info.last_call = datetime.now()
-            self.workers[model_id].worker_model_info.expires_at = datetime.now() + timedelta(
-                minutes=settings.server.max_minutes_loaded_in_memory )
+            self.workers[
+                model_id
+            ].worker_model_info.expires_at = datetime.now() + timedelta(
+                minutes=settings.server.max_minutes_loaded_in_memory
+            )
 
     def get_result(self, model_id: str):
         """
@@ -220,6 +253,9 @@ class WorkerManager:
             # Get the queue of the responses of the worker
             return self.workers[model_id].result_q
         return None
+
+    def unload_model(self, model_id: str):
+        return self.stop_worker(model_id)
 
     def stop_worker(self, model_id: str):
         """
@@ -280,8 +316,14 @@ class WorkerManager:
         # TODO: passer les options avec la task
         if model_id in self.workers.keys():
             # Send the inference task
-            self.send_task(model_id, InferenceTask(RKLLMInferMode.RKLLM_INFER_GENERATE,
-                                        RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            self.send_task(
+                model_id,
+                InferenceTask(
+                    RKLLMInferMode.RKLLM_INFER_GENERATE,
+                    RKLLMInputType.RKLLM_INPUT_TOKEN,
+                    model_input,
+                ),
+            )
 
     def embedding(self, model_id: str, model_input):
         """
@@ -294,8 +336,14 @@ class WorkerManager:
         """
         if model_id in self.workers.keys():
             # Send the inference task
-            self.send_task(model_id, EmbeddingTask(RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER,
-                                        RKLLMInputType.RKLLM_INPUT_TOKEN, model_input))
+            self.send_task(
+                model_id,
+                EmbeddingTask(
+                    RKLLMInferMode.RKLLM_INFER_GET_LAST_HIDDEN_LAYER,
+                    RKLLMInputType.RKLLM_INPUT_TOKEN,
+                    model_input,
+                ),
+            )
 
     def multimodal(self, model_id: str, prompt_input, images):
         """
@@ -313,22 +361,36 @@ class WorkerManager:
 
         # TODO: import from backend
         from .rknn import IMAGE_TOKEN_NUM, IMAGE_WIDTH, IMAGE_HEIGHT
-        if model_id in self.workers.keys():
 
+        if model_id in self.workers.keys():
             # Prepare the image input embed for multimodal
             image_embed = self.get_image_embed(model_id, images)
 
             # Check if the image was encoded correctly
             if image_embed is None:
                 # Error encoding the image. Return
-                raise RuntimeError(f"Unexpected error encoding image for modelfile : {model_id}")
+                raise RuntimeError(
+                    f"Unexpected error encoding image for modelfile : {model_id}"
+                )
 
             # Prepare all the inputs for the multimodal inference
-            model_input = (prompt_input, image_embed, IMAGE_TOKEN_NUM, IMAGE_WIDTH, IMAGE_HEIGHT)
+            model_input = (
+                prompt_input,
+                image_embed,
+                IMAGE_TOKEN_NUM,
+                IMAGE_WIDTH,
+                IMAGE_HEIGHT,
+            )
 
             # Send the inference task
-            self.send_task(model_id, InferenceTask(RKLLMInferMode.RKLLM_INFER_GENERATE,
-                                        RKLLMInputType.RKLLM_INPUT_MULTIMODAL, model_input))
+            self.send_task(
+                model_id,
+                InferenceTask(
+                    RKLLMInferMode.RKLLM_INFER_GENERATE,
+                    RKLLMInputType.RKLLM_INPUT_MULTIMODAL,
+                    model_input,
+                ),
+            )
 
     def get_image_embed(self, model_id: str, images) -> None:
         """
@@ -340,7 +402,6 @@ class WorkerManager:
 
         """
         if model_id in self.workers.keys():
-
             # Specify the RKNN core to use to encode the image
             core_mask = RKNN_NPU_CORE_ALL  # All cores available
 
@@ -349,15 +410,20 @@ class WorkerManager:
 
             # Get the path of the vision encoder modelfile
             from core.processing.images.images_utils import get_encoder_model_path
+
             model_encoder_path = get_encoder_model_path(model_name)
 
             # Check if the encoder modelfile is available
             if model_encoder_path is None:
                 # No vision encoder modelfile available for this RKLLM modelfile
-                raise RuntimeError(f"No encoder modelfile (.rknn) found for : {model_name}")
+                raise RuntimeError(
+                    f"No encoder modelfile (.rknn) found for : {model_name}"
+                )
 
             # Get the image path/base64/url from the request
-            image_path = images[len(images) - 1]  # For now, only one image supported (the last one)
+            image_path = images[
+                len(images) - 1
+            ]  # For now, only one image supported (the last one)
 
             # Prepare the input for the vision encoder
             model_input = (model_encoder_path, core_mask, base_domain_id, image_path)
@@ -373,7 +439,7 @@ class WorkerManager:
                 return None
 
             # Return the image encoded
-            return image_embed;
+            return image_embed
 
     def get_finished_inference_token(self):
         """
@@ -387,6 +453,7 @@ class WorkerManager:
 
 worker_managers: List[WorkerManager] = []
 monitor_thread_name = None
+
 
 def start_models_monitor(interval=60) -> str:
     """
@@ -418,13 +485,13 @@ def get_worker_manager(backend_type: BackendType) -> WorkerManager:
     for worker_manager in worker_managers:
         if worker_manager.backend_type == backend_type:
             return worker_manager
-        worker_manager: WorkerManager = WorkerManager(backend_type=backend_type)
-        worker_managers.append(worker_manager)
 
-        # Start the monitor of running models
-        global monitor_thread_name
-        if monitor_thread_name is None:
-            monitor_thread_name: str = start_models_monitor()
+    worker_manager = WorkerManager(backend_type=backend_type)
+    worker_managers.append(worker_manager)
 
-        return worker_manager
+    # Start the monitor of running models
+    global monitor_thread_name
+    if monitor_thread_name is None:
+        monitor_thread_name = start_models_monitor()
 
+    return worker_manager

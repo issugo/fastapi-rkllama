@@ -4,19 +4,30 @@ import requests
 from core.model.storage_helpers import logger
 
 from core.model.ModelPath import int_parameters_size
-from core.model.models_constants import MODEL_ARCHITECTURES, LANGUAGE_PATTERNS, LANGUAGE_MULTILINGUAL_LIST, \
-    LANGUAGE_DEFAULT, RK_TAGS_LIST, LICENSE_NAME_MAPPING
+from core.model.models_constants import (
+    MODEL_ARCHITECTURES,
+    LANGUAGE_PATTERNS,
+    LANGUAGE_MULTILINGUAL_LIST,
+    LANGUAGE_DEFAULT,
+    RK_TAGS_LIST,
+    LICENSE_NAME_MAPPING,
+)
 
 HUGGINGFACE_ROOT_URL = "https://huggingface.co/"
+
 
 class HuggingfaceFileSystem:
     @staticmethod
     def validate_huggingface_path(huggingface_path: str, author: str = None):
         if not (2 <= len(huggingface_path.split("/")) <= 3):
-            raise ValueError(f"huggingface_path must be a valid repo path, like <author>/<model_name>[/model_file], but is {huggingface_path}.")
+            raise ValueError(
+                f"huggingface_path must be a valid repo path, like <author>/<model_name>[/model_file], but is {huggingface_path}."
+            )
         if author:
             if not huggingface_path.startswith(f"{author}/"):
-                raise ValueError(f"huggingface_path must start with author {author}, like <author>/<model_name>[/model_file], but huggingface_path is {huggingface_path}.")
+                raise ValueError(
+                    f"huggingface_path must start with author {author}, like <author>/<model_name>[/model_file], but huggingface_path is {huggingface_path}."
+                )
         return huggingface_path
 
     @staticmethod
@@ -28,9 +39,9 @@ class HuggingfaceFileSystem:
         return f"{HuggingfaceFileSystem.model_path(huggingface_path)}/blob/main/{rfilename_sibling}"
 
     @staticmethod
-    def load_model_info(huggingface_path : str):
+    def load_model_info(huggingface_path: str):
         try:
-        # Extract repo_id from HUGGINGFACE_PATH
+            # Extract repo_id from HUGGINGFACE_PATH
             url = f"{HUGGINGFACE_ROOT_URL}api/models/{huggingface_path}"
             response = requests.get(url, timeout=5)
 
@@ -49,8 +60,11 @@ class HuggingfaceFileSystem:
                 # Try to extract parameter size from model name if not in cardData
                 if "params" not in hf_data["cardData"]:
                     # Look for patterns like "7b", "3B", "1.5B" in model name or description
-                    size_value, size_unit, int_size_value = \
-                        int_parameters_size(content=huggingface_path + " " + (hf_data.get("description") or ""))
+                    size_value, size_unit, int_size_value = int_parameters_size(
+                        content=huggingface_path
+                        + " "
+                        + (hf_data.get("description") or "")
+                    )
                     hf_data["cardData"]["params"] = int(int_size_value)
 
                 # Extract important information from the description
@@ -74,8 +88,8 @@ class HuggingfaceFileSystem:
 
                 for lang_name, lang_code in LANGUAGE_PATTERNS.items():
                     if (
-                            lang_name.lower() in description.lower()
-                            or lang_name.lower() in " ".join(hf_data["tags"]).lower()
+                        lang_name.lower() in description.lower()
+                        or lang_name.lower() in " ".join(hf_data["tags"]).lower()
                     ):
                         if lang_name == "multilingual":
                             # For multilingual models, add common languages
@@ -94,9 +108,9 @@ class HuggingfaceFileSystem:
                 rk_patterns = RK_TAGS_LIST
                 for pattern in rk_patterns:
                     if (
-                            pattern in huggingface_path.lower()
-                            or pattern in " ".join(hf_data["tags"]).lower()
-                            or pattern in description.lower()
+                        pattern in huggingface_path.lower()
+                        or pattern in " ".join(hf_data["tags"]).lower()
+                        or pattern in description.lower()
                     ):
                         if "rockchip" not in hf_data["tags"]:
                             hf_data["tags"].append("rockchip")
@@ -104,19 +118,25 @@ class HuggingfaceFileSystem:
                             hf_data["tags"].append(pattern)
 
                 # Add metadata about model capabilities
-                if 'sibling_models' in hf_data:
-                    for sibling in hf_data.get('sibling_models', []):
-                        if sibling.get('rfilename', '').endswith('.rkllm'):
-                            hf_data['has_rkllm'] = True
+                if "sibling_models" in hf_data:
+                    for sibling in hf_data.get("sibling_models", []):
+                        if sibling.get("rfilename", "").endswith(".rkllm"):
+                            hf_data["has_rkllm"] = True
                             break
 
                 # Extract license information
                 if "license" in hf_data and hf_data["license"]:
                     license_id = hf_data["license"].lower()
-                    hf_data["license_name"] = LICENSE_NAME_MAPPING.get(license_id, hf_data["license"])
-                    hf_data["license_url"] = HuggingfaceFileSystem.sibling_url(huggingface_path, "LICENSE")
+                    hf_data["license_name"] = LICENSE_NAME_MAPPING.get(
+                        license_id, hf_data["license"]
+                    )
+                    hf_data["license_url"] = HuggingfaceFileSystem.sibling_url(
+                        huggingface_path, "LICENSE"
+                    )
 
-                logger.debug(f"Enhanced model info from HF API: {huggingface_path}={hf_data}")
+                logger.debug(
+                    f"Enhanced model info from HF API: {huggingface_path}={hf_data}"
+                )
 
                 return hf_data
             else:

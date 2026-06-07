@@ -37,22 +37,35 @@ class Counters:
         self.tokens_since_last_response = 0
         self.complete_text = ""
 
+
 class APIHandler(ABC):
     def __init__(self, response_content_type: str):
         self.response_content_type = response_content_type
 
-    @abstractmethod
-    def generate(self, counters: Counters, shared_data: SharedData, response, model_thread: Thread, model_shared_data: ModelSharedData):
+    def generate(
+        self,
+        counters: Counters,
+        shared_data: SharedData,
+        response,
+        model_thread: Thread,
+        model_shared_data: ModelSharedData,
+    ):
         pass
 
-    @abstractmethod
     def get_messages(data: dict | None, data_format: DataFormat) -> List[Message]:
-        pass
+        return []
 
     @abstractmethod
     def new_response(self):
         pass
 
     @abstractmethod
-    def format_response(self, response, prompt: str, usage_prompt_tokens: int, counters: Counters, shared_data: SharedData):
+    def format_response(
+        self,
+        response,
+        prompt: str,
+        usage_prompt_tokens: int,
+        counters: Counters,
+        shared_data: SharedData,
+    ):
         pass

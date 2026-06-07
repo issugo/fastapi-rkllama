@@ -16,39 +16,41 @@ def create_format_instruction(format_spec):
 
     # Handle different format types
     if isinstance(format_spec, dict):
-        format_type = format_spec.get('type', '')
+        format_type = format_spec.get("type", "")
 
-        if format_type == 'json':
+        if format_type == "json":
             instruction += "You must respond with a valid JSON. Return only the JSON with no explanation text before or after it."
 
-        elif format_type == 'object':
+        elif format_type == "object":
             # For object type, create a template based on properties
-            properties = format_spec.get('properties', {})
+            properties = format_spec.get("properties", {})
             example = {}
 
             # Create example values for each property
             for prop, details in properties.items():
-                prop_type = core.config.config_utils.get('type', 'string')
-                if prop_type == 'string':
+                prop_type = core.config.config_utils.get("type", "string")
+                if prop_type == "string":
                     example[prop] = ""
-                elif prop_type == 'integer':
+                elif prop_type == "integer":
                     example[prop] = 0
-                elif prop_type == 'number':
+                elif prop_type == "number":
                     example[prop] = 0.0
-                elif prop_type == 'boolean':
+                elif prop_type == "boolean":
                     example[prop] = False
-                elif prop_type == 'array':
+                elif prop_type == "array":
                     example[prop] = []
-                elif prop_type == 'object':
+                elif prop_type == "object":
                     example[prop] = {}
 
-            required = format_spec.get('required', [])
+            required = format_spec.get("required", [])
             if required:
                 required_str = ", ".join(required)
                 instruction += f"You must respond with a valid JSON object with exactly these required fields: {required_str}.\n\n"
 
             # Add example JSON structure
-            instruction += "Format your entire response as a JSON object with ONLY these fields:\n"
+            instruction += (
+                "Format your entire response as a JSON object with ONLY these fields:\n"
+            )
             instruction += "```json\n"
             instruction += json.dumps(example, indent=2)
             instruction += "\n```\n\n"
@@ -57,7 +59,7 @@ def create_format_instruction(format_spec):
 
     # Handle simple string format specification like format="json"
     elif isinstance(format_spec, str):
-        if format_spec.lower() == 'json':
+        if format_spec.lower() == "json":
             instruction += "You must respond with valid JSON. Return ONLY the JSON with no explanation or text before or after it.\n"
             instruction += "Format your entire response as a JSON object containing all the relevant information from your answer.\n"
             instruction += "Ensure the JSON is properly formatted and valid."
@@ -86,14 +88,17 @@ def validate_format_response(text, format_spec):
         return False, None, "Could not extract valid JSON from response", None
 
     # For simple 'json' format, we just need valid JSON
-    if format_spec == 'json' or (isinstance(format_spec, str) and format_spec.lower() == 'json') or \
-            (isinstance(format_spec, dict) and format_spec.get('type') == 'json'):
+    if (
+        format_spec == "json"
+        or (isinstance(format_spec, str) and format_spec.lower() == "json")
+        or (isinstance(format_spec, dict) and format_spec.get("type") == "json")
+    ):
         return True, parsed_data, None, json_text
 
     # For 'object' format with schema validation
-    if isinstance(format_spec, dict) and format_spec.get('type') == 'object':
-        properties = format_spec.get('properties', {})
-        required = format_spec.get('required', [])
+    if isinstance(format_spec, dict) and format_spec.get("type") == "object":
+        properties = format_spec.get("properties", {})
+        required = format_spec.get("required", [])
 
         # Verify all required fields are present
         missing_fields = []
@@ -102,29 +107,39 @@ def validate_format_response(text, format_spec):
                 missing_fields.append(field)
 
         if missing_fields:
-            return False, None, f"Missing required field{'s' if len(missing_fields) > 1 else ''}: {', '.join(missing_fields)}", None
+            return (
+                False,
+                None,
+                f"Missing required field{'s' if len(missing_fields) > 1 else ''}: {', '.join(missing_fields)}",
+                None,
+            )
 
         # Check field types
         for field, value in parsed_data.items():
             if field in properties:
-                expected_type = core.config.config_utils.get('type')
+                expected_type = core.config.config_utils.get("type")
 
                 # Validate type
-                if expected_type == 'string' and not isinstance(value, str):
+                if expected_type == "string" and not isinstance(value, str):
                     return False, None, f"Field '{field}' should be a string", None
-                elif expected_type == 'number' and not isinstance(value, (int, float)):
+                elif expected_type == "number" and not isinstance(value, (int, float)):
                     return False, None, f"Field '{field}' should be a number", None
-                elif expected_type == 'integer':
+                elif expected_type == "integer":
                     # Convert floats to ints if they are whole numbers
                     if isinstance(value, float) and value.is_integer():
                         parsed_data[field] = int(value)
                     elif not isinstance(value, int):
-                        return False, None, f"Field '{field}' should be an integer", None
-                elif expected_type == 'boolean' and not isinstance(value, bool):
+                        return (
+                            False,
+                            None,
+                            f"Field '{field}' should be an integer",
+                            None,
+                        )
+                elif expected_type == "boolean" and not isinstance(value, bool):
                     return False, None, f"Field '{field}' should be a boolean", None
-                elif expected_type == 'array' and not isinstance(value, list):
+                elif expected_type == "array" and not isinstance(value, list):
                     return False, None, f"Field '{field}' should be an array", None
-                elif expected_type == 'object' and not isinstance(value, dict):
+                elif expected_type == "object" and not isinstance(value, dict):
                     return False, None, f"Field '{field}' should be an object", None
 
         # Create a clean JSON with only the expected fields

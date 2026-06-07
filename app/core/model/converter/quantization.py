@@ -5,6 +5,7 @@ import torch
 
 from core.model.converter import logger
 
+
 class QuantizationConverter:
     """Handles conversion of model weights to different quantization formats."""
 
@@ -26,12 +27,10 @@ class QuantizationConverter:
         try:
             # Convert each layer's weights
             for name, param in model.named_parameters():
-                if 'weight' in name:
+                if "weight" in name:
                     logger.debug(f"Converting weights for {name}")
                     param.data = QuantizationConverter._convert_tensor(
-                        param.data,
-                        source_format,
-                        target_format
+                        param.data, source_format, target_format
                     )
 
             return model
@@ -40,7 +39,9 @@ class QuantizationConverter:
             raise
 
     @staticmethod
-    def _convert_tensor(tensor: torch.Tensor, source_format: str, target_format: str) -> torch.Tensor:
+    def _convert_tensor(
+        tensor: torch.Tensor, source_format: str, target_format: str
+    ) -> torch.Tensor:
         """
         Convert a single tensor from source format to target format.
 
@@ -55,16 +56,16 @@ class QuantizationConverter:
         # Convert to numpy for easier manipulation
         data = tensor.detach().cpu().numpy()
 
-        if source_format == 'Q4_0':
+        if source_format == "Q4_0":
             # Convert from Q4_0 to target format
-            if target_format == 'w4a16':
+            if target_format == "w4a16":
                 # Convert to 4-bit weights with 16-bit activations
                 data = QuantizationConverter._convert_q4_to_w4a16(data)
             else:
                 raise ValueError(f"Unsupported target format: {target_format}")
-        elif source_format == 'Q8_0':
+        elif source_format == "Q8_0":
             # Convert from Q8_0 to target format
-            if target_format == 'w8a8':
+            if target_format == "w8a8":
                 # Convert to 8-bit weights with 8-bit activations
                 data = QuantizationConverter._convert_q8_to_w8a8(data)
             else:
@@ -110,7 +111,9 @@ class QuantizationConverter:
         return quantized * scale + min_val
 
 
-def quantize_tensor(tensor: torch.Tensor, bits: int, group_size: int = None) -> Tuple[torch.Tensor, Dict[str, Any]]:
+def quantize_tensor(
+    tensor: torch.Tensor, bits: int, group_size: int = None
+) -> Tuple[torch.Tensor, Dict[str, Any]]:
     """
     Quantize a tensor to a specified number of bits.
 
@@ -145,7 +148,7 @@ def quantize_tensor(tensor: torch.Tensor, bits: int, group_size: int = None) -> 
         "scale": scale,
         "zero_point": zero_point,
         "bits": bits,
-        "group_size": group_size
+        "group_size": group_size,
     }
 
     return quantized_tensor, metadata

@@ -1,11 +1,17 @@
 class Request:
     pass
 
-class OllamaRequest(Request):
 
-    async def process(self, rkllm_model: RKLLMBackend, model_shared_data: ModelSharedData, model_file: ModelFile,
-                            usage_lock: threading.Lock, handler: APIHandler,
-                            data: dict = None) -> JSONResponse | StreamingResponse:
+class OllamaRequest(Request):
+    async def process(
+        self,
+        rkllm_model: RKLLMBackend,
+        model_shared_data: ModelSharedData,
+        model_file: ModelFile,
+        usage_lock: threading.Lock,
+        handler: APIHandler,
+        data: dict = None,
+    ) -> JSONResponse | StreamingResponse:
         """
         Process a request to the language modelfile
 
@@ -27,7 +33,8 @@ class OllamaRequest(Request):
                 # Extract format parameters
                 data_format: DataFormat = DataFormat(
                     format_spec=core.config.config_utils.get("format"),
-                    format_options=core.config.config_utils.get("options", {}))
+                    format_options=core.config.config_utils.get("options", {}),
+                )
 
                 # Store format settings in modelfile instance for reference
                 if rkllm_model:
@@ -48,12 +55,14 @@ class OllamaRequest(Request):
                 tokenizer = load_tokenizer(model_file)
 
                 supports_system_role = (
-                        "raise_exception('System role not supported')"
-                        not in tokenizer.chat_template
+                    "raise_exception('System role not supported')"
+                    not in tokenizer.chat_template
                 )
 
                 if (model_file.system_prompt != "") and supports_system_role:
-                    prompt = [Message(role=Role.SYSTEM, content=model_file.system_prompt)] + messages
+                    prompt = [
+                        Message(role=Role.SYSTEM, content=model_file.system_prompt)
+                    ] + messages
                 else:
                     prompt = messages
 
@@ -77,16 +86,22 @@ class OllamaRequest(Request):
                     target=rkllm_model.run, args=(prompt,)
                 )
 
-                if ("stream" not in data.keys()) or ("stream" in data.keys() and data["stream"] == True):
-
+                if ("stream" not in data.keys()) or (
+                    "stream" in data.keys() and data["stream"] == True
+                ):
                     # Return appropriate streaming response based on request type
                     ## return Response(generate(), content_type='application/x-ndjson' if is_ollama_request else 'text/plain')
                     content_type = handler.response_content_type
                     logger.info("Returning streaming response")
                     return StreamingResponse(
-                        handler.generate(counters=counters, shared_data=shared_data, response=response,
-                                         model_thread=model_thread, model_shared_data=model_shared_data),
-                        headers={"Content-Type": content_type}
+                        handler.generate(
+                            counters=counters,
+                            shared_data=shared_data,
+                            response=response,
+                            model_thread=model_thread,
+                            model_shared_data=model_shared_data,
+                        ),
+                        headers={"Content-Type": content_type},
                     )
 
                 # For non-streaming responses
@@ -129,13 +144,15 @@ class OllamaRequest(Request):
                     # Calculate the various duration metrics
                     if counters.prompt_eval_end_time is None:
                         # If no tokens were generated, use 10% of total time as estimate
-                        counters.prompt_eval_end_time = counters.start + (counters.total_duration * 0.1)
+                        counters.prompt_eval_end_time = counters.start + (
+                            counters.total_duration * 0.1
+                        )
 
                     counters.prompt_eval_duration = (
-                            counters.prompt_eval_end_time - counters.start
+                        counters.prompt_eval_end_time - counters.start
                     )  # Time spent evaluating prompt
                     counters.eval_duration = (
-                            end_time - counters.prompt_eval_end_time
+                        end_time - counters.prompt_eval_end_time
                     )  # Time spent generating tokens
                     counters.load_duration = 0.1  # Fixed 100ms in seconds
 
@@ -143,10 +160,17 @@ class OllamaRequest(Request):
                     ## if format_spec and complete_text:
                     if counters.complete_text:
                         # Updated to unpack the additional cleaned_json return value
-                        shared_data.success, shared_data.parsed_data, shared_data.error, shared_data.cleaned_json = (
-                            validate_format_response(counters.complete_text, data_format.format_spec)
+                        (
+                            shared_data.success,
+                            shared_data.parsed_data,
+                            shared_data.error,
+                            shared_data.cleaned_json,
+                        ) = validate_format_response(
+                            counters.complete_text, data_format.format_spec
                         )
-                        logger.debug(f"Format validation: success={shared_data.success}, error={shared_data.error}")
+                        logger.debug(
+                            f"Format validation: success={shared_data.success}, error={shared_data.error}"
+                        )
 
                     # Prepare appropriate response based on request type
                     formatted_response = handler.format_response(
@@ -154,7 +178,8 @@ class OllamaRequest(Request):
                         prompt=prompt,
                         usage_prompt_tokens=len(prompt),
                         counters=counters,
-                        shared_data=shared_data)
+                        shared_data=shared_data,
+                    )
 
                     ## return jsonify(ollama_response), 200
                     usage_lock.release()
@@ -164,7 +189,8 @@ class OllamaRequest(Request):
                 ## return jsonify({'status': 'error', 'message': 'Invalid JSON data!'}), 400
                 usage_lock.release()
                 return JSONResponse(
-                    {"status": "error", "message": "Invalid JSON data!"}, status_code=400
+                    {"status": "error", "message": "Invalid JSON data!"},
+                    status_code=400,
                 )
         except Exception as e:
             # No need to release the lock here as it should be handled by the calling function
@@ -179,6 +205,6 @@ class OllamaRequest(Request):
 class OpenAIRequest(Request):
     pass
 
+
 class RKllamaRequest(Request):
     pass
-

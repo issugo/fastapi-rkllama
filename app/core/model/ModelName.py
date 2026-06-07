@@ -15,6 +15,7 @@ from core.model.models_constants import validate_model_id
 class ModelNameException(Exception):
     pass
 
+
 class ModelName(BaseModel):
     model_name: str
     model_format: Optional[ModelType] = Field(default=None, alias="model_type")
@@ -25,7 +26,9 @@ class ModelName(BaseModel):
     def model_id_to_path(model_id: str, author: str = None) -> str:
         model_id = validate_model_id(model_id)
         if author:
-            model_id = os.path.join(author,)
+            model_id = os.path.join(
+                author,
+            )
         return model_id.replace(":", "/")
 
     @classmethod
@@ -34,7 +37,6 @@ class ModelName(BaseModel):
         if model_name == model_id:
             raise ModelNameException(f"Invalid model id: {model_id}")
         return cls(model_name=model_name)
-
 
     @property
     def model_type(self) -> ModelType | None:
@@ -52,11 +54,17 @@ class ModelName(BaseModel):
     def model_dir(self) -> str:
         if not self._model_dir:
             if self.model_format:
-                logger.debug(f"Using default relative dir for model {self.model_name} with type {self.model_format}")
-                default_relative_dir = self.model_name.replace(self.model_format.get_extension(), '')
+                logger.debug(
+                    f"Using default relative dir for model {self.model_name} with type {self.model_format}"
+                )
+                default_relative_dir = self.model_name.replace(
+                    self.model_format.get_extension(), ""
+                )
             else:
                 default_relative_dir = self.model_name
-            self._model_dir = ModelName.model_dir_using_model_name(model_name=default_relative_dir)
+            self._model_dir = ModelName.model_dir_using_model_name(
+                model_name=default_relative_dir
+            )
         return self._model_dir
 
     @property
@@ -89,4 +97,3 @@ def get_model_size(model_name) -> int:
                 return size
 
     return None
-

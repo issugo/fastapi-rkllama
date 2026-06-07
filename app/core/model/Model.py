@@ -12,10 +12,22 @@ from core.model.ModelInfo import ModelInfo
 from core.model.models_constants import validate_model_id
 from core.model.storage_helpers.SupplierFileInfo import Supplier
 from core.model.suppliers_model_info import OllamaModelInfo, HFModelInfo
-from core.model.ModelMetadata import ModelMetadataFormat, BasicModelMetadata, SimpleModelMetadata, ModelMetadata, \
-    ModelMetadataNotFoundException
-from core.model.ModelPath import ModelPath, ModelDirError, ModelDirException, ModelNotFoundException, ModelException
+from core.model.ModelMetadata import (
+    ModelMetadataFormat,
+    BasicModelMetadata,
+    SimpleModelMetadata,
+    ModelMetadata,
+    ModelMetadataNotFoundException,
+)
+from core.model.ModelPath import (
+    ModelPath,
+    ModelDirError,
+    ModelDirException,
+    ModelNotFoundException,
+    ModelException,
+)
 from core.model.OllamaManifest import OllamaManifest
+from core.model.ModelType import ModelType
 
 
 class ModelSharedData(BaseModel):
@@ -34,19 +46,25 @@ class Model(BaseModel):
     # model_info contains only model file stats, and nothing in relation with model content configuration
     model_info: ModelInfo
     # model_metadata contains model configuration
-    model_metadata: Optional[BasicModelMetadata|SimpleModelMetadata|ModelMetadata] = Field(default=None, description="Model metadata")
+    model_metadata: Optional[
+        BasicModelMetadata | SimpleModelMetadata | ModelMetadata
+    ] = Field(default=None, description="Model metadata")
 
     _supplier: Optional[Supplier] = None
-    _supplier_model_info: Optional[OllamaModelInfo|HFModelInfo] = None
+    _supplier_model_info: Optional[OllamaModelInfo | HFModelInfo] = None
 
-    #model_file: ModelFile # TODO model_file has a model, not the opposite
-    #backend: Optional[Backend]
-    #shared_data: ModelSharedData
-    #usage_lock: threading.Lock
+    # model_file: ModelFile # TODO model_file has a model, not the opposite
+    # backend: Optional[Backend]
+    # shared_data: ModelSharedData
+    # usage_lock: threading.Lock
 
     @property
-    def supplier_model_info(self) -> OllamaModelInfo|HFModelInfo|None:
+    def supplier_model_info(self) -> OllamaModelInfo | HFModelInfo | None:
         return self._supplier_model_info
+
+    @property
+    def model_type(self) -> Optional[ModelType]:
+        return self.model_path.model_type
 
     def get_metadata_format(self) -> ModelMetadataFormat | None:
         if self.model_metadata is None:
@@ -56,7 +74,9 @@ class Model(BaseModel):
     @classmethod
     def from_model_path(cls, model_path: ModelPath) -> Any:
         if model_path.model_exists:
-            model_stat: stat_result = model_path.endpoint_model_file_path.resolve().stat()
+            model_stat: stat_result = (
+                model_path.endpoint_model_file_path.resolve().stat()
+            )
             model_info = None
             digest = None
             size = None
@@ -69,8 +89,12 @@ class Model(BaseModel):
                         supplier_file_info: OllamaManifest = model_path.ollama_file_info
                         size = supplier_file_info.size
                         digest = supplier_file_info.digest
-                        supplier_model_info: OllamaModelInfo = model_path.ollama_model_info
-                        model_info: ModelInfo = ModelInfo.from_ollama_model_info(supplier_model_info, model_path, size, digest, model_stat)
+                        supplier_model_info: OllamaModelInfo = (
+                            model_path.ollama_model_info
+                        )
+                        model_info: ModelInfo = ModelInfo.from_ollama_model_info(
+                            supplier_model_info, model_path, size, digest, model_stat
+                        )
             except ValueError as e:
                 logger.error(f"Error loading ModelFile: {str(e)}", exc_info=True)
             try:
@@ -78,11 +102,17 @@ class Model(BaseModel):
                 # when the supplier is Rkllama, model_file_info is a HFModelInfo
                 if model_path.huggingface_file_info_exists:
                     if model_path.huggingface_model_info_exists:
-                        supplier_file_info: HfFileInfo = model_path.huggingface_file_info
+                        supplier_file_info: HfFileInfo = (
+                            model_path.huggingface_file_info
+                        )
                         size = supplier_file_info.size
                         digest = supplier_file_info.digest
-                        supplier_model_info: HFModelInfo = model_path.huggingface_model_info
-                        model_info: ModelInfo = ModelInfo.from_hf_model_info(supplier_model_info, model_path, size, digest, model_stat)
+                        supplier_model_info: HFModelInfo = (
+                            model_path.huggingface_model_info
+                        )
+                        model_info: ModelInfo = ModelInfo.from_hf_model_info(
+                            supplier_model_info, model_path, size, digest, model_stat
+                        )
             except ValueError as e:
                 logger.error(f"Error loading ModelFile: {str(e)}", exc_info=True)
             if model_info is not None:
@@ -114,9 +144,11 @@ class Model(BaseModel):
         cls.clean_metadata(model_path)
 
     def load_metadata(self) -> Any:
-        logger.debug(f"ModelFile.load_metadata()")
+        logger.debug("ModelFile.load_metadata()")
         try:
-            model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(model_path=self.model_path)
+            model_metadata: SimpleModelMetadata = SimpleModelMetadata.load(
+                model_path=self.model_path
+            )
             return model_metadata
         except ModelMetadataNotFoundException as e:
             error_msg = f"Error loading model metadata: {str(e)}"
@@ -135,9 +167,8 @@ class Model(BaseModel):
             logger.error(f"Model.load(): {error_msg}", exc_info=True)
             raise e
 
-
     def save_metadata(self):
-        logger.debug(f"self.save_metadata()")
+        logger.debug("self.save_metadata()")
         self.model_metadata.save(model_path=self.model_path)
 
     def save(self):
@@ -162,18 +193,20 @@ class Model(BaseModel):
                         if dir_content.is_symlink():
                             try:
                                 model_stat = dir_content.resolve().stat()
-                                model_path: ModelPath = ModelPath(model_name=model_dir.name,
-                                                                  endpoint_model_file=dir_content.name,
-                                                                  endpoint_model_file_size=model_stat.st_size,
-                                                                  )
+                                model_path: ModelPath = ModelPath(
+                                    model_name=model_dir.name,
+                                    endpoint_model_file=dir_content.name,
+                                    endpoint_model_file_size=model_stat.st_size,
+                                )
                                 model = Model.load(model_path)
                                 models.append(model)
                             except Exception as e:
-                                logger.error(f"Error loading ModelFile: {e}", exc_info=True)
+                                logger.error(
+                                    f"Error loading ModelFile: {e}", exc_info=True
+                                )
                                 continue
 
             return models
-
 
     """
     def __init__(self, model_file: ModelFile, /, **data: Any):

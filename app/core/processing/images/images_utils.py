@@ -5,10 +5,10 @@ from typing import Union
 import numpy as np
 import requests
 
-import core.config.config_utils
-from core import config
+import logging
 from core.model.ModelPath import ModelPath
-from src.format_utils import logger
+
+logger = logging.getLogger("rkllama.images_utils")
 
 
 def expand_to_square(img, background_color=(127.5, 127.5, 127.5)):
@@ -32,19 +32,18 @@ def expand_to_square(img, background_color=(127.5, 127.5, 127.5)):
     right = size - w - left
 
     return cv2.copyMakeBorder(
-        img, top, bottom, left, right,
-        borderType=cv2.BORDER_CONSTANT, value=bg
+        img, top, bottom, left, right, borderType=cv2.BORDER_CONSTANT, value=bg
     )
 
 
 def prepare_image(image_path, width, height) -> np.ndarray:
-    """ Load and preprocess an image for model input.
-        Args:
-            image_path: Path, URL, or Base64 string of the image.
-            width: Target width.
-            height: Target height.
-        Returns:
-            Preprocessed image as a numpy array (HWC, uint8).
+    """Load and preprocess an image for model input.
+    Args:
+        image_path: Path, URL, or Base64 string of the image.
+        width: Target width.
+        height: Target height.
+    Returns:
+        Preprocessed image as a numpy array (HWC, uint8).
     """
     # Read image
     img = load_image(image_path)  # BGR

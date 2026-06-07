@@ -10,8 +10,16 @@ from core.model import logger
 from core.model.ModelPath import ModelPath, str_parameters_size
 from core.model.ModelType import ModelType
 from core.model.converter.quantization_constants import ollama_quant_mapping
-from core.model.models_constants import UNKNOWN_VAL_STR, LANGUAGE_DEFAULT, MODEL_WITH_TOOLS
-from core.model.suppliers_model_info import OllamaModelDetails, OllamaModelInfo, HFModelInfo
+from core.model.models_constants import (
+    UNKNOWN_VAL_STR,
+    LANGUAGE_DEFAULT,
+    MODEL_WITH_TOOLS,
+)
+from core.model.suppliers_model_info import (
+    OllamaModelDetails,
+    OllamaModelInfo,
+    HFModelInfo,
+)
 
 """
 devstral:latest (from) sample for OllamaModelConfig
@@ -109,7 +117,7 @@ class ModelDetails(OllamaModelDetails):
     parameter_size: str  # ex: 3B
     quantization_level: str
 
-    _model_families: List[str] = None # ex: ['llama']
+    _model_families: List[str] = None  # ex: ['llama']
 
     @property
     def model_families(self) -> List[str]:
@@ -131,12 +139,17 @@ class ModelDetails(OllamaModelDetails):
         # Initialize default values
         # TODO: set model_format and model_family, then remove Optionals from OllamaModelDetails
         details = ModelDetails(
-            model_format=UNKNOWN_VAL_STR, model_family=UNKNOWN_VAL_STR,
-            parameter_size=UNKNOWN_VAL_STR, quantization_level=UNKNOWN_VAL_STR)
+            model_format=UNKNOWN_VAL_STR,
+            model_family=UNKNOWN_VAL_STR,
+            parameter_size=UNKNOWN_VAL_STR,
+            quantization_level=UNKNOWN_VAL_STR,
+        )
 
         # Remove path and extension if present
         if isinstance(model_path.model_name, str):
-            basename = os.path.basename(model_path.model_name).replace(model_path.model_type.get_extension(), "")
+            basename = os.path.basename(model_path.model_name).replace(
+                model_path.model_type.get_extension(), ""
+            )
         else:
             basename = str(model_name)
 
@@ -158,9 +171,10 @@ class ModelDetails(OllamaModelDetails):
 
         return details
 
-    def gen_endpoint_model_file_name(self,
-            model_name: str,
-            model_type: ModelType,
+    def gen_endpoint_model_file_name(
+        self,
+        model_name: str,
+        model_type: ModelType,
     ) -> str:
         endpoint_model_file = model_name
         parameter_size = ModelPath.get_parameter_size(model_name)
@@ -171,9 +185,11 @@ class ModelDetails(OllamaModelDetails):
             endpoint_model_file = f"{endpoint_model_file}_{ollama_quant_mapping.get(self.quantization_level)}"
         return f"{endpoint_model_file}.{model_type.get_extension()}"
 
+
 class ModelInfoTag(str, Enum):
     chat = "chat"
     text_generation = "text-generation"
+
 
 class DummyStatResult:
     st_size: int
@@ -187,6 +203,7 @@ class DummyStatResult:
         self.st_ctime = st_ctime
         self.st_mtime = st_mtime
 
+
 class ModelInfo(BaseModel):
     """
     ModelInfo contains only model file stats,
@@ -194,6 +211,7 @@ class ModelInfo(BaseModel):
 
     model configuration (context_length, max_tokens, etc.) is in ModelMetadata
     """
+
     name: str  # Use simplified name like qwen:3b
     model: str  # Match Ollama's format
     created_at_dt: datetime.datetime
@@ -204,7 +222,10 @@ class ModelInfo(BaseModel):
     details: ModelDetails
     model_type: ModelType
     # tag default is ["chat", "text-generation"]
-    tags: Optional[List[str]] = Field(default=None, description="ex: ['qwen3', 'unsloth', 'base_model:Qwen/Qwen3-1.7B', 'base_model:finetune:Qwen/Qwen3-1.7B', 'region:us', 'rockchip', 'rk3588']")
+    tags: Optional[List[str]] = Field(
+        default=None,
+        description="ex: ['qwen3', 'unsloth', 'base_model:Qwen/Qwen3-1.7B', 'base_model:finetune:Qwen/Qwen3-1.7B', 'region:us', 'rockchip', 'rk3588']",
+    )
     languages: List[str] = Field(default=LANGUAGE_DEFAULT)
     base_model: Optional[str] = Field(default=None, description="ex: Qwen/Qwen3-1.7B")
 
@@ -228,9 +249,15 @@ class ModelInfo(BaseModel):
             capabilities.append("tools")
         return capabilities
 
-
     @classmethod
-    def from_ollama_model_info(cls, ollama_model_info: OllamaModelInfo, model_path: ModelPath, size: int, digest: str, model_stat: stat_result | DummyStatResult):
+    def from_ollama_model_info(
+        cls,
+        ollama_model_info: OllamaModelInfo,
+        model_path: ModelPath,
+        size: int,
+        digest: str,
+        model_stat: stat_result | DummyStatResult,
+    ):
         """
         model_format: str = Field(description="ex: gguf")
         model_family: str = Field(description="ex: llama")
@@ -290,7 +317,14 @@ class ModelInfo(BaseModel):
         return model_info
 
     @classmethod
-    def from_hf_model_info(cls, hf_model_info: HFModelInfo, model_path: ModelPath, size: int, digest: str, model_stat: stat_result | DummyStatResult):
+    def from_hf_model_info(
+        cls,
+        hf_model_info: HFModelInfo,
+        model_path: ModelPath,
+        size: int,
+        digest: str,
+        model_stat: stat_result | DummyStatResult,
+    ):
         """
         hf_modelinfo_sample: dict = {'_id': '6832397972750614b899eba5',
                                      'id': 'dulimov/Qwen3-1.7B-rk3588-1.2.1-unsloth-16k',
@@ -374,12 +408,16 @@ class ModelInfo(BaseModel):
                 model_format=model_type.value.lower(),
                 model_family=hf_model_info.config.model_type,
                 parameter_size=f"{size_value:.2f}{size_unit.upper()}",
-                quantization_level=UNKNOWN_VAL_STR, # depends of the model, use metadata to retrieve it
+                quantization_level=UNKNOWN_VAL_STR,  # depends of the model, use metadata to retrieve it
             ),
             model_type=model_type,
             tags=hf_model_info.tags,
             languages=hf_model_info.languages or LANGUAGE_DEFAULT,
-            base_model=hf_model_info.cardData.base_model[-1] if hf_model_info.cardData.base_model else None,
+            base_model=(
+                hf_model_info.cardData.base_model[-1]
+                if hf_model_info.cardData.base_model
+                else None
+            ),
         )
         model_info.model_path = model_path
         model_info._hf_model_info = hf_model_info
@@ -390,7 +428,9 @@ class ModelInfo(BaseModel):
         if self._ollama_model_info is None:
             if self._model_path is not None:
                 if not self._model_path.ollama_model_info_exists:
-                    logger.warning(f"Ollama model info not found for model {self.model}")
+                    logger.warning(
+                        f"Ollama model info not found for model {self.model}"
+                    )
                     return None
             self._ollama_model_info = OllamaModelInfo.load(self.model)
         return self._ollama_model_info
@@ -400,8 +440,9 @@ class ModelInfo(BaseModel):
         if self._hf_model_info is None:
             if self._model_path is not None:
                 if not self._model_path.huggingface_model_info_exists:
-                    logger.warning(f"HuggingFace model info not found for model {self.model}")
+                    logger.warning(
+                        f"HuggingFace model info not found for model {self.model}"
+                    )
                     return None
             self._hf_model_info = HFModelInfo.load(self.model)
         return self._hf_model_info
-

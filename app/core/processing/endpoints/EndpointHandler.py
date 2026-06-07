@@ -1,18 +1,18 @@
 import time
 from typing import Union, Dict, Any, Tuple, Optional, List
 
-from numpy.ma.core import less_equal
 from pydantic import BaseModel, Field
 from transformers import AutoTokenizer
-from abc import ABC, abstractmethod
+from abc import ABC
 
 from core.api.parameters import Message
 from core.backends.GlobalState import GLOBAL_STATE
 from core.config.RKLLAMAConfig import RKLLAMASettings
 from core.model.ModelFile import ModelFile
 
-setting: RKLLAMASettings | None = None
+settings: RKLLAMASettings | None = None
 DEBUG_MODE: bool | None = None
+
 
 class EndpointMetrics(BaseModel):
     total: int
@@ -23,19 +23,26 @@ class EndpointMetrics(BaseModel):
     token_count: Optional[int] = Field(default=None)
 
 
-
 class EndpointHandler(ABC):
     """Base class for endpoint handlers with common functionality"""
 
     @classmethod
-    def prepare_prompt(cls, modelfile: ModelFile, messages: List[Message], system="", tools=None, enable_thinking=False) -> Tuple[Any, Union[list[int], Dict], int]:
+    def prepare_prompt(
+        cls,
+        modelfile: ModelFile,
+        messages: List[Message],
+        system="",
+        tools=None,
+        enable_thinking=False,
+    ) -> Tuple[Any, Union[list[int], Dict], int]:
         """Prepare prompt with proper system handling"""
 
         ## TODO: tokenizer is downloaded when get model from internet
         ## so use modelfile
         tokenizer = AutoTokenizer.from_pretrained(
             ## TODO: get loaded model from parameter
-            GLOBAL_STATE.loaded_model_hfpath, trust_remote_code=True
+            GLOBAL_STATE.loaded_model_hfpath,
+            trust_remote_code=True,
         )
         supports_system_role = (
             "raise_exception('System role not supported')"
@@ -60,11 +67,9 @@ class EndpointHandler(ABC):
         #    prepared_messages.append({"role": message["role"], "content": all_contents})
 
         flat_messages = [
-            {
-                "role": message.role.value,
-                "content": str(message.content)
-            }
-            for message in messages]
+            {"role": message.role.value, "content": str(message.content)}
+            for message in messages
+        ]
         if system and supports_system_role:
             # prompt_messages = [{"role": "system", "content": system}] + prepared_messages #messages
             prompt_messages = [{"role": "system", "content": system}] + flat_messages
@@ -82,7 +87,9 @@ class EndpointHandler(ABC):
         return tokenizer, prompt_tokens, len(prompt_tokens)
 
     @classmethod
-    def calculate_durations(cls, start_time, prompt_eval_time, current_time=None) -> EndpointMetrics:
+    def calculate_durations(
+        cls, start_time, prompt_eval_time, current_time=None
+    ) -> EndpointMetrics:
         """Calculate duration metrics for responses"""
         if not current_time:
             current_time = time.time()
@@ -107,6 +114,7 @@ class EndpointHandler(ABC):
         global settings
         if settings is None:
             from core.config import config_utils
+
             settings = config_utils.get_settings()
         return settings
 

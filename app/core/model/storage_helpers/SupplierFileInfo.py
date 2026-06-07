@@ -15,15 +15,15 @@ class Supplier(str, Enum):
 
 
 class SupplierFileInfo(BaseModel):
-    #@property
+    # @property
     def supplier(self):
         raise Exception("abstract method")
 
-    #@property
+    # @property
     def size(self):
         raise Exception("abstract method")
 
-    #@property
+    # @property
     def lfs_sha256(self):
         raise Exception("abstract method")
 

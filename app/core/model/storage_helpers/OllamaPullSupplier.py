@@ -6,7 +6,6 @@ from typing import Any, Tuple
 import requests
 
 from core.api.parameters import OllamaPullResponse
-from core.config import config_utils
 from core.config.config_utils import get_settings
 from core.model.Model import Model
 from core.model.ModelFile import ModelFile
@@ -17,8 +16,12 @@ from core.model.models_constants import validate_model_id
 from core.model.suppliers_model_info import OllamaModelInfo, OllamaModelLicense
 from core.model.ModelMetadata import SimpleModelMetadata, create_metadata
 from core.model.ModelType import ModelType
-from core.model.OllamaManifest import OllamaManifest, VND_OLLAMA_IMAGE_MODEL, VND_OLLAMA_IMAGE_SYSTEM, \
-    OllamaManifestModelLayer
+from core.model.OllamaManifest import (
+    OllamaManifest,
+    VND_OLLAMA_IMAGE_MODEL,
+    VND_OLLAMA_IMAGE_SYSTEM,
+    OllamaManifestModelLayer,
+)
 from core.model.storage_helpers.OllamaFileSystem import OllamaFileSystem
 from core.model.storage_helpers.OllamaStorageHelper import OllamaStorageHelper
 from core.model.storage_helpers.PullSupplier import PullSupplier
@@ -26,14 +29,15 @@ from core.model.storage_helpers.SupplierFileInfo import Supplier
 
 DEFAULT_CONTENT_TYPE = "application/x-ndjson"
 
-class OllamaPullSupplier(PullSupplier):
 
+class OllamaPullSupplier(PullSupplier):
     def model_type(self, model_name, file, repo) -> Tuple[ModelType | None, Any]:
         # cannot compute the model type before getting the file info
         return None, None
 
-    def file_info(self, model_name, file, repo, model_type, supplier: Supplier) -> Tuple[
-        Any | None, str | None, ModelType | None, Any]:
+    def file_info(
+        self, model_name, file, repo, model_type, supplier: Supplier
+    ) -> Tuple[Any | None, str | None, ModelType | None, Any]:
         if supplier != Supplier.OLLAMA:
             return None, None, None, "Error: Invalid supplier.\n"
 
@@ -43,17 +47,18 @@ class OllamaPullSupplier(PullSupplier):
         # repo=dulimov/Qwen3-1.7B-rk3588-1.2.1-unsloth-16k,
         # supplier=Supplier.HUGGINGFACE
 
-        ollama_model_manifest_path = \
-            OllamaStorageHelper.ollama_model_manifest_path(
-                model_name=model_name,
-                tag=file,
-            )
+        ollama_model_manifest_path = OllamaStorageHelper.ollama_model_manifest_path(
+            model_name=model_name,
+            tag=file,
+        )
         ollama_manifest: OllamaManifest | None = None
 
         self.logger.debug(f"ollama_model_manifest_path={ollama_model_manifest_path}")
         if os.path.exists(ollama_model_manifest_path):
             try:
-                ollama_manifest = OllamaManifest.load(ollama_manifest_path=Path(ollama_model_manifest_path))
+                ollama_manifest = OllamaManifest.load(
+                    ollama_manifest_path=Path(ollama_model_manifest_path)
+                )
             except Exception as e:
                 self.logger.error(f"Error reading model ollama manifest: {str(e)}")
 
@@ -87,11 +92,18 @@ class OllamaPullSupplier(PullSupplier):
                                           size=7387, from_=None)]
             """
 
-            return ollama_manifest, OllamaFileSystem.model_path(model_name), model_type, None
+            return (
+                ollama_manifest,
+                OllamaFileSystem.model_path(model_name),
+                model_type,
+                None,
+            )
         except Exception as e:
             return None, None, None, f"Error: {str(e)}\n"
 
-    def check_file_info(self, model_name, file, repo, model_type, file_info) -> Tuple[Any | None, Any]:
+    def check_file_info(
+        self, model_name, file, repo, model_type, file_info
+    ) -> Tuple[Any | None, Any]:
         if not file_info:
             return None, "Error: missing manifest.\n"
 
@@ -103,15 +115,16 @@ class OllamaPullSupplier(PullSupplier):
         if len(file_info.layers) < 2:
             return None, "Error: missing layers in manifest.\n"
         model_manifest_layers = [layer.mediaType for layer in file_info.layers]
-        if not VND_OLLAMA_IMAGE_MODEL in model_manifest_layers:
+        if VND_OLLAMA_IMAGE_MODEL not in model_manifest_layers:
             return None, "Error: missing model layer in manifest.\n"
-        if not VND_OLLAMA_IMAGE_SYSTEM in model_manifest_layers:
+        if VND_OLLAMA_IMAGE_SYSTEM not in model_manifest_layers:
             return None, "Error: missing system layer in manifest.\n"
 
         return file_info, None
 
-    def model_file_info(self, model_name, file, repo, model_type, file_info, supplier: Supplier) -> Tuple[
-        Any | None, Any | None, str | None, ModelType | None, Any]:
+    def model_file_info(
+        self, model_name, file, repo, model_type, file_info, supplier: Supplier
+    ) -> Tuple[Any | None, Any | None, str | None, ModelType | None, Any]:
         if supplier != Supplier.OLLAMA:
             return None, None, None, None, "Error: Invalid supplier.\n"
 
@@ -123,22 +136,24 @@ class OllamaPullSupplier(PullSupplier):
 
         fs = OllamaFileSystem()
 
-        ollama_model_config_path = \
-            file_info.ollama_model_config_path
+        ollama_model_config_path = file_info.ollama_model_config_path
         ollama_model_info: OllamaModelInfo | None = None
 
         self.logger.debug(f"ollama_model_config_path={ollama_model_config_path}")
         if os.path.exists(ollama_model_config_path):
             try:
-                ollama_model_info = OllamaModelInfo.load(file_path=ollama_model_config_path)
+                ollama_model_info = OllamaModelInfo.load(
+                    file_path=ollama_model_config_path
+                )
             except Exception as e:
                 self.logger.error(f"Error reading model ollama manifest: {str(e)}")
 
         try:
             if ollama_model_info is None:
                 config_digest = file_info.config.digest
-                ollama_config, info = fs.load_config(config_digest=config_digest, model_name=model_name,
-                                                     target_tag=file)
+                ollama_config, info = fs.load_config(
+                    config_digest=config_digest, model_name=model_name, target_tag=file
+                )
                 self.logger.debug(f"ollama_config={ollama_config}, info={info}")
 
                 """
@@ -163,7 +178,8 @@ class OllamaPullSupplier(PullSupplier):
             if file_info.ollama_manifest_license_layer:
                 license_url = fs.blob_url(
                     digest=file_info.ollama_manifest_license_layer.digest,
-                    model_name=model_name)
+                    model_name=model_name,
+                )
                 with requests.get(license_url) as r:
                     ollama_model_info.license = OllamaModelLicense.from_content(
                         content=r.content,
@@ -175,7 +191,8 @@ class OllamaPullSupplier(PullSupplier):
             if file_info.ollama_manifest_system_layer:
                 system_url = fs.blob_url(
                     digest=file_info.ollama_manifest_system_layer.digest,
-                    model_name=model_name)
+                    model_name=model_name,
+                )
                 with requests.get(system_url) as r:
                     file_info.system = r.content
 
@@ -183,26 +200,39 @@ class OllamaPullSupplier(PullSupplier):
             if file_info.ollama_manifest_template_layer:
                 template_url = fs.blob_url(
                     digest=file_info.ollama_manifest_template_layer.digest,
-                    model_name=model_name)
+                    model_name=model_name,
+                )
                 with requests.get(template_url) as r:
                     file_info.template = r.content
 
             ollama_model_info.ollama_manifest = file_info
-            return ollama_model_info, ollama_model_info.ollama_manifest, OllamaFileSystem.model_path(
-                model_name), model_type, None
+            return (
+                ollama_model_info,
+                ollama_model_info.ollama_manifest,
+                OllamaFileSystem.model_path(model_name),
+                model_type,
+                None,
+            )
         except Exception as e:
-            self.logger.exception(f"Error reading model ollama manifest: {str(e)}", exc_info=e)
+            self.logger.exception(
+                f"Error reading model ollama manifest: {str(e)}", exc_info=e
+            )
             return None, None, None, None, f"Error: {str(e)}\n"
 
-    def check_model_file_info(self, model_name, file, repo, model_type, file_info, model_file_info) -> Tuple[
-        Any | None, Any]:
+    def check_model_file_info(
+        self, model_name, file, repo, model_type, file_info, model_file_info
+    ) -> Tuple[Any | None, Any]:
         if not model_file_info.ollama_manifest:
             return None, "Error: missing manifest.\n"
 
         # test that manifest contains at least model and system layers
         _, error = self.check_file_info(
-            model_name=model_name, file=file, repo=repo, model_type=model_type,
-            file_info=model_file_info.ollama_manifest)
+            model_name=model_name,
+            file=file,
+            repo=repo,
+            model_type=model_type,
+            file_info=model_file_info.ollama_manifest,
+        )
         if error:
             return None, error
 
@@ -210,7 +240,9 @@ class OllamaPullSupplier(PullSupplier):
 
         return model_file_info, None
 
-    def _create_dummy_stat_result(self, file_info: OllamaManifest, model_file_info: OllamaModelInfo) -> DummyStatResult:
+    def _create_dummy_stat_result(
+        self, file_info: OllamaManifest, model_file_info: OllamaModelInfo
+    ) -> DummyStatResult:
         dt_now = datetime.datetime.now().timestamp()
         model_stat = DummyStatResult(
             st_size=file_info.size,
@@ -220,34 +252,46 @@ class OllamaPullSupplier(PullSupplier):
         )
         return model_stat
 
-    def create_generic_model_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
-                                       supplier: Supplier,
-                                       total_size: int,
-                                       digest: str,
-                                       file_info: OllamaManifest,
-                                       model_file_info: OllamaModelInfo) -> ModelInfo:
+    def create_generic_model_info(
+        self,
+        file: str,
+        model_name: str,
+        model_type: ModelType | None,
+        repo: str,
+        supplier: Supplier,
+        total_size: int,
+        digest: str,
+        file_info: OllamaManifest,
+        model_file_info: OllamaModelInfo,
+    ) -> ModelInfo:
         """
         fulfill the ModelInfo fields that are not derived from Hugging Face HfFileSystem
         """
         model_stat = self._create_dummy_stat_result(file_info, model_file_info)
         generic_model_info: ModelInfo = ModelInfo.from_ollama_model_info(
             ollama_model_info=model_file_info,
-            model_path=ModelPath(model_name=model_name,
-                                 model_type=model_type,
-                                 endpoint_model_file=file,
-                                 endpoint_model_file_size=total_size,
-                                 ),
+            model_path=ModelPath(
+                model_name=model_name,
+                model_type=model_type,
+                endpoint_model_file=file,
+                endpoint_model_file_size=total_size,
+            ),
             size=total_size,
             digest=digest,
-            model_stat=model_stat
+            model_stat=model_stat,
         )
         self.logger.debug(f"generic_model_info={generic_model_info.model_dump_json()}")
         self.logger.debug(f"ollama_data={generic_model_info.ollama_model_info}")
         return generic_model_info
 
-    def create_generic_model(self, generic_model_info: ModelInfo,
-                                  file_info: OllamaManifest, model_file_info: OllamaModelInfo,
-                                  model_type: ModelType | None, repo: str) -> Tuple[Model, ModelInfo]:
+    def create_generic_model(
+        self,
+        generic_model_info: ModelInfo,
+        file_info: OllamaManifest,
+        model_file_info: OllamaModelInfo,
+        model_type: ModelType | None,
+        repo: str,
+    ) -> Tuple[Model, ModelInfo]:
         """
         fulfill the Model fields to create the Model:
             id: str
@@ -267,7 +311,9 @@ class OllamaPullSupplier(PullSupplier):
 
         """
         model_path: ModelPath = generic_model_info.model_path
-        model_metadata, model_metadata_format, model_metadata_path = create_metadata(model_path=model_path, ollama_model_info=model_file_info)
+        model_metadata, model_metadata_format, model_metadata_path = create_metadata(
+            model_path=model_path, ollama_model_info=model_file_info
+        )
         model_stat = self._create_dummy_stat_result(file_info, model_file_info)
         model: Model = Model(
             id=validate_model_id(model_path.model_id),
@@ -278,18 +324,23 @@ class OllamaPullSupplier(PullSupplier):
             digest=file_info.digest,
             model_path=model_path,
             model_info=generic_model_info,
-            model_metadata=model_metadata
+            model_metadata=model_metadata,
         )
         model._supplier = Supplier.OLLAMA
         model._supplier_model_info = model_file_info
         return model, generic_model_info
 
-
-    def create_generic_model_file_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
-                                       supplier: Supplier,
-                                       total_size: int,
-                                       file_info: OllamaManifest,
-                                       model_file_info: OllamaModelInfo) -> ModelFileInfo:
+    def create_generic_model_file_info(
+        self,
+        file: str,
+        model_name: str,
+        model_type: ModelType | None,
+        repo: str,
+        supplier: Supplier,
+        total_size: int,
+        file_info: OllamaManifest,
+        model_file_info: OllamaModelInfo,
+    ) -> ModelFileInfo:
         generic_model_file_info: ModelFileInfo = ModelFileInfo(
             model_name=model_name,
             model_type=model_type,
@@ -300,30 +351,43 @@ class OllamaPullSupplier(PullSupplier):
         )
         generic_model_file_info.ollama_file_info = file_info
         generic_model_file_info.ollama_model_info = model_file_info
-        self.logger.debug(f"generic_model_file_info={generic_model_file_info.model_dump_json()}")
+        self.logger.debug(
+            f"generic_model_file_info={generic_model_file_info.model_dump_json()}"
+        )
         self.logger.debug(f"ollama_data={generic_model_file_info.ollama_model_info}")
 
         return generic_model_file_info
 
-    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo, model: Model,
-                                  file_info: OllamaManifest, model_file_info: OllamaModelInfo,
-                                  model_type, repo) -> Tuple[ModelFile, ModelFileInfo]:
+    def create_generic_model_file(
+        self,
+        generic_model_file_info: ModelFileInfo,
+        model: Model,
+        file_info: OllamaManifest,
+        model_file_info: OllamaModelInfo,
+        model_type,
+        repo,
+    ) -> Tuple[ModelFile, ModelFileInfo]:
         generic_model_file_info_dump = generic_model_file_info.model_dump()
-        self.logger.debug(f"generic_model_file_info_dump={generic_model_file_info_dump}")
+        self.logger.debug(
+            f"generic_model_file_info_dump={generic_model_file_info_dump}"
+        )
         generic_model_file: ModelFile = ModelFile.create(
             model_file_info=generic_model_file_info,
             default_model_config=get_settings().model,
             model=model,
-            model_license=model_file_info.license
+            model_license=model_file_info.license,
         )
         self.logger.debug(f"generic_model_file={generic_model_file.model_dump_json()}")
         self.logger.debug(
-            f"generic_model_file.simple_model_metadata={generic_model_file.simple_model_metadata.model_dump_json()}")
+            f"generic_model_file.simple_model_metadata={generic_model_file.simple_model_metadata.model_dump_json()}"
+        )
         generic_model_file.ollama_model_info = model_file_info
         generic_model_file.ollama_file_info = file_info
         generic_model_file_info = ModelFileInfo(**generic_model_file_info_dump)
         if isinstance(generic_model_file.model_metadata, SimpleModelMetadata):
-            generic_model_file_info.simple_model_metadata = generic_model_file.model_metadata
+            generic_model_file_info.simple_model_metadata = (
+                generic_model_file.model_metadata
+            )
         generic_model_file_info.ollama_model_info = model_file_info
         generic_model_file_info.ollama_file_info = file_info
         return generic_model_file, generic_model_file_info
@@ -335,9 +399,13 @@ class OllamaPullSupplier(PullSupplier):
         lock_id = model_file.lock_model()
         return lock_id, None
 
-    def model_download_url(self, model_name, file, repo, model_type, file_info: OllamaManifest) -> Tuple[Any, Any]:
+    def model_download_url(
+        self, model_name, file, repo, model_type, file_info: OllamaManifest
+    ) -> Tuple[Any, Any]:
         try:
-            ollama_manifest_model_layer: OllamaManifestModelLayer = file_info.ollama_manifest_model_layer
+            ollama_manifest_model_layer: OllamaManifestModelLayer = (
+                file_info.ollama_manifest_model_layer
+            )
             if not ollama_manifest_model_layer:
                 return None, "Error: missing model layer in manifest.\n"
 
@@ -355,22 +423,38 @@ class OllamaPullSupplier(PullSupplier):
     def content_type(self) -> str:
         return DEFAULT_CONTENT_TYPE
 
-    def format_progress(self, digest: str, progress: int, total: int, completed: int) -> Any:
-        return OllamaPullResponse(
+    def format_progress(
+        self, digest: str, progress: int, total: int, completed: int
+    ) -> Any:
+        return (
+            OllamaPullResponse(
                 status="downloading model",
                 digest=f"sha256:{digest}",
                 total=total,
                 completed=completed,
-            ).model_dump_json().encode() + b"\n"
+            )
+            .model_dump_json()
+            .encode()
+            + b"\n"
+        )
 
     def format_success(self, digest: str) -> Any:
-        return OllamaPullResponse(
+        return (
+            OllamaPullResponse(
                 status="success",
                 digest=f"sha256:{digest}",
-            ).model_dump_json().encode() + b"\n"
+            )
+            .model_dump_json()
+            .encode()
+            + b"\n"
+        )
 
     def format_error(self, error: str) -> Any:
-        return OllamaPullResponse(
+        return (
+            OllamaPullResponse(
                 status=f"{error}",
-            ).model_dump_json().encode() + b"\n"
-
+            )
+            .model_dump_json()
+            .encode()
+            + b"\n"
+        )

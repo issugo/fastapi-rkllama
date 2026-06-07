@@ -23,10 +23,11 @@ from core.model.suppliers_model_info import HFModelInfo, HFModelLicense
 
 DEFAULT_CONTENT_TYPE = "text/plain"
 
-class RKPullSupplier(PullSupplier):
 
-    def file_info(self, model_name, file, repo, model_type, supplier: Supplier) -> Tuple[
-        Any | None, str | None, ModelType | None, Any]:
+class RKPullSupplier(PullSupplier):
+    def file_info(
+        self, model_name, file, repo, model_type, supplier: Supplier
+    ) -> Tuple[Any | None, str | None, ModelType | None, Any]:
         if supplier != Supplier.HUGGINGFACE:
             return None, None, None, "Error: Invalid supplier.\n"
         """
@@ -41,17 +42,20 @@ class RKPullSupplier(PullSupplier):
             "system_prompt":""
             }
         """
-        huggingface_file_info_path = \
+        huggingface_file_info_path = (
             RkllamaStorageHelper.huggingface_file_info_path_from_raw(
                 model_name=model_name,
                 endpoint_model_file=file,
             )
+        )
         hf_file_info: HfFileInfo | None = None
 
         self.logger.debug(f"huggingface_file_info_path={huggingface_file_info_path}")
         if os.path.exists(huggingface_file_info_path):
             try:
-                hf_file_info: HfFileInfo = HfFileInfo.load(file_path=huggingface_file_info_path)
+                hf_file_info: HfFileInfo = HfFileInfo.load(
+                    file_path=huggingface_file_info_path
+                )
             except Exception as e:
                 self.logger.error(f"Error reading model HF file info: {str(e)}")
 
@@ -81,14 +85,25 @@ class RKPullSupplier(PullSupplier):
         except Exception as e:
             return None, None, None, f"Error: {str(e)}\n"
 
-    def check_file_info(self, model_name, file, repo, model_type, file_info) -> Tuple[Any | None, Any]:
-        if (not file_info.name == f"{repo}/{file}") or (not file_info.size == file_info.lfs.size):
+    def check_file_info(
+        self, model_name, file, repo, model_type, file_info
+    ) -> Tuple[Any | None, Any]:
+        if (not file_info.name == f"{repo}/{file}") or (
+            not file_info.size == file_info.lfs.size
+        ):
             return None, "Error: incorrect HF file info.\n"
 
         return file_info, None
 
-    def model_file_info(self, model_name, file, repo, model_type, file_info: HfFileInfo, supplier: Supplier) -> Tuple[
-        Any | None, Any | None, str | None, ModelType | None, Any]:
+    def model_file_info(
+        self,
+        model_name,
+        file,
+        repo,
+        model_type,
+        file_info: HfFileInfo,
+        supplier: Supplier,
+    ) -> Tuple[Any | None, Any | None, str | None, ModelType | None, Any]:
         if supplier != Supplier.HUGGINGFACE:
             return None, None, None, None, "Error: Invalid supplier.\n"
 
@@ -100,14 +115,17 @@ class RKPullSupplier(PullSupplier):
 
         fs = HuggingfaceFileSystem()
 
-        huggingface_model_info_path = \
-            file_info.huggingface_model_info_path
+        huggingface_model_info_path = file_info.huggingface_model_info_path
         huggingface_model_info: HFModelInfo | None = None
 
-        self.logger.debug(f"model_file_info(): huggingface_model_info_path={huggingface_model_info_path}")
+        self.logger.debug(
+            f"model_file_info(): huggingface_model_info_path={huggingface_model_info_path}"
+        )
         if os.path.exists(huggingface_model_info_path):
             try:
-                huggingface_model_info = HFModelInfo.load(file_path=huggingface_model_info_path)
+                huggingface_model_info = HFModelInfo.load(
+                    file_path=huggingface_model_info_path
+                )
             except Exception as e:
                 self.logger.error(f"Error reading model huggingface manifest: {str(e)}")
 
@@ -117,22 +135,28 @@ class RKPullSupplier(PullSupplier):
                 self.logger.debug(f"model_file_info(): hf_model_info={hf_model_info}")
 
                 huggingface_model_info = HFModelInfo(**hf_model_info)
-            self.logger.debug(f"model_file_info(): huggingface_model_info={huggingface_model_info}")
+            self.logger.debug(
+                f"model_file_info(): huggingface_model_info={huggingface_model_info}"
+            )
 
             # manage license
-            rfilename_siblings = [sibling.rfilename for sibling in huggingface_model_info.siblings]
+            rfilename_siblings = [
+                sibling.rfilename for sibling in huggingface_model_info.siblings
+            ]
             if "LICENSE" in rfilename_siblings:
-                license_url=fs.sibling_url(huggingface_path=repo,
-                                           rfilename_sibling="LICENSE")
+                license_url = fs.sibling_url(
+                    huggingface_path=repo, rfilename_sibling="LICENSE"
+                )
                 with requests.get(license_url) as r:
                     huggingface_model_info.license = HFModelLicense.from_content(
-                        content=r.content,
-                        license_url=license_url
+                        content=r.content, license_url=license_url
                     )
-            elif hf_model_info and \
-                    "license" in hf_model_info and \
-                    "license_name" in hf_model_info and \
-                    "license_url" in hf_model_info :
+            elif (
+                hf_model_info
+                and "license" in hf_model_info
+                and "license_name" in hf_model_info
+                and "license_url" in hf_model_info
+            ):
                 huggingface_model_info.license = HFModelLicense(
                     supplier=Supplier.HUGGINGFACE,
                     license_name=hf_model_info["license_name"],
@@ -144,11 +168,20 @@ class RKPullSupplier(PullSupplier):
 
             return huggingface_model_info, file_info, repo, model_type, None
         except Exception as e:
-            self.logger.exception(f"Error reading model HFModelInfo: {str(e)}", exc_info=e)
+            self.logger.exception(
+                f"Error reading model HFModelInfo: {str(e)}", exc_info=e
+            )
             return None, None, None, None, f"Error: {str(e)}\n"
 
-    def check_model_file_info(self, model_name, file, repo, model_type, file_info: HfFileInfo, model_file_info: HFModelInfo) -> Tuple[
-        Any | None, Any]:
+    def check_model_file_info(
+        self,
+        model_name,
+        file,
+        repo,
+        model_type,
+        file_info: HfFileInfo,
+        model_file_info: HFModelInfo,
+    ) -> Tuple[Any | None, Any]:
         endpoint_model_file = file_info.name.split("/")[-1]
         model_repo = file_info.name.replace(endpoint_model_file, "").strip("/")
         if model_repo != model_file_info.id:
@@ -157,45 +190,63 @@ class RKPullSupplier(PullSupplier):
             return None, "Error: invalid model file info modelId.\n"
 
         rfilename_siblings = [sibling.rfilename for sibling in model_file_info.siblings]
-        if not endpoint_model_file in rfilename_siblings:
+        if endpoint_model_file not in rfilename_siblings:
             return None, "Error: missing endpoint model file in siblings.\n"
 
         # TODO: check that model_file_info is valid
 
         return model_file_info, None
 
-    def create_generic_model_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
-                                       supplier: Supplier,
-                                       total_size: int,
-                                       digest: str,
-                                       file_info: HfFileInfo,
-                                       model_file_info: HFModelInfo) -> ModelInfo:
+    def create_generic_model_info(
+        self,
+        file: str,
+        model_name: str,
+        model_type: ModelType | None,
+        repo: str,
+        supplier: Supplier,
+        total_size: int,
+        digest: str,
+        file_info: HfFileInfo,
+        model_file_info: HFModelInfo,
+    ) -> ModelInfo:
         """
         fulfill the ModelInfo fields that are not derived from Hugging Face HfFileSystem
         """
         model_stat = self._create_dummy_stat_result(file_info, model_file_info)
         generic_model_info: ModelInfo = ModelInfo.from_hf_model_info(
             hf_model_info=model_file_info,
-            model_path=ModelPath(model_name=model_name,
-                                 model_type=model_type,
-                                 endpoint_model_file=file,
-                                 endpoint_model_file_size=total_size,
-                                 ),
+            model_path=ModelPath(
+                model_name=model_name,
+                model_type=model_type,
+                endpoint_model_file=file,
+                endpoint_model_file_size=total_size,
+            ),
             size=total_size,
             digest=digest,
-            model_stat=model_stat
+            model_stat=model_stat,
         )
         self.logger.debug(f"generic_model_info={generic_model_info.model_dump_json()}")
         self.logger.debug(f"hf_data={generic_model_info.hf_model_info}")
         return generic_model_info
 
-    def _create_dummy_stat_result(self, file_info: HfFileInfo, model_file_info: HFModelInfo) -> DummyStatResult:
+    def _create_dummy_stat_result(
+        self, file_info: HfFileInfo, model_file_info: HFModelInfo
+    ) -> DummyStatResult:
         dt_now = datetime.datetime.now().timestamp()
-        dt_modified = datetime.datetime.strptime(model_file_info.lastModified,
-                                                 "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() if model_file_info.lastModified else \
-            datetime.datetime.strptime(HfFileInfo.last_commit_to_last_modified(file_info.last_commit),
-                                       "%Y-%m-%dT%H:%M:%S.%fZ").timestamp() if file_info.last_commit else \
-                dt_now
+        dt_modified = (
+            datetime.datetime.strptime(
+                model_file_info.lastModified, "%Y-%m-%dT%H:%M:%S.%fZ"
+            ).timestamp()
+            if model_file_info.lastModified
+            else (
+                datetime.datetime.strptime(
+                    HfFileInfo.last_commit_to_last_modified(file_info.last_commit),
+                    "%Y-%m-%dT%H:%M:%S.%fZ",
+                ).timestamp()
+                if file_info.last_commit
+                else dt_now
+            )
+        )
         model_stat = DummyStatResult(
             st_size=file_info.size,
             st_atime=dt_modified,
@@ -204,9 +255,14 @@ class RKPullSupplier(PullSupplier):
         )
         return model_stat
 
-    def create_generic_model(self, generic_model_info: ModelInfo,
-                                  file_info: HfFileInfo, model_file_info: HFModelInfo,
-                                  model_type: ModelType | None, repo: str) -> Tuple[Model, ModelInfo]:
+    def create_generic_model(
+        self,
+        generic_model_info: ModelInfo,
+        file_info: HfFileInfo,
+        model_file_info: HFModelInfo,
+        model_type: ModelType | None,
+        repo: str,
+    ) -> Tuple[Model, ModelInfo]:
         """
         fulfill the Model fields to create the Model:
             id: str
@@ -226,7 +282,9 @@ class RKPullSupplier(PullSupplier):
 
         """
         model_path: ModelPath = generic_model_info.model_path
-        model_metadata, model_metadata_format, model_metadata_path = create_metadata(model_path=model_path, hf_model_info=model_file_info)
+        model_metadata, model_metadata_format, model_metadata_path = create_metadata(
+            model_path=model_path, hf_model_info=model_file_info
+        )
         model_stat = self._create_dummy_stat_result(file_info, model_file_info)
         model: Model = Model(
             id=validate_model_id(model_path.model_id),
@@ -237,18 +295,23 @@ class RKPullSupplier(PullSupplier):
             digest=file_info.digest,
             model_path=model_path,
             model_info=generic_model_info,
-            model_metadata=model_metadata
+            model_metadata=model_metadata,
         )
         model._supplier = Supplier.HUGGINGFACE
         model._supplier_model_info = model_file_info
         return model, generic_model_info
 
-
-    def create_generic_model_file_info(self, file: str, model_name: str, model_type: ModelType | None, repo: str,
-                                       supplier: Supplier,
-                                       total_size: int,
-                                       file_info: HfFileInfo,
-                                       model_file_info: HFModelInfo) -> ModelFileInfo:
+    def create_generic_model_file_info(
+        self,
+        file: str,
+        model_name: str,
+        model_type: ModelType | None,
+        repo: str,
+        supplier: Supplier,
+        total_size: int,
+        file_info: HfFileInfo,
+        model_file_info: HFModelInfo,
+    ) -> ModelFileInfo:
         """
         fulfill the ModelFileInfo fields that are not derived from Hugging Face HfFileSystem
         ModelFileInfo:
@@ -272,30 +335,42 @@ class RKPullSupplier(PullSupplier):
         )
         generic_model_file_info.huggingface_file_info = file_info
         generic_model_file_info.huggingface_model_info = model_file_info
-        self.logger.debug(f"generic_model_file_info={generic_model_file_info.model_dump_json()}")
+        self.logger.debug(
+            f"generic_model_file_info={generic_model_file_info.model_dump_json()}"
+        )
         self.logger.debug(f"hf_data={generic_model_file_info.huggingface_model_info}")
         return generic_model_file_info
 
-    def create_generic_model_file(self, generic_model_file_info: ModelFileInfo, model: Model,
-                                  file_info: HfFileInfo, model_file_info: HFModelInfo,
-                                  model_type: ModelType | None, repo: str) -> Tuple[ModelFile, ModelFileInfo]:
-
+    def create_generic_model_file(
+        self,
+        generic_model_file_info: ModelFileInfo,
+        model: Model,
+        file_info: HfFileInfo,
+        model_file_info: HFModelInfo,
+        model_type: ModelType | None,
+        repo: str,
+    ) -> Tuple[ModelFile, ModelFileInfo]:
         generic_model_file_info_dump = generic_model_file_info.model_dump()
-        self.logger.debug(f"generic_model_file_info_dump={generic_model_file_info_dump}")
+        self.logger.debug(
+            f"generic_model_file_info_dump={generic_model_file_info_dump}"
+        )
         generic_model_file: ModelFile = ModelFile.create(
             model_file_info=generic_model_file_info,
             default_model_config=get_settings().model,
             model=model,
-            model_license=model_file_info.license
+            model_license=model_file_info.license,
         )
         self.logger.debug(f"generic_model_file={generic_model_file.model_dump_json()}")
         self.logger.debug(
-            f"generic_model_file.simple_model_metadata={generic_model_file.simple_model_metadata.model_dump_json()}")
+            f"generic_model_file.simple_model_metadata={generic_model_file.simple_model_metadata.model_dump_json()}"
+        )
         generic_model_file.huggingface_model_info = model_file_info
         generic_model_file.huggingface_file_info = file_info
         generic_model_file_info = ModelFileInfo(**generic_model_file_info_dump)
         if isinstance(generic_model_file.model_metadata, SimpleModelMetadata):
-            generic_model_file_info.simple_model_metadata = generic_model_file.model_metadata
+            generic_model_file_info.simple_model_metadata = (
+                generic_model_file.model_metadata
+            )
         generic_model_file_info.huggingface_model_info = model_file_info
         generic_model_file_info.huggingface_file_info = file_info
         return generic_model_file, generic_model_file_info
@@ -307,7 +382,9 @@ class RKPullSupplier(PullSupplier):
         lock_id = model_file.lock_model()
         return lock_id, None
 
-    def model_download_url(self, model_name, file, repo, model_type, file_info) -> Tuple[Any, Any]:
+    def model_download_url(
+        self, model_name, file, repo, model_type, file_info
+    ) -> Tuple[Any, Any]:
         url = hf_hub_url(repo_id=repo, filename=file)
         return url, None
 
@@ -315,7 +392,9 @@ class RKPullSupplier(PullSupplier):
     def content_type(self) -> str:
         return DEFAULT_CONTENT_TYPE
 
-    def format_progress(self, digest: str, progress: int, total: int, completed: int) -> Any:
+    def format_progress(
+        self, digest: str, progress: int, total: int, completed: int
+    ) -> Any:
         return f"{progress}%\n"
 
     def format_success(self, digest: str) -> Any:
@@ -323,4 +402,3 @@ class RKPullSupplier(PullSupplier):
 
     def format_error(self, error: str) -> Any:
         return error
-

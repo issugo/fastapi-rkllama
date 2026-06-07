@@ -8,7 +8,7 @@ def logging_setup(logs_dir: Path, debug_mode: bool = False):
 
     # Set up logging with an appropriate level based on debug mode
     logging.basicConfig(
-        level= logging.DEBUG if debug_mode else logging.INFO,
+        level=logging.DEBUG if debug_mode else logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
             logging.StreamHandler(),

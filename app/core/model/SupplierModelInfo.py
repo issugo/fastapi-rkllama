@@ -4,7 +4,6 @@ from pydantic import BaseModel
 
 
 class SupplierModelInfo(BaseModel):
-
     @property
     def license(self):
         raise Exception("Abstract method")
@@ -27,5 +26,5 @@ class SupplierModelInfo(BaseModel):
     def template(self):
         raise Exception("Abstract method")
 
-    def save(self, file_path: str| Path):
+    def save(self, file_path: str | Path):
         raise Exception("Abstract method")

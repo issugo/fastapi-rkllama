@@ -8,6 +8,7 @@ from core.model.storage_helpers.OllamaStorageHelper import MANIFESTS
 REGISTRY_BASE = "https://registry.ollama.ai/library"
 REGISTRY_API_BASE = "https://registry.ollama.ai/v2/library"
 
+
 class OllamaFileSystem:
     @staticmethod
     def model_path(model_name: str, api: bool = True):
@@ -20,15 +21,19 @@ class OllamaFileSystem:
         model_path = OllamaFileSystem.model_path(model_name)
         manifest_url = f"{model_path}/{MANIFESTS}/{target_tag}"
         manifest_headers = {
-            "Accept": ",".join([
-                "application/vnd.oci.image.manifest.v1+json",
-                "application/vnd.docker.distribution.manifest.v2+json",
-                "application/vnd.docker.distribution.manifest.list.v2+json",
-            ])
+            "Accept": ",".join(
+                [
+                    "application/vnd.oci.image.manifest.v1+json",
+                    "application/vnd.docker.distribution.manifest.v2+json",
+                    "application/vnd.docker.distribution.manifest.list.v2+json",
+                ]
+            )
         }
         man_resp = requests.get(manifest_url, headers=manifest_headers, timeout=20)
         if man_resp.status_code != 200:
-            raise RuntimeError(f"Failed to get manifest for {model_name}:{target_tag} - HTTP {man_resp.status_code}")
+            raise RuntimeError(
+                f"Failed to get manifest for {model_name}:{target_tag} - HTTP {man_resp.status_code}"
+            )
 
         return man_resp.json()
 
@@ -47,7 +52,9 @@ class OllamaFileSystem:
         raise ValueError("invalid model digest")
 
     @staticmethod
-    def load_config(config_digest : str, model_name: str, target_tag: str) -> Tuple[Any, dict|None]:
+    def load_config(
+        config_digest: str, model_name: str, target_tag: str
+    ) -> Tuple[Any, dict | None]:
         if config_digest:
             model_path = OllamaFileSystem.model_path(model_name)
             cfg_url = f"{model_path}/{BLOBS}/{config_digest}"
@@ -62,10 +69,16 @@ class OllamaFileSystem:
                     candidates = [
                         cfg.get("description"),
                         cfg.get("config", {}).get("description"),
-                        cfg.get("config", {}).get("Labels", {}).get("org.opencontainers.image.description"),
+                        cfg.get("config", {})
+                        .get("Labels", {})
+                        .get("org.opencontainers.image.description"),
                         cfg.get("config", {}).get("Labels", {}).get("description"),
-                        cfg.get("config", {}).get("Labels", {}).get("org.opencontainers.image.title"),
-                        cfg.get("annotations", {}).get("org.opencontainers.image.description"),
+                        cfg.get("config", {})
+                        .get("Labels", {})
+                        .get("org.opencontainers.image.title"),
+                        cfg.get("annotations", {}).get(
+                            "org.opencontainers.image.description"
+                        ),
                     ]
                     config_desc = f"{model_name}:{target_tag}"
                     for c in candidates:
@@ -78,8 +91,11 @@ class OllamaFileSystem:
                         "architecture": cfg.get("architecture"),
                         "os": cfg.get("os"),
                         "created": cfg.get("created"),
-                        "labels": cfg.get("config", {}).get("Labels", {}) if isinstance(cfg.get("config"),
-                                                                                        dict) else {},
+                        "labels": (
+                            cfg.get("config", {}).get("Labels", {})
+                            if isinstance(cfg.get("config"), dict)
+                            else {}
+                        ),
                     }
                     return cfg, info
                 except json.JSONDecodeError as e:
@@ -87,4 +103,3 @@ class OllamaFileSystem:
                     raise ValueError("invalid config JSON", e)
 
         raise ValueError("invalid config digest")
-

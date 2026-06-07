@@ -42,7 +42,9 @@ class HfFileInfo(SupplierFileInfo):
         return Supplier.HUGGINGFACE
 
     @staticmethod
-    def model_data(split_name: List[str], model_name: str | None = None) -> Tuple[str, str, str]:
+    def model_data(
+        split_name: List[str], model_name: str | None = None
+    ) -> Tuple[str, str, str]:
         model_name = split_name[1] if model_name is None else model_name
         file = split_name[2]
         repo = "/".join(split_name).replace(f"/{file}", "")
@@ -52,6 +54,7 @@ class HfFileInfo(SupplierFileInfo):
     def huggingface_model_info_path(self):
         from core.model.storage_helpers.RkllamaStorageHelper import RkllamaStorageHelper
         from core.model.ModelPath import ModelPath
+
         model_name, file, repo = HfFileInfo.model_data(self.name.split("/"))
         return RkllamaStorageHelper.huggingface_model_info_path_using_model_dir(
             model_dir=ModelPath.model_dir_using_model_name(model_name)
@@ -75,7 +78,7 @@ class HfFileInfo(SupplierFileInfo):
         with open(file_path, "r") as f:
             return HfFileInfo(**json.load(f))
 
-    def save(self, file_path: str| Path):
+    def save(self, file_path: str | Path):
         logger.debug(f"HfFileInfo.save(file_path={file_path})")
         with open(file_path, "w") as f:
             f.write(self.model_dump_json(indent=2, by_alias=True))

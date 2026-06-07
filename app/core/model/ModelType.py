@@ -1,8 +1,9 @@
 from enum import Enum
 
-MODELTYPE_RKLLM: str ="RKLLM"
-MODELTYPE_RKNN: str ="RKNN"
-MODELTYPE_GGUF: str ="GGUF"
+MODELTYPE_RKLLM: str = "RKLLM"
+MODELTYPE_RKNN: str = "RKNN"
+MODELTYPE_GGUF: str = "GGUF"
+
 
 class ModelType(str, Enum):
     RKLLM = MODELTYPE_RKLLM
@@ -24,11 +25,8 @@ class ModelType(str, Enum):
                 return mtype
         return None
 
-FILE_TYPE = {
-    MODELTYPE_RKLLM: 15,
-    MODELTYPE_RKNN: -1,
-    MODELTYPE_GGUF: -1
-}
+
+FILE_TYPE = {MODELTYPE_RKLLM: 15, MODELTYPE_RKNN: -1, MODELTYPE_GGUF: -1}
 
 # validation process
 for model_type in ModelType:
@@ -36,5 +34,6 @@ for model_type in ModelType:
 
 for model_type in FILE_TYPE:
     assert ModelType(model_type) is not None, f"Missing {model_type} in ModelType"
-    assert ModelType(model_type).get_extension() is not None, f"Missing {model_type} extension in ModelType"
-
+    assert (
+        ModelType(model_type).get_extension() is not None
+    ), f"Missing {model_type} extension in ModelType"

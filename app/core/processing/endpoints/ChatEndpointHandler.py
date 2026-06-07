@@ -1,8 +1,9 @@
 import datetime
 import json
-import threading
 import time
 from typing import List, Union, Dict
+
+from starlette.responses import JSONResponse, StreamingResponse
 
 import core.config.config_utils
 import core.model
@@ -11,11 +12,12 @@ from core.model.ModelConfig import FullModelParameters
 from core.model.ModelFile import ModelFile
 from core.processing import APIHandler
 from core.processing.workers.Worker import Worker
-from core.processing.WorkerManager import get_worker_manager, WorkerManager
 from core.processing.endpoints.EndpointHandler import EndpointHandler
-from core.processing.format_spec.formatting import create_format_instruction, validate_format_response
+from core.processing.format_spec.formatting import (
+    create_format_instruction,
+    validate_format_response,
+)
 from core.processing.tools.tools_utils import get_tool_calls
-from src import variables as variables
 from core.processing.endpoints import logger
 
 
@@ -51,7 +53,9 @@ class ChatEndpointHandler(EndpointHandler):
                     {
                         "total_duration": metrics["total"],
                         "load_duration": metrics["load"],
-                        "prompt_eval_count": core.config.config_utils.get("prompt_tokens", 0),
+                        "prompt_eval_count": core.config.config_utils.get(
+                            "prompt_tokens", 0
+                        ),
                         "prompt_eval_duration": metrics["prompt_eval"],
                         "eval_count": core.config.config_utils.get("token_count", 0),
                         "eval_duration": metrics["eval"],
@@ -61,20 +65,26 @@ class ChatEndpointHandler(EndpointHandler):
         return chunk
 
     @staticmethod
-    def format_complete_response(model_name, complete_text, metrics : dict, format_data=None):
+    def format_complete_response(
+        model_name, complete_text, metrics: dict, format_data=None
+    ):
         """Format a complete non-streaming response for chat endpoint"""
         response = {
             "model": model_name,
             "created_at": datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "message": {
                 "role": "assistant",
-                "content": complete_text
-                if not (format_data and "cleaned_json" in format_data)
-                else format_data["cleaned_json"],
+                "content": (
+                    complete_text
+                    if not (format_data and "cleaned_json" in format_data)
+                    else format_data["cleaned_json"]
+                ),
             },
-            "done_reason": "stop"
-            if not (format_data and "tool_call" in format_data)
-            else "tool_calls",
+            "done_reason": (
+                "stop"
+                if not (format_data and "tool_call" in format_data)
+                else "tool_calls"
+            ),
             "done": True,
             "total_duration": metrics["total"],
             "load_duration": metrics["load"],
@@ -91,18 +101,18 @@ class ChatEndpointHandler(EndpointHandler):
 
     @classmethod
     def handle_request(
-            cls,
-            model_worker: Worker,
-            api_handler: APIHandler,
-            modelfile: ModelFile,
-            messages: List[Message],
-            system: str,
-            stream: bool,
-            options: FullModelParameters,
-            enable_thinking: bool = False,
-            tools=None,
-            images=None,
-            format_spec=None,
+        cls,
+        model_worker: Worker,
+        api_handler: APIHandler,
+        modelfile: ModelFile,
+        messages: List[Message],
+        system: str,
+        stream: bool,
+        options: FullModelParameters,
+        enable_thinking: bool = False,
+        tools=None,
+        images=None,
+        format_spec=None,
     ):
         """Process a chat request with proper format handling"""
 
@@ -112,9 +122,7 @@ class ChatEndpointHandler(EndpointHandler):
             system = modelfile.SYSTEM
 
         if cls.DEBUG_MODE:
-            logger.debug(
-                f"ChatEndpointHandler: processing request for {model_id}"
-            )
+            logger.debug(f"ChatEndpointHandler: processing request for {model_id}")
             logger.debug(f"Format spec: {format_spec}")
 
         try:
@@ -139,205 +147,195 @@ class ChatEndpointHandler(EndpointHandler):
                     messages=messages,
                     system=system,
                     tools=tools,
-                    enable_thinking=enable_thinking
+                    enable_thinking=enable_thinking,
                 )
 
             else:
                 if cls.DEBUG_MODE:
-                    logger.debug(f"Multimodal request detected. Skipping tokenization.")
+                    logger.debug("Multimodal request detected. Skipping tokenization.")
 
                 for message in messages:
                     if "images" in message:
                         message.pop(
-                            "images")  # Remove images from messages to avoid context length reach with base64 images
+                            "images"
+                        )  # Remove images from messages to avoid context length reach with base64 images
                 prompt_tokens = f"<image>{str(messages)}"
                 prompt_token_count = 0
 
             # Ollama request handling
             if stream:
-                ollama_chunk = cls.handle_streaming(modelfile, prompt_tokens,
-                                                    prompt_token_count, format_spec, tools, enable_thinking, images)
-                # Use unified handler
-                result = api_handler.format_stream_chunk(ollama_chunk)
-
-                # Return Ollama streaming response
-                return api_handler.format_stream_response(stream_with_context(result), mimetype="text/event-stream")
+                return cls.handle_streaming(
+                    model_worker=model_worker,
+                    api_handler=api_handler,
+                    model_id=model_id,
+                    prompt_tokens=prompt_tokens,
+                    prompt_token_count=prompt_token_count,
+                    enable_thinking=enable_thinking,
+                    format_spec=format_spec,
+                    tools=tools,
+                    images=images,
+                )
             else:
-                ollama_response, code = cls.handle_complete(model_name, prompt_tokens,
-                                                            prompt_token_count, format_spec, tools, enable_thinking,
-                                                            images)
-
-                # Convert Ollama response to OpenAI format
-                ollama_response = api_handler.handle_response(ollama_response, stream=stream, is_chat=True)
-
-                # Return Ollama response
-                return ollama_response, code
-
+                return cls.handle_complete(
+                    model_worker=model_worker,
+                    api_handler=api_handler,
+                    model_id=model_id,
+                    prompt_tokens=prompt_tokens,
+                    prompt_token_count=prompt_token_count,
+                    enable_thinking=enable_thinking,
+                    format_spec=format_spec,
+                    tools=tools,
+                    images=images,
+                )
+        except Exception as e:
+            logger.error(f"Error in handle_request: {e}", exc_info=True)
+            raise e
 
     @classmethod
     def handle_streaming(
         cls,
-        modele_rkllm,
-        model_name,
-        prompt_tokens,
-        prompt_token_count,
+        model_worker: Worker,
+        api_handler: APIHandler,
+        model_id: str,
+        prompt_tokens: Union[list[int], Dict],
+        prompt_token_count: int,
+        enable_thinking: bool,
         format_spec,
-        tools,
-        enable_thinking,
+        tools=None,
+        images=None,
     ):
         """Handle streaming chat response"""
 
         def generate():
-            thread_model = threading.Thread(
-                target=modele_rkllm.run, args=(prompt_tokens,)
-            )
-            thread_model.start()
-
-            count = 0
             start_time = time.time()
             prompt_eval_time = None
             complete_text = ""
-            final_sent = False
-
+            count = 0
             thread_finished = False
 
+            from core.processing.WorkerManager import get_worker_manager, WorkerManager
+
+            worker_manager: WorkerManager = get_worker_manager(
+                model_worker.backend_type
+            )
+
+            # Check if multimodal or text only
+            if not images:
+                worker_manager.inference(model_id=model_id, prompt_tokens=prompt_tokens)
+            else:
+                worker_manager.multimodal(
+                    model_id=model_id, prompt_tokens=prompt_tokens, images=images
+                )
+                worker_manager.clear_cache_worker(model_id=model_id)
+
+            result_q = worker_manager.get_result(model_id=model_id)
+            finished_inference_token = worker_manager.get_finished_inference_token()
+
             # Tool calls detection
-            max_token_to_wait_for_tool_call = (
-                100 if tools else 1
-            )  # Max tokens to wait for tool call definition
+            max_token_to_wait_for_tool_call = 100 if tools else 1
             tool_calls = False
             first_tokens = []
             thinking = enable_thinking
             final_response_tokens = []
 
-            while not thread_finished or not final_sent:
-                tokens_processed = False
+            while not thread_finished:
+                token = result_q.get(timeout=300)
+                if token == finished_inference_token:
+                    thread_finished = True
+                    continue
 
-                while len(GLOBAL_STATE.global_text) > 0:
-                    tokens_processed = True
-                    count += 1
-                    token = variables.global_text.pop(0)
+                count += 1
+                if count == 1:
+                    prompt_eval_time = time.time()
+                    if thinking and "<think>" not in token.lower():
+                        token = "<think>" + token
+                else:
+                    if thinking and "</think>" in token.lower():
+                        thinking = False
 
-                    if count == 1:
-                        prompt_eval_time = time.time()
+                complete_text += token
+                first_tokens.append(token)
 
-                        if thinking and "<think>" not in token.lower():
-                            token = (
-                                "<think>" + token
-                            )  # Ensure correct initial format token <think>
-                    else:
-                        if thinking and "</think>" in token.lower():
-                            thinking = False
+                if not thinking and token != "</think>":
+                    final_response_tokens.append(token)
 
-                    complete_text += token
-                    first_tokens.append(token)
-
-                    if not thinking and token != "</think>":
-                        final_response_tokens.append(token)
-
-                    if not tool_calls:
-                        if len(final_response_tokens) > max_token_to_wait_for_tool_call:
-                            if variables.global_status != 1:
-                                chunk = cls.format_streaming_chunk(
-                                    model_name=model_name, token=token
-                                )
-                                yield f"{json.dumps(chunk)}\n"
-                            else:
-                                pass
-                        elif (
-                            len(final_response_tokens)
-                            == max_token_to_wait_for_tool_call
-                        ):
-                            if variables.global_status != 1:
-                                for temp_token in first_tokens:
-                                    time.sleep(
-                                        0.1
-                                    )  # Simulate delay to stream previos tokens
-                                    chunk = cls.format_streaming_chunk(
-                                        model_name=model_name, token=temp_token
-                                    )
-                                    yield f"{json.dumps(chunk)}\n"
-                            else:
-                                pass
-                        elif (
-                            len(final_response_tokens) < max_token_to_wait_for_tool_call
-                        ):
-                            if variables.global_status != 1:
-                                # Check if tool call founded in th first tokens in the response
-                                tool_calls = "<tool_call>" in token
-                            else:
-                                pass
-
-                thread_model.join(timeout=0.005)
-                thread_finished = not thread_model.is_alive()
-
-                if thread_finished and not final_sent:
-                    final_sent = True
-
-                    if tool_calls:
-                        chunk_tool_call = cls.format_streaming_chunk(
-                            model_name=model_name,
-                            token=get_tool_calls(complete_text),
-                            tool_calls=tool_calls,
+                if not tool_calls:
+                    if len(final_response_tokens) > max_token_to_wait_for_tool_call:
+                        chunk = cls.format_streaming_chunk(
+                            model_name=model_id, token=token
                         )
-                        yield f"{json.dumps(chunk_tool_call)}\n"
-                    elif count < max_token_to_wait_for_tool_call:
+                        yield (json.dumps(chunk) + "\n").encode("utf-8")
+                    elif len(final_response_tokens) == max_token_to_wait_for_tool_call:
                         for temp_token in first_tokens:
-                            time.sleep(0.1)  # Simulate delay to stream previos tokens
                             chunk = cls.format_streaming_chunk(
-                                model_name=model_name,
-                                token=temp_token,
-                                tool_calls=tool_calls,
+                                model_name=model_id, token=temp_token
                             )
-                            yield f"{json.dumps(chunk)}\n"
+                            yield (json.dumps(chunk) + "\n").encode("utf-8")
+                    elif len(final_response_tokens) < max_token_to_wait_for_tool_call:
+                        tool_calls = "<tool_call>" in token
 
-                    metrics = cls.calculate_durations(start_time, prompt_eval_time)
-                    metrics["prompt_tokens"] = prompt_token_count
-                    metrics["token_count"] = count
-
-                    format_data = None
-                    if format_spec and complete_text:
-                        success, parsed_data, error, cleaned_json = (
-                            validate_format_response(complete_text, format_spec)
-                        )
-                        if success and parsed_data:
-                            format_type = (
-                                format_spec.get("type", "")
-                                if isinstance(format_spec, dict)
-                                else "json"
-                            )
-                            format_data = {
-                                "format_type": format_type,
-                                "parsed": parsed_data,
-                                "cleaned_json": cleaned_json,
-                            }
-                    final_chunk = cls.format_streaming_chunk(
-                        model_name=model_name,
-                        token="",
-                        is_final=True,
-                        metrics=metrics,
-                        format_data=format_data,
+            # Send final response/metrics
+            if tool_calls:
+                chunk_tool_call = cls.format_streaming_chunk(
+                    model_name=model_id,
+                    token=get_tool_calls(complete_text),
+                    tool_calls=tool_calls,
+                )
+                yield (json.dumps(chunk_tool_call) + "\n").encode("utf-8")
+            elif count < max_token_to_wait_for_tool_call:
+                for temp_token in first_tokens:
+                    chunk = cls.format_streaming_chunk(
+                        model_name=model_id,
+                        token=temp_token,
                         tool_calls=tool_calls,
                     )
-                    yield f"{json.dumps(final_chunk)}\n"
+                    yield (json.dumps(chunk) + "\n").encode("utf-8")
 
-                if not tokens_processed:
-                    time.sleep(0.01)
+            metrics = cls.calculate_durations(start_time, prompt_eval_time)
+            metrics["prompt_tokens"] = prompt_token_count
+            metrics["token_count"] = count
 
-        return Response(generate(), content_type="application/x-ndjson")
+            format_data = None
+            if format_spec and complete_text:
+                success, parsed_data, error, cleaned_json = validate_format_response(
+                    complete_text, format_spec
+                )
+                if success and parsed_data:
+                    format_type = (
+                        format_spec.get("type", "")
+                        if isinstance(format_spec, dict)
+                        else "json"
+                    )
+                    format_data = {
+                        "format_type": format_type,
+                        "parsed": parsed_data,
+                        "cleaned_json": cleaned_json,
+                    }
+
+            final_chunk = cls.format_streaming_chunk(
+                model_name=model_id,
+                token="",
+                is_final=True,
+                metrics=metrics,
+                format_data=format_data,
+                tool_calls=tool_calls,
+            )
+            yield (json.dumps(final_chunk) + "\n").encode("utf-8")
+
+        return StreamingResponse(generate(), media_type="application/x-ndjson")
 
     @classmethod
     def handle_complete(
-            cls,
-            model_worker: Worker,
-            api_handler: APIHandler,
-            model_id: str,
-            prompt_tokens: Union[list[int], Dict],
-            prompt_token_count: int,
-            enable_thinking: bool,
-            format_spec,
-            tools = None,
-            images = None
+        cls,
+        model_worker: Worker,
+        api_handler: APIHandler,
+        model_id: str,
+        prompt_tokens: Union[list[int], Dict],
+        prompt_token_count: int,
+        enable_thinking: bool,
+        format_spec,
+        tools=None,
+        images=None,
     ):
         """Handle complete non-streaming chat response"""
         start_time = time.time()
@@ -347,20 +345,19 @@ class ChatEndpointHandler(EndpointHandler):
         count = 0
         complete_text = ""
 
+        from core.processing.WorkerManager import get_worker_manager, WorkerManager
+
         worker_manager: WorkerManager = get_worker_manager(model_worker.backend_type)
 
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            worker_manager.inference(
-                model_id=model_id,
-                prompt_tokens=prompt_tokens)
+            worker_manager.inference(model_id=model_id, prompt_tokens=prompt_tokens)
         else:
             # Send the task of multimodal inference to the model
             worker_manager.multimodal(
-                model_id=model_id,
-                prompt_tokens=prompt_tokens,
-                images=images)
+                model_id=model_id, prompt_tokens=prompt_tokens, images=images
+            )
             # Clear the cache to prevent image embedding problems
             worker_manager.clear_cache_worker(model_id=model_id)
 
@@ -390,16 +387,19 @@ class ChatEndpointHandler(EndpointHandler):
         format_data = None
         tool_calls = get_tool_calls(complete_text) if tools else None
         if format_spec and complete_text and not tool_calls:
-            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
+            success, parsed_data, error, cleaned_json = validate_format_response(
+                complete_text, format_spec
+            )
             if success and parsed_data:
                 format_type = (
-                    format_spec.get("type", "") if isinstance(format_spec, dict)
+                    format_spec.get("type", "")
+                    if isinstance(format_spec, dict)
                     else "json"
                 )
                 format_data = {
                     "format_type": format_type,
                     "parsed": parsed_data,
-                    "cleaned_json": cleaned_json
+                    "cleaned_json": cleaned_json,
                 }
 
         if tool_calls:
@@ -407,80 +407,10 @@ class ChatEndpointHandler(EndpointHandler):
                 "format_type": "json",
                 "parsed": "",
                 "cleaned_json": "",
-                "tool_call": tool_calls
+                "tool_call": tool_calls,
             }
 
-        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
-        return jsonify(response), 200
-
-    @classmethod
-    def handle_complete(cls, model_name, prompt_tokens, prompt_token_count, format_spec, tools, enable_thinking,
-                        images=None):
-        """Handle complete non-streaming chat response"""
-
-        start_time = time.time()
-        prompt_eval_time = None
-        thread_finished = False
-
-        count = 0
-        complete_text = ""
-
-        # Check if multimodal or text only
-        if not images:
-            # Send the task of inference to the model
-            variables.worker_manager_rkllm.inference(model_name, prompt_tokens)
-        else:
-            # Send the task of multimodal inference to the model
-            variables.worker_manager_rkllm.multimodal(model_name, prompt_tokens, images)
-            # Clear the cache to prevent image embedding problems
-            variables.worker_manager_rkllm.clear_cache_worker(model_name)
-
-        # Wait for result queue
-        result_q = variables.worker_manager_rkllm.get_result(model_name)
-        finished_inference_token = variables.worker_manager_rkllm.get_finished_inference_token()
-
-        while not thread_finished:
-            token = result_q.get(timeout=300)  # Block until receive any token
-            if token == finished_inference_token:
-                thread_finished = True
-                continue
-
-            count += 1
-            if count == 1:
-                prompt_eval_time = time.time()
-
-                if enable_thinking and "<think>" not in token.lower():
-                    token = "<think>" + token  # Ensure correct initial format
-
-            complete_text += token
-
-        metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        metrics["prompt_tokens"] = prompt_token_count
-        metrics["token_count"] = count
-
-        format_data = None
-        tool_calls = get_tool_calls(complete_text) if tools else None
-        if format_spec and complete_text and not tool_calls:
-            success, parsed_data, error, cleaned_json = validate_format_response(complete_text, format_spec)
-            if success and parsed_data:
-                format_type = (
-                    format_spec.get("type", "") if isinstance(format_spec, dict)
-                    else "json"
-                )
-                format_data = {
-                    "format_type": format_type,
-                    "parsed": parsed_data,
-                    "cleaned_json": cleaned_json
-                }
-
-        if tool_calls:
-            format_data = {
-                "format_type": "json",
-                "parsed": "",
-                "cleaned_json": "",
-                "tool_call": tool_calls
-            }
-
-        response = cls.format_complete_response(model_name, complete_text, metrics, format_data)
-        return jsonify(response), 200
-
+        response = cls.format_complete_response(
+            model_id, complete_text, metrics, format_data
+        )
+        return JSONResponse(content=response, status_code=200)

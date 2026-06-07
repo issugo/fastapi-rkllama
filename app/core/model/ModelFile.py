@@ -8,13 +8,23 @@ from core.config import config_utils
 from core.config.config_utils import get_settings
 from core.config.warnings import deprecated
 from core.model.Model import Model
-from core.model.ModelConfig import ModelConfig, ModelParameters, FullModelParameters, MinimalTemperedModelConfig, \
-    ModelConfigException
+from core.model.ModelConfig import (
+    ModelConfig,
+    ModelParameters,
+    FullModelParameters,
+    MinimalTemperedModelConfig,
+    ModelConfigException,
+)
 from core.model.ModelFileInfo import ModelFileInfo
 from core.model.models_constants import validate_from, DEFAULT_SYSTEM
 from core.model.suppliers_model_info import OllamaModelInfo, HFModelInfo
-from core.model.ModelMetadata import SimpleModelMetadata, ModelMetadataFormat, ModelMetadata, \
-    ModelMetadataNotFoundException, BasicModelMetadata
+from core.model.ModelMetadata import (
+    SimpleModelMetadata,
+    ModelMetadataFormat,
+    ModelMetadata,
+    ModelMetadataNotFoundException,
+    BasicModelMetadata,
+)
 from core.model.ModelLicense import ModelLicense
 from core.model.ModelPath import ModelPath, ModelNotFoundException, ModelException
 from core.config.DefaultModelConfig import DefaultConfig
@@ -46,19 +56,29 @@ top_p 	Works together with top-k. A higher value (e.g., 0.95) will lead to more 
 min_p 	Alternative to the top_p, and aims to ensure a balance of quality and variety. The parameter p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out. (Default: 0.0) 	float 	min_p 0.05
 """
 
+
 class ModelFileException(Exception):
     pass
 
+
 class MinimalModelFileContent(BaseModel):
-    FROM: str = Field(description="Defines the base model to use, can be path to the model file or docker image format (<name>:<tag>).")
+    FROM: str = Field(
+        description="Defines the base model to use, can be path to the model file or docker image format (<name>:<tag>)."
+    )
 
     _model: Model | None = None
 
     @property
     def model(self) -> Model:
         if self._model is None:
-            self._model = Model.from_model_path(ModelPath.from_model_id(validate_from(self.FROM)))
+            self._model = Model.from_model_path(
+                ModelPath.from_model_id(validate_from(self.FROM))
+            )
         return self._model
+
+    @property
+    def model_id(self) -> str:
+        return self.model.model_path.model_id
 
     @property
     def model_name(self) -> str:
@@ -67,20 +87,37 @@ class MinimalModelFileContent(BaseModel):
 
 class ModelFileContent(MinimalModelFileContent):
     Instruction: Optional[str] = Field(default=None, description="Description")
-    SYSTEM: Optional[str] = Field(default=None, description="Specifies the system message that will be set in the template.")
-    TEMPLATE: Optional[str] = Field(default=None, description="The full prompt template to be sent to the model.")
-    ADAPTER: Optional[str] = Field(default=None, description="Defines the (Q)LoRA adapters to apply to the model.")
-    LICENSE: Optional[str] = Field(default=None, description="Specifies the legal license.")
+    SYSTEM: Optional[str] = Field(
+        default=None,
+        description="Specifies the system message that will be set in the template.",
+    )
+    TEMPLATE: Optional[str] = Field(
+        default=None, description="The full prompt template to be sent to the model."
+    )
+    ADAPTER: Optional[str] = Field(
+        default=None, description="Defines the (Q)LoRA adapters to apply to the model."
+    )
+    LICENSE: Optional[str] = Field(
+        default=None, description="Specifies the legal license."
+    )
     MESSAGE: Optional[str] = Field(default=None, description="Specify message history.")
 
     # PARAMETER: Sets the parameters for how Ollama will run the model.
-    PARAMETERS: Optional[ModelParameters] = Field(default=None, description="Sets the parameters for how Ollama will run the model.")
+    PARAMETERS: Optional[ModelParameters] = Field(
+        default=None,
+        description="Sets the parameters for how Ollama will run the model.",
+    )
+
 
 class ModelFile(ModelFileContent):
     model_file_info: ModelFileInfo
 
-    endpoint_model_config: Optional[ModelConfig] = Field(default=None, description="Model configuration")
-    volatile_endpoint_model_config: Optional[bool] = Field(default=False, description="Whether the model config is volatile (saved or not)")
+    endpoint_model_config: Optional[ModelConfig] = Field(
+        default=None, description="Model configuration"
+    )
+    volatile_endpoint_model_config: Optional[bool] = Field(
+        default=False, description="Whether the model config is volatile (saved or not)"
+    )
 
     _request_options: dict = None
     _options: dict = None
@@ -99,7 +136,8 @@ class ModelFile(ModelFileContent):
                 return self._licence
             self._licence = ModelLicense.from_modelfile_license(
                 license_text=self.LICENSE,
-                supplier_model_file_info=supplier_model_file_info)
+                supplier_model_file_info=supplier_model_file_info,
+            )
         if supplier_model_file_info:
             if supplier_model_file_info.license:
                 self._licence = supplier_model_file_info.license
@@ -115,8 +153,10 @@ class ModelFile(ModelFileContent):
         elif self.model.model_metadata.description:
             model_description = self.model.model_metadata.description
         if model_description:
-            desc_lines = model_description.split('\n')
-            desc_comment = '\n'.join([f"{line}" for line in desc_lines[:5]])  # First 5 lines only
+            desc_lines = model_description.split("\n")
+            desc_comment = "\n".join(
+                [f"{line}" for line in desc_lines[:5]]
+            )  # First 5 lines only
             return desc_comment
         return ""
 
@@ -124,9 +164,10 @@ class ModelFile(ModelFileContent):
     def simple_model_metadata(self) -> SimpleModelMetadata:
         try:
             if self.model is not None:
-                if self.model.get_metadata_format is not None \
-                        and ( self.model.get_metadata_format() == ModelMetadataFormat.SIMPLE
-                        or self.model.get_metadata_format() == ModelMetadataFormat.COMPLETE):
+                if self.model.get_metadata_format is not None and (
+                    self.model.get_metadata_format() == ModelMetadataFormat.SIMPLE
+                    or self.model.get_metadata_format() == ModelMetadataFormat.COMPLETE
+                ):
                     return self.model.model_metadata
         except ModelNotFoundException as e:
             logger.warning(str(e), exc_info=True)
@@ -134,7 +175,9 @@ class ModelFile(ModelFileContent):
         raise ModelMetadataNotFoundException(self.model_name)
 
     @property
-    def model_metadata(self) -> None|BasicModelMetadata|SimpleModelMetadata|ModelMetadata:
+    def model_metadata(
+        self,
+    ) -> None | BasicModelMetadata | SimpleModelMetadata | ModelMetadata:
         if self.model is not None:
             return self.model.model_metadata
         logger.warning(f"Model metadata is not available for model {self.model_name}")
@@ -167,9 +210,13 @@ class ModelFile(ModelFileContent):
         return param_values
 
     @classmethod
-    def create(cls, model_file_info: ModelFileInfo, default_model_config: DefaultConfig,
-               model: Model,
-               model_license: ModelLicense):
+    def create(
+        cls,
+        model_file_info: ModelFileInfo,
+        default_model_config: DefaultConfig,
+        model: Model,
+        model_license: ModelLicense,
+    ):
         """
         sample arg values
         model_file_info = {"model_name": "Qwen3-1.7B-rk3588-1.2.1-unsloth-16k", "model_type": "RKLLM",
@@ -179,17 +226,21 @@ class ModelFile(ModelFileContent):
                                    "ollama_path": null, "system_prompt": ""}
         """
         try:
-            logger.debug(f"Creating ModelFile: {model_file_info.model_name}/{model_file_info.endpoint_model_file}")
+            logger.debug(
+                f"Creating ModelFile: {model_file_info.model_name}/{model_file_info.endpoint_model_file}"
+            )
 
             if model_file_info.model_type is None:
                 error_msg = "model_file_info.model_type is None"
                 logger.error(f"Creating ModelFile: {error_msg}")
                 raise ModelFileException(error_msg)
 
-            model_metadata: ModelMetadata | SimpleModelMetadata | None = model.model_metadata
+            model_metadata: ModelMetadata | SimpleModelMetadata | None = (
+                model.model_metadata
+            )
             logger.debug(f"Creating ModelFile: model_metadata={model_metadata}")
             if model_metadata is None:
-                logger.warning(f"Creating ModelFile: model_metadata is None")
+                logger.warning("Creating ModelFile: model_metadata is None")
 
             config_data = {}
             model_file_info_dump = model_file_info.model_dump()
@@ -197,7 +248,8 @@ class ModelFile(ModelFileContent):
                 match attr:
                     case "endpoint_model_file":
                         config_data["FROM"] = validate_from(
-                            f"{model_file_info.model_name}/{model_file_info_dump[attr]}")
+                            f"{model_file_info.model_name}/{model_file_info_dump[attr]}"
+                        )
                     case "huggingface_path":
                         config_data["HUGGINGFACE_PATH"] = model_file_info_dump[attr]
                     case "ollama_path":
@@ -214,48 +266,49 @@ class ModelFile(ModelFileContent):
             endpoint_model_config = None
             if model_file_info.modelfile_match:
                 # ModelFile exists and matches
-                endpoint_model_config_dump = ModelConfig.load(model_file_info=model_file_info,
-                                                              modelfile_parameters=ModelParameters())
-                mf_data={
-                    'endpoint_model_config': endpoint_model_config_dump
-                }
+                endpoint_model_config_dump = ModelConfig.load(
+                    model_file_info=model_file_info,
+                    modelfile_parameters=ModelParameters(),
+                )
+                mf_data = {"endpoint_model_config": endpoint_model_config_dump}
                 mf_data.update(model_file_info.model_dump())
-                logger.debug(f"Using existing ModelFile: {mf_data['endpoint_model_file']}")
+                logger.debug(
+                    f"Using existing ModelFile: {mf_data['endpoint_model_file']}"
+                )
                 return ModelFile.load(model_path=model_file_info)
 
             if not model_file_info.system_prompt:
                 model_file_info.system_prompt = DEFAULT_SYSTEM
-                logger.debug(f"Using default system prompt: {model_file_info.system_prompt}")
+                logger.debug(
+                    f"Using default system prompt: {model_file_info.system_prompt}"
+                )
 
-            mf_data={}
+            mf_data = {}
             if model_file_info.modelfile_exists:
                 # ModelFile is existing but not matching
-                mf_data.update({
-                    'volatile_endpoint_model_config': True
-                })
+                mf_data.update({"volatile_endpoint_model_config": True})
                 logger.debug(f"ModelFile is existing but not matching: set {mf_data}")
 
             if model_metadata is None:
                 endpoint_model_config = ModelConfig(**config_data)
-                mf_data.update({
-                    'endpoint_model_config': endpoint_model_config
-                })
+                mf_data.update({"endpoint_model_config": endpoint_model_config})
                 try:
                     model_metadata = model_file_info.simple_model_metadata
-                    mf_data.update({
-                        'model_metadata': model_metadata
-                    })
+                    mf_data.update({"model_metadata": model_metadata})
                 except Exception as e:
                     logger.error(f"Error computing model metadata: {e}", exc_info=True)
             else:
                 endpoint_model_config = ModelConfig.create(
-                        model_path=model_file_info,
-                        model_metadata=model_metadata,
-                        default_model_config=default_model_config)
-                mf_data.update({
-                    'endpoint_model_config': endpoint_model_config,
-                    'model_metadata': model_metadata
-                })
+                    model_path=model_file_info,
+                    model_metadata=model_metadata,
+                    default_model_config=default_model_config,
+                )
+                mf_data.update(
+                    {
+                        "endpoint_model_config": endpoint_model_config,
+                        "model_metadata": model_metadata,
+                    }
+                )
 
             logger.debug(f"computed mf_data={mf_data}")
             """
@@ -273,8 +326,12 @@ class ModelFile(ModelFileContent):
                                                              system_prompt='Tu es un assistant artificiel.',
                                                              temperature=0.7, model_type= < ModelType.RKLLM: 'RKLLM' >)}
             """
-            mf_data.update({'FROM': validate_from(model_file_info.model_id),
-                            'model_file_info': model_file_info_dump})
+            mf_data.update(
+                {
+                    "FROM": validate_from(model_file_info.model_id),
+                    "model_file_info": model_file_info_dump,
+                }
+            )
             if endpoint_model_config:
                 config_data.update(endpoint_model_config.model_dump())
             for attr in config_data:
@@ -354,11 +411,15 @@ class ModelFile(ModelFileContent):
         """Get a specific property from the Modelfile of a model."""
         modelfile_path: Path = ModelPath.__modelfile_path(model_name)
         if not modelfile_path.exists():
-            error_msg = f"Modelfile not found for model '{model_name}': {modelfile_path}"
+            error_msg = (
+                f"Modelfile not found for model '{model_name}': {modelfile_path}"
+            )
             logger.error(error_msg)
             raise FileNotFoundError(OSError(error_msg))
 
-        modelfile: ModelFile = ModelFile.load(model_path=ModelPath(model_name=model_name))
+        modelfile: ModelFile = ModelFile.load(
+            model_path=ModelPath(model_name=model_name)
+        )
         modelfile_dict = modelfile.model_dump()
 
         # Retrieve the value of the property
@@ -383,7 +444,6 @@ class ModelFile(ModelFileContent):
         cls.clean_config(model_path)
         Model.clean(model_path)
 
-
     @classmethod
     def _load_modelfile(cls, model_path: ModelPath) -> Any:
         logger.debug(f"ModelFile._load_modelfile(model_path={model_path})")
@@ -391,8 +451,17 @@ class ModelFile(ModelFileContent):
         modelfile_path: Path = model_file_info.modelfile_path
         logger.debug(f"ModelFile._load_modelfile(): modelfile_path={modelfile_path}")
 
-        field_names = ['Instruction', 'FROM', 'TEMPLATE', '# HUGGINGFACE_PATH', '# OLLAMA_PATH', 'SYSTEM',
-                               'ADAPTER', 'LICENSE', 'MESSAGE']
+        field_names = [
+            "Instruction",
+            "FROM",
+            "TEMPLATE",
+            "# HUGGINGFACE_PATH",
+            "# OLLAMA_PATH",
+            "SYSTEM",
+            "ADAPTER",
+            "LICENSE",
+            "MESSAGE",
+        ]
         field_pos = 0
 
         mf_data = {}
@@ -401,7 +470,7 @@ class ModelFile(ModelFileContent):
             while line := f.readline():
                 while True:
                     field_name = field_names[field_pos]
-                    if field_name == 'Instruction' and line.startswith("# "):
+                    if field_name == "Instruction" and line.startswith("# "):
                         instruction = line[2:] + "\n"
                         while True:
                             line = f.readline()
@@ -410,11 +479,13 @@ class ModelFile(ModelFileContent):
                             else:
                                 break
                         if len(instruction) > 0:
-                            mf_data['Instruction'] = instruction
-                            field_pos+=1
+                            mf_data["Instruction"] = instruction
+                            field_pos += 1
                             break
-                    elif line.startswith(field_name + " ") or line.startswith(field_name + "="):
-                        value = line[len(field_name) + 1:].strip()
+                    elif line.startswith(field_name + " ") or line.startswith(
+                        field_name + "="
+                    ):
+                        value = line[len(field_name) + 1 :].strip()
                         if value is not None and value != "":
                             if field_name.startswith("# "):
                                 field_name = field_name[2:]
@@ -425,29 +496,32 @@ class ModelFile(ModelFileContent):
                                 if value.startswith('"') and value.endswith('"'):
                                     value = value[1:-1]
                             mf_data[field_name] = value
-                            field_pos+=1
+                            field_pos += 1
                             break
                     elif line.startswith("PARAMETER "):
-                        key, value = line[len("PARAMETER "):].strip().split(" ", 1)
+                        key, value = line[len("PARAMETER ") :].strip().split(" ", 1)
                         params_data[key] = value
                         break
                     elif line == "":
                         # empty line, continue
                         break
                     else:
-                        field_pos+=1
+                        field_pos += 1
                 if field_pos >= len(field_names):
                     break
 
         logger.debug(f"ModelFile._load_modelfile(): mf_data={mf_data}")
         logger.debug(f"ModelFile._load_modelfile(): params_data={params_data}")
 
-        if model_file_info.validate_FROM_with_endpoint_file(FROM=mf_data['FROM']):
+        if model_file_info.validate_FROM_with_endpoint_file(FROM=mf_data["FROM"]):
             raise ModelFileException(
-                f"Model mismatch: {mf_data['FROM']} != ({model_file_info.model_name}[:/]){model_file_info.endpoint_model_file}")
+                f"Model mismatch: {mf_data['FROM']} != ({model_file_info.model_name}[:/]){model_file_info.endpoint_model_file}"
+            )
 
         mf_data.update(params_data)
-        minimal_endpoint_model_config: MinimalTemperedModelConfig = MinimalTemperedModelConfig(**mf_data)
+        minimal_endpoint_model_config: MinimalTemperedModelConfig = (
+            MinimalTemperedModelConfig(**mf_data)
+        )
         endpoint_model_config_data = minimal_endpoint_model_config.model_dump()
         # do update twice to override default_model_config values with values from Modelfile
         endpoint_model_config_data.update(params_data)
@@ -457,19 +531,21 @@ class ModelFile(ModelFileContent):
             if key is not None and key != "" and key not in endpoint_model_config_data:
                 endpoint_model_config_data[key] = value
 
-        mf_data.update({ 'model_file_info': model_file_info.model_dump() })
+        mf_data.update({"model_file_info": model_file_info.model_dump()})
         modelfile = ModelFile(**mf_data)
         modelfile.PARAMETERS = ModelParameters(**params_data)
         modelfile.endpoint_model_config = ModelConfig(**endpoint_model_config_data)
         return modelfile
 
-
     def load_config(self) -> Any:
-        logger.debug(f"ModelFile.load_config()")
+        logger.debug("ModelFile.load_config()")
         try:
             # config is a merge of Modelfile parameters and overriden default_model_config values
             # but save is only non Modelfile parameters values, so have to pass a Modelfile when saving
-            model_config: ModelConfig = ModelConfig.load(model_file_info=self.model_file_info, modelfile_parameters=self.PARAMETERS)
+            model_config: ModelConfig = ModelConfig.load(
+                model_file_info=self.model_file_info,
+                modelfile_parameters=self.PARAMETERS,
+            )
             return model_config
         except ModelConfigException as e:
             error_msg = f"Error loading model config: {str(e)}"
@@ -477,7 +553,7 @@ class ModelFile(ModelFileContent):
             raise ModelFileException(error_msg) from e
 
     @classmethod
-    def load(cls, model_path: ModelPath, model:Model = None) -> Any:
+    def load(cls, model_path: ModelPath, model: Model = None) -> Any:
         logger.debug(f"ModelFile.load(model_path={model_path})")
         try:
             if model is None:
@@ -496,7 +572,7 @@ class ModelFile(ModelFileContent):
             raise ModelFileException(error_msg) from e
 
     def save_modelfile(self):
-        logger.debug(f"self.save_modelfile()")
+        logger.debug("self.save_modelfile()")
         modelfile_path: Path = self.model_file_info.modelfile_path
         logger.debug(f"ModelFile.save(): modelfile_path={modelfile_path}")
 
@@ -505,13 +581,23 @@ class ModelFile(ModelFileContent):
                 endpoint_model_config_dump = self.endpoint_model_config.model_dump()
                 # overwrite config by Modelfile content, keep the undef
                 endpoint_model_config_dump.update(self.model_dump())
-                for field_name in ['Instruction','FROM','TEMPLATE', 'HUGGINGFACE_PATH', 'OLLAMA_PATH', 'SYSTEM','ADAPTER','LICENSE','MESSAGE']:
-                    if field_name == 'Instruction':
+                for field_name in [
+                    "Instruction",
+                    "FROM",
+                    "TEMPLATE",
+                    "HUGGINGFACE_PATH",
+                    "OLLAMA_PATH",
+                    "SYSTEM",
+                    "ADAPTER",
+                    "LICENSE",
+                    "MESSAGE",
+                ]:
+                    if field_name == "Instruction":
                         value = endpoint_model_config_dump.get(field_name)
                         if value is not None:
                             for str_value in value.split("\n"):
                                 f.write(f"# {str_value}\n")
-                            f.write(f"\n\n") # empty lines to mark instruction end
+                            f.write("\n\n")  # empty lines to mark instruction end
                     elif field_name.endswith("_PATH"):
                         value = endpoint_model_config_dump.get(field_name)
                         if value is not None:
@@ -519,11 +605,11 @@ class ModelFile(ModelFileContent):
                     elif field_name in ["TEMPLATE", "LICENSE"]:
                         value = endpoint_model_config_dump.get(field_name)
                         if value is not None and str(value) != "":
-                            f.write(f"{field_name} \"\"\"{value}\"\"\"\n")
+                            f.write(f'{field_name} """{value}"""\n')
                     elif field_name in ["SYSTEM", "MESSAGE"]:
                         value = endpoint_model_config_dump.get(field_name)
                         if value is not None and str(value) != "":
-                            f.write(f"{field_name} \"{value}\"\n")
+                            f.write(f'{field_name} "{value}"\n')
                     else:
                         value = endpoint_model_config_dump.get(field_name)
                         if value is not None and str(value) != "":
@@ -535,7 +621,9 @@ class ModelFile(ModelFileContent):
                         for key, value in endpoint_model_config_dump.items():
                             if value is not None:
                                 try:
-                                    default_value = getattr(get_settings().model, f"default_{key}")
+                                    default_value = getattr(
+                                        get_settings().model, f"default_{key}"
+                                    )
                                 except AttributeError:
                                     default_value = None
                                 if default_value is not None and value == default_value:
@@ -549,7 +637,9 @@ class ModelFile(ModelFileContent):
                     for key, value in parameters_values.items():
                         if value is not None:
                             try:
-                                default_value = getattr(get_settings().model, f"default_{key}")
+                                default_value = getattr(
+                                    get_settings().model, f"default_{key}"
+                                )
                             except AttributeError:
                                 default_value = None
                             if default_value is not None and value == default_value:
@@ -557,7 +647,7 @@ class ModelFile(ModelFileContent):
                             f.write(f"PARAMETER {key} {value}\n")
 
     def content(self, save: bool = True):
-        logger.debug(f"self.content()")
+        logger.debug("self.content()")
         modelfile_path: Path = self.model_file_info.modelfile_path
         logger.debug(f"ModelFile.content(): modelfile_path={modelfile_path}")
 
@@ -569,14 +659,17 @@ class ModelFile(ModelFileContent):
         raise FileNotFoundError(f"Modelfile not found: {modelfile_path}")
 
     def save_config(self):
-        logger.debug(f"self.save_config()")
+        logger.debug("self.save_config()")
         # config is a merge of Modelfile parameters and overriden default_model_config values
         # but save is only non Modelfile parameters values, so have to pass a Modelfile when saving
-        self.endpoint_model_config.save(model_file_info=self.model_file_info, modelfile_parameters=self.PARAMETERS)
-
+        self.endpoint_model_config.save(
+            model_file_info=self.model_file_info, modelfile_parameters=self.PARAMETERS
+        )
 
     def save(self):
-        logger.debug(f"ModelFile.save(model_path={ModelPath(**self.model_file_info.model_dump())})")
+        logger.debug(
+            f"ModelFile.save(model_path={ModelPath(**self.model_file_info.model_dump())})"
+        )
         if self._model:
             self._model.save()
         self.save_config()
@@ -640,7 +733,6 @@ class ModelFile(ModelFileContent):
     def is_locked(self) -> bool:
         return self.model_file_info.is_locked()
 
-
     @deprecated("Use full_model_parameters instead")
     @property
     def full_options(self) -> dict:
@@ -651,7 +743,6 @@ class ModelFile(ModelFileContent):
             A dictionary of model options
         """
         if not self._options:
-
             # Define default options in case of error
             self._options = config_utils.rkllama_config.model.__dict__
 
@@ -678,5 +769,3 @@ class ModelFile(ModelFileContent):
 
         # Return the options dictionary
         return self._options
-
-

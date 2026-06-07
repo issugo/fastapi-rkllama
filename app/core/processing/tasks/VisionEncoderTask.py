@@ -1,7 +1,7 @@
 from typing import Any
-from core.processing.endpoints.EndpointHandler import EndpointHandler
 from core.processing.tasks.Task import Task
 from core.processing.tasks.Tasks import Tasks
+
 
 class VisionEncoderTask(Task):
     def __init__(self, model_input: Any = None):

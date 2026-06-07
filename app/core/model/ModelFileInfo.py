@@ -8,6 +8,7 @@ from core.model.ModelPath import ModelPath
 
 MODELFILE_CONFIG_NAME = ".config"
 
+
 class ModelFileInfo(ModelPath):
     system_prompt: Optional[str] = Field(default=None, description="System prompt")
 
@@ -16,6 +17,7 @@ class ModelFileInfo(ModelPath):
     @property
     def simple_model_metadata(self) -> Any:
         from core.model.ModelMetadata import SimpleModelMetadata
+
         if self._simple_model_metadata:
             return self._simple_model_metadata
 
@@ -23,7 +25,8 @@ class ModelFileInfo(ModelPath):
         data = SimpleModelMetadata.compute(
             model_path=self,
             model_details=ModelDetails.from_model_path(model_path=self),
-            system_prompt=self.system_prompt)
+            system_prompt=self.system_prompt,
+        )
         return SimpleModelMetadata(**data)
 
     @simple_model_metadata.setter
@@ -36,4 +39,3 @@ class ModelFileInfo(ModelPath):
     @property
     def modelfile_config_path(self) -> Path:
         return self.modelfile_config_path_using_model_dir_path(self.model_dir_path)
-

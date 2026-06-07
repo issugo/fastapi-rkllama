@@ -9,7 +9,9 @@ from core.processing.process import DEBUG_MODE, logger
 
 async def get_messages(data: dict | None, data_format: DataFormat) -> List[Message]:
     # Get chat history from JSON request
-    messages: List[Message] = list(map(lambda json_message: Message(**json.loads(json_message)), data["messages"]))
+    messages: List[Message] = list(
+        map(lambda json_message: Message(**json.loads(json_message)), data["messages"])
+    )
 
     # Create format instructions
     if data_format.format_spec:
@@ -25,10 +27,8 @@ async def get_messages(data: dict | None, data_format: DataFormat) -> List[Messa
             if last_user_msg_idx >= 0:
                 original_content = messages[last_user_msg_idx]["content"]
                 messages[last_user_msg_idx]["content"] = (
-                        original_content + format_instruction
+                    original_content + format_instruction
                 )
                 if DEBUG_MODE:
-                    logger.debug(
-                        f"Added format instruction: {format_instruction}"
-                    )
+                    logger.debug(f"Added format instruction: {format_instruction}")
     return messages

@@ -4,8 +4,8 @@ import os
 from loggers.loggerRawFormatter import LoggerRawFormatter
 from loggers.loggerConsoleFormatter import LoggerConsoleFormatter
 
-class Logger:
 
+class Logger:
     # OVERRIDE LOG LEVELS TO INPUT CUSTOM LEVELS
     CRITICAL = 50
     FATAL = CRITICAL
@@ -18,15 +18,15 @@ class Logger:
     NOTSET = 0
 
     nameToLevel = {
-        'CRITICAL': CRITICAL,
-        'FATAL': FATAL,
-        'ERROR': ERROR,
-        'WARNING': WARNING,
-        'WARN': WARN,
-        'INFO': INFO,
-        'DEBUG': DEBUG,
-        'TRACE': TRACE,
-        'NOTSET': NOTSET
+        "CRITICAL": CRITICAL,
+        "FATAL": FATAL,
+        "ERROR": ERROR,
+        "WARNING": WARNING,
+        "WARN": WARN,
+        "INFO": INFO,
+        "DEBUG": DEBUG,
+        "TRACE": TRACE,
+        "NOTSET": NOTSET,
     }
 
     @staticmethod

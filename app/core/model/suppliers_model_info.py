@@ -20,6 +20,7 @@ class OllamaRootfs(BaseModel):
     type: str
     diff_ids: List[str]  # list of sha256 to model, license & system files
 
+
 class OllamaModelLicense(ModelLicense):
     digest: str
 
@@ -31,8 +32,9 @@ class OllamaModelLicense(ModelLicense):
             license_name=model_license.common_license,
             license_url=license_url,
             license_text=model_license.license_text,
-            digest=digest
+            digest=digest,
         )
+
 
 class OllamaModelInfo(OllamaModelDetails):
     model_families: List[str]
@@ -85,7 +87,7 @@ class OllamaModelInfo(OllamaModelDetails):
             return OllamaModelInfo(**json.load(f))
 
     def save(self, file_path: str | Path):
-        """ write in <MODELS>/blobs/sha256-<DIGEST>"""
+        """write in <MODELS>/blobs/sha256-<DIGEST>"""
         with open(file_path, "w") as f:
             f.write(self.model_dump_json(indent=2, by_alias=True))
 
@@ -109,6 +111,7 @@ class HFSibling(BaseModel):
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
+
 class HFModelLicense(ModelLicense):
     @staticmethod
     def from_content(content: str, license_url: str):
@@ -117,11 +120,12 @@ class HFModelLicense(ModelLicense):
             supplier=Supplier.HUGGINGFACE,
             license_name=model_license.common_license,
             license_url=license_url,
-            license_text=model_license.license_text
+            license_text=model_license.license_text,
         )
 
+
 class HFModelInfo(SupplierModelInfo):
-    hf_id: Optional[PyObjectId] = Field(alias='_id', default=None)
+    hf_id: Optional[PyObjectId] = Field(alias="_id", default=None)
     id: str
     private: bool
     tags: List[str]
@@ -170,7 +174,7 @@ class HFModelInfo(SupplierModelInfo):
         with open(file_path, "r") as f:
             return HFModelInfo(**json.load(f))
 
-    def save(self, file_path: str| Path):
+    def save(self, file_path: str | Path):
         logger.debug(f"HFModelInfo.save(file_path={file_path})")
         with open(file_path, "w") as f:
             f.write(self.model_dump_json(indent=2, by_alias=True))

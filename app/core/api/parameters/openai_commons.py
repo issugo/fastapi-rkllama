@@ -9,6 +9,7 @@ OPENAI_OWNER = "openai"
 
 class OpenAIRoleEnum(str, Enum):
     """Role in an OpenAI message."""
+
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -18,6 +19,7 @@ class OpenAIRoleEnum(str, Enum):
 
 class OpenAIFinishReason(str, Enum):
     """Reason why the model stopped generating tokens."""
+
     STOP = "stop"
     LENGTH = "length"
     CONTENT_FILTER = "content_filter"
@@ -27,22 +29,26 @@ class OpenAIFinishReason(str, Enum):
 
 class OpenAIResponseFormat(BaseModel):
     """Format for OpenAI response."""
+
     type: str = Field(..., description="Type of the response format")
 
 
 class OpenAIJSONResponseFormat(OpenAIResponseFormat):
     """JSON format for OpenAI response."""
+
     type: str = Literal["json_object"]
 
 
 class OpenAIResponseFormatOption(BaseModel):
     """Schema for structured output format."""
+
     type: str = Field(..., description="Type of the format")
     schema: Optional[Dict[str, Any]] = Field(None, description="JSON schema definition")
 
 
 class OpenAIImageDetail(str, Enum):
     """Detail level for image analysis."""
+
     AUTO = "auto"
     LOW = "low"
     HIGH = "high"
@@ -50,19 +56,37 @@ class OpenAIImageDetail(str, Enum):
 
 class OpenAIContentFilter(BaseModel):
     """Content filter results."""
-    hate: bool = Field(False, description="Whether the content was filtered due to hate")
-    hate_threatening: bool = Field(False, description="Whether the content was filtered due to threatening hate")
-    self_harm: bool = Field(False, description="Whether the content was filtered due to self-harm")
-    sexual: bool = Field(False, description="Whether the content was filtered due to sexual content")
-    sexual_minors: bool = Field(False, description="Whether the content was filtered due to sexual content involving minors")
-    violence: bool = Field(False, description="Whether the content was filtered due to violence")
-    violence_graphic: bool = Field(False, description="Whether the content was filtered due to graphic violence")
+
+    hate: bool = Field(
+        False, description="Whether the content was filtered due to hate"
+    )
+    hate_threatening: bool = Field(
+        False, description="Whether the content was filtered due to threatening hate"
+    )
+    self_harm: bool = Field(
+        False, description="Whether the content was filtered due to self-harm"
+    )
+    sexual: bool = Field(
+        False, description="Whether the content was filtered due to sexual content"
+    )
+    sexual_minors: bool = Field(
+        False,
+        description="Whether the content was filtered due to sexual content involving minors",
+    )
+    violence: bool = Field(
+        False, description="Whether the content was filtered due to violence"
+    )
+    violence_graphic: bool = Field(
+        False, description="Whether the content was filtered due to graphic violence"
+    )
 
 
 class OpenAIChoice(BaseModel):
     """Base class for choices in OpenAI responses."""
+
     index: int
     finish_reason: Optional[OpenAIFinishReason] = None
+
 
 class OpenAIModel(BaseModel):
     id: str = Field(description="model name like gpt-3.5-turbo")
@@ -73,7 +97,9 @@ class OpenAIModel(BaseModel):
     @staticmethod
     def from_model(model: Model):
         return OpenAIModel(
-            id=model.id.replace('/',':'),
+            id=model.id.replace("/", ":"),
             created=int(model.model_info.created_at_dt.timestamp()),
-            owned_by=model.model_info.author if model.model_info.author else OPENAI_OWNER,
+            owned_by=(
+                model.model_info.author if model.model_info.author else OPENAI_OWNER
+            ),
         )

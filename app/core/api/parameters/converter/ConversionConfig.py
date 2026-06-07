@@ -2,7 +2,6 @@ import os
 from typing import Optional
 
 from pydantic import BaseModel
-from safetensors import torch
 
 
 class ConversionConfig(BaseModel):
@@ -15,19 +14,20 @@ class ConversionConfig(BaseModel):
     device: Device to use for conversion, default='cuda' if torch.cuda.is_available() else 'cpu'
     token: Hugging Face token for private models
     """
+
     model_id: str
     output_dir: str
-    quantization: str = 'Q4_0'
+    quantization: str = "Q4_0"
     max_context_len: int = 4096
-    dtype: str = 'float16'
-    #device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
-    device: str = 'cpu'
+    dtype: str = "float16"
+    # device: str = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device: str = "cpu"
     token: Optional[str] = os.getenv("HF_TOKEN")  # Get token from environment variable
 
     @property
     def model_name(self) -> str:
         """Get model name from model ID."""
-        return self.model_id.split('/')[-1]
+        return self.model_id.split("/")[-1]
 
     @property
     def output_path(self) -> str:

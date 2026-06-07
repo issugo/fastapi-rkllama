@@ -11,10 +11,12 @@ class RKllamaUsage(Usage):
     tokens_per_second: float = 0.0
     total_tokens: int = 0
 
+
 class RKllamaChoice(BaseModel):
     """Base class for choices in RKllama responses."""
+
     role: str = "assistant"
-    content: str =""
+    content: str = ""
     logprobs: Optional[str] = None
     finish_reason: str = "stop"
 

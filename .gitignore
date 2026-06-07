@@ -4,7 +4,7 @@ app/__pycache__
 *.log
 config/config.env
 config/default.yml
-tests
+
 
 # macOS system files
 .DS_Store

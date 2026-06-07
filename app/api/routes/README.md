@@ -3,6 +3,14 @@
 ## Rôle
 Implémente les routes et endpoints de l'API pour les différents formats supportés (RKLLama, Ollama, OpenAI).
 
+`ollama.py` doit toujours proposer l'API Ollama et être utilisé pour les interactions avec l'API Ollama. Les routes et types de données de l'API Ollama doivent être cohérents avec les spécifications de l'API Ollama (disponible sur internet). 
+
+`openai.py` doit toujours proposer l'API OpenAI et être utilisé pour les interactions avec l'API OpenAI. Les routes et types de données de l'API OpenAI doivent être cohérents avec les spécifications de l'API OpenAI (disponible sur internet).
+
+`rkllama.py` contient les traitements communalisables entre les API OpenAI et Ollama, plus des traitements spécifiques à RKLLama.
+
+Les types de données utilisés dans les routes sont définis dans le package `app.api.parameters`.
+
 ## Fichiers
 
 ### `rkllama.py` - API Native RKLLama

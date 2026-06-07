@@ -5,6 +5,8 @@ app/__pycache__
 config/config.env
 config/default.yml
 
+# temporary LLM test files
+.deepeval
 
 # macOS system files
 .DS_Store

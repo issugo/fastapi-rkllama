@@ -28,6 +28,7 @@ router = APIRouter(tags=["rkllama"])
 # POST   /generate
 # DELETE /rm
 
+
 @router.get("/")
 def default_route():
     return JSONResponse(
@@ -39,7 +40,6 @@ def default_route():
     )
 
 
-
 @router.post("/pull")
 async def pull_model(request: Request, rk_pull_request: RKPullRequest):
     from core.model.storage_helpers.model_pull import pull_model_stream
@@ -48,7 +48,6 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
     splitted = rk_pull_request.model.split("/")
 
     class LocalRKPullSupplier(RKPullSupplier):
-
         @property
         def logger(self) -> Logger:
             return logger
@@ -66,18 +65,19 @@ async def pull_model(request: Request, rk_pull_request: RKPullRequest):
                         break
 
             if rk_pull_request.model_type is None:
-                return None, f"Error: Invalid model type '{rk_pull_request.model_type}'\n"
+                return (
+                    None,
+                    f"Error: Invalid model type '{rk_pull_request.model_type}'\n",
+                )
 
             return rk_pull_request.model_type, None
 
         def model_data(self) -> Tuple[str, str, str, Supplier]:
             model_name, file, repo = HfFileInfo.model_data(
-                split_name=splitted,
-                model_name=rk_pull_request.model_name
+                split_name=splitted, model_name=rk_pull_request.model_name
             )
             repo = rk_pull_request.model.replace(f"/{file}", "")
             return model_name, file, repo, Supplier.HUGGINGFACE
-
 
     return pull_model_stream(request=request, pull_supplier=LocalRKPullSupplier())
 
@@ -93,18 +93,17 @@ def list_models():
             status_code=500,
         )
 
+
 @router.get("/models/{model_id}", response_model=Model)
 def get_model(model_id: str):
     try:
-        model:Model = Model.load(model_path=ModelPath.from_model_id(model_id))
+        model: Model = Model.load(model_path=ModelPath.from_model_id(model_id))
         return model
     except ModelException as me:
         return JSONResponse(
             jsonable_encoder({"error": f"{str(me)}."}),
             status_code=500,
         )
-
-
 
 
 @router.post("/generate")
@@ -132,55 +131,133 @@ async def recevoir_message(request: Request):
         model_file=GLOBAL_STATE.backend.model_file,
         usage_lock=GLOBAL_STATE.backend.usage_lock,
         handler=rkllama_handler,
-        data=data)
+        data=data,
+    )
 
 
 @router.post("/unload_model")
 def unload_model_route():
-    from core.backends.GlobalState import GLOBAL_STATE
-    if not GLOBAL_STATE.backend:
+    from core.processing.WorkerManager import worker_managers
+
+    unloaded_any = False
+    for wm in worker_managers:
+        workers_to_unload = list(wm.workers.keys())
+        for model_id in workers_to_unload:
+            wm.unload_model(model_id)
+            unloaded_any = True
+
+    if unloaded_any:
+        return JSONResponse(
+            {"message": "Model successfully unloaded!"}, status_code=200
+        )
+    else:
         return JSONResponse(
             {"error": "No models are currently loaded."}, status_code=400
         )
 
-    GLOBAL_STATE.backend.unload()
-    GLOBAL_STATE.backend = None
-
-    return JSONResponse({"message": "Model successfully unloaded!"}, status_code=200)
-
 
 @router.post("/load_model")
 async def load_model_route(request: Request):
-    from core.model.ModelFile import ModelFile, ModelFileInfo
-    from core.backends.GlobalState import GLOBAL_STATE
-
-    # Check if a model is currently loaded
-    if GLOBAL_STATE.backend:
-        return JSONResponse(
-            jsonable_encoder({"error": f"model {GLOBAL_STATE.backend.model_file.model_name} is already loaded. Please unload it first."}),
-            status_code=400,
-        )
+    from core.model.ModelFile import ModelFile
+    from core.processing.WorkerManager import get_worker_manager
+    from core.backends.backend import BackendType
+    from core.model.ModelPath import ModelPath
 
     data = await request.json()
-    if "model_name" not in data:
+    model_name = data.get("model_name")
+    if not model_name:
         return JSONResponse(
-            jsonable_encoder({"error": "Please enter the name of the model to be loaded."}),
+            jsonable_encoder(
+                {"error": "Please enter the name of the model to be loaded."}
+            ),
             status_code=400,
         )
 
-    model_file_info: ModelFileInfo = ModelFileInfo(**data)
-    model_file: ModelFile = ModelFile.create(model_file_info, )
-    GLOBAL_STATE.backend, error = model_file.load_model()
-
-    if error:
-        return JSONResponse({"error": error}, status_code=400)
-    elif GLOBAL_STATE.backend:
-        return JSONResponse(
-            {"message": f"Model {model_file.model_name} loaded successfully."}, status_code=200
+    try:
+        model_path = ModelPath.from_model_id(model_name)
+        modelfile = ModelFile.load(model_path=model_path)
+        model_type = modelfile.model.model_type
+        worker_manager = get_worker_manager(
+            backend_type=BackendType.from_model_type(model_type=model_type)
         )
-    else:
-        return JSONResponse({"error": f"unexpected error loading Model {model_file.model_name}"}, status_code=400)
 
+        from core.model.ModelConfig import FullModelParameters
+        from core.config.config_utils import get_settings
+
+        # Parse custom options if provided (supports both top-level and nested under 'options')
+        options = data.get("options", {})
+        if not isinstance(options, dict):
+            options = {}
+
+        # Check if there are overrides in the payload
+        has_overrides = bool(options)
+        if not has_overrides:
+            for key in data.keys():
+                if key != "model_name" and data[key] is not None:
+                    has_overrides = True
+                    break
+
+        if has_overrides:
+            full_model_parameters = modelfile.full_model_parameters
+            try:
+                params = full_model_parameters.model_dump()
+            except Exception:
+                params = {}
+
+            if not isinstance(params, dict):
+                params = {}
+
+            if not params:
+                default_param_values = get_settings().model.model_dump()
+                for default_attr, value in default_param_values.items():
+                    attr_name = default_attr.removeprefix("default_")
+                    if attr_name is not None and attr_name != "":
+                        params[attr_name] = value
+                # Set default required fields of FullModelParameters
+                params.setdefault("enable_thinking", False)
+                params.setdefault("max_new_tokens", 2048)
+                params.setdefault("frequency_penalty", 0.0)
+                params.setdefault("presence_penalty", 0.0)
+                params.setdefault("mirostat", False)
+                params.setdefault("mirostat_tau", 0.0)
+                params.setdefault("mirostat_eta", 0.0)
+
+            # Override with any custom options provided in the payload (top-level or nested)
+            for key in list(params.keys()):
+                if key in data and data[key] is not None:
+                    params[key] = data[key]
+                if key in options and options[key] is not None:
+                    params[key] = options[key]
+
+            # Also handle potential mapping of num_predict to max_new_tokens
+            if "num_predict" in data and data["num_predict"] is not None:
+                params["max_new_tokens"] = data["num_predict"]
+            if "num_predict" in options and options["num_predict"] is not None:
+                params["max_new_tokens"] = options["num_predict"]
+
+            full_model_parameters = FullModelParameters(**params)
+        else:
+            full_model_parameters = modelfile.full_model_parameters
+
+        model_worker, model_process = worker_manager.add_worker(
+            modelfile=modelfile, full_model_parameters=full_model_parameters
+        )
+        if model_worker:
+            return JSONResponse(
+                {"message": f"Model {model_name} loaded successfully."}, status_code=200
+            )
+        else:
+            return JSONResponse(
+                {"error": f"Failed to load Model {model_name}"}, status_code=400
+            )
+    except Exception as e:
+        import traceback
+
+        logger.error(f"Error loading model traceback: {traceback.format_exc()}")
+        return JSONResponse(
+            {"error": f"Error loading model: {str(e)}"},
+            status_code=400,
+        )
 
 
 @router.delete("/rm")
@@ -189,7 +266,9 @@ async def Rm_model(request: Request):
     if "model" not in data:
         return JSONResponse({"error": "Please specify a model."}, status_code=400)
 
-    model_path = os.path.join(core.config.config_utils.get_path("models"), data["model"])
+    model_path = os.path.join(
+        core.config.config_utils.get_path("models"), data["model"]
+    )
     if not os.path.exists(model_path):
         return JSONResponse(
             {"error": f"The model: {data['model']} cannot be found."}, status_code=404
@@ -202,68 +281,94 @@ async def Rm_model(request: Request):
     )
 
 
-
-
 @router.get("/current_models")
 def get_current_models():
     from core.model import Model, ModelMetadata
     from core.model.ModelInfo import ModelInfo
     from core.model.ModelPath import ModelType
+    from core.processing.WorkerManager import worker_managers
 
     # Get the models info from Modelfile and HF
     models_dir = core.config.config_utils.get_path("models")
     models_info = {}
-    for subdir in os.listdir(models_dir):
-        subdir_path = os.path.join(models_dir, subdir)
-        if os.path.isdir(subdir_path):
-            for file in os.listdir(subdir_path):
-                for mtype in ModelType:
-                    if file.endswith(mtype.get_extension()):
-                        size = ModelMetadata.get_model_size(os.path.join(subdir_path, file))
+    if os.path.exists(models_dir):
+        for subdir in os.listdir(models_dir):
+            subdir_path = os.path.join(models_dir, subdir)
+            if os.path.isdir(subdir_path):
+                for file in os.listdir(subdir_path):
+                    for mtype in ModelType:
+                        if file.endswith(mtype.get_extension()):
+                            size = ModelMetadata.get_model_size(
+                                os.path.join(subdir_path, file)
+                            )
 
-                        # Extract parameter size and quantization details if available
-                        model_details = Model.extract_model_details(model_type=mtype, model_name=file)
+                            # Extract parameter size and quantization details if available
+                            model_details = Model.extract_model_details(
+                                model_type=mtype, model_name=file
+                            )
 
-                        models_info[subdir] = ModelInfo(
-                            name=subdir,  # Use simplified name like qwen:3b
-                            model=subdir,  # Match Ollama's format
-                            modified_at=datetime.datetime.fromtimestamp(
+                            dt = datetime.datetime.fromtimestamp(
                                 os.path.getmtime(os.path.join(subdir_path, file))
-                            ).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                            size=size,
-                            digest="",  # Ollama field (not used but included for compatibility)
-                            details=model_details,
-                            model_type=mtype
-                        )
-                        break
+                            )
+                            models_info[subdir] = ModelInfo(
+                                name=subdir,  # Use simplified name like qwen:3b
+                                model=subdir,  # Match Ollama's format
+                                modified_at_dt=dt,
+                                created_at_dt=dt,
+                                size=size,
+                                digest="",  # Ollama field (not used but included for compatibility)
+                                details=model_details,
+                                model_type=mtype,
+                            )
+                            break
 
     # Loop over the models currently running
     models_running = []
-    for model in variables.worker_manager_rkllm.workers.keys():
-        worker_model_info = variables.worker_manager_rkllm.workers[model].worker_model_info
-        model_info = {
-            "name": model,
-            "model": model,
-            "size": worker_model_info.size,
-            "digest": models_info[model]["digest"],
-            "details": {
-                "parent_model": "",
-                "format": models_info[model]["details"]["format"],
-                "family": models_info[model]["details"]["family"],
-                "families": [
-                    models_info[model]["details"]["family"]
-                ],
-                "parameter_size": models_info[model]["details"]["parameter_size"],
-                "quantization_level": models_info[model]["details"]["quantization_level"]
-            },
-            "expires_at": worker_model_info.expires_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
-            "loaded_at": worker_model_info.loaded_at.strftime('%Y-%m-%d %H:%M:%S.%f'),
-            "base_domain_id": worker_model_info.base_domain_id,
-            "last_call": worker_model_info.last_call.strftime('%Y-%m-%d %H:%M:%S.%f')
-        }
-        models_running.append(model_info)
+    for wm in worker_managers:
+        for model, worker in wm.workers.items():
+            worker_model_info = worker.worker_model_info
 
-    return jsonify({"models": models_running}), 200
+            info = models_info.get(model)
+            digest = info.digest if info else ""
+            format_val = info.details.model_format if info else "rkllm"
+            family_val = info.details.model_family if info else "qwen2"
+            families_val = info.details.model_families if info else ["qwen2"]
+            parameter_size_val = info.details.parameter_size if info else "unknown"
+            quantization_level_val = (
+                info.details.quantization_level if info else "unknown"
+            )
+
+            model_info = {
+                "name": model,
+                "model": model,
+                "size": worker_model_info.size,
+                "digest": digest,
+                "details": {
+                    "parent_model": "",
+                    "format": format_val,
+                    "family": family_val,
+                    "families": families_val,
+                    "parameter_size": parameter_size_val,
+                    "quantization_level": quantization_level_val,
+                },
+                "expires_at": worker_model_info.expires_at.strftime(
+                    "%Y-%m-%d %H:%M:%S.%f"
+                ),
+                "loaded_at": worker_model_info.loaded_at.strftime(
+                    "%Y-%m-%d %H:%M:%S.%f"
+                ),
+                "base_domain_id": (
+                    worker_model_info.base_domain_id.value
+                    if hasattr(worker_model_info.base_domain_id, "value")
+                    else int(worker_model_info.base_domain_id)
+                ),
+                "last_call": worker_model_info.last_call.strftime(
+                    "%Y-%m-%d %H:%M:%S.%f"
+                ),
+            }
+            models_running.append(model_info)
+
+    return JSONResponse({"models": models_running}, status_code=200)
 
 
 @router.post("/api/create")
@@ -305,5 +410,3 @@ async def create_model(request: Request):
 
     # For compatibility with existing implementation
     return JSONResponse({"status": "success", "model": model_name}, status_code=200)
-
-

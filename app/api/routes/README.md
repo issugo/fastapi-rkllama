@@ -20,7 +20,7 @@ Implémente les routes et endpoints de l'API pour les différents formats suppor
 **Classes internes** :
 - `LocalRKPullSupplier` : Implémente le téléchargement de modèles depuis différentes sources
 
-### `ollama_new.py` - API Compatible Ollama
+### `ollama.py` - API Compatible Ollama
 **Fonctions principales** :
 - `pull_model()` : `POST /api/pull` - Télécharge un modèle (compatible Ollama)
 - `list_models()` : `GET /api/tags` - Liste les modèles
@@ -37,7 +37,7 @@ Implémente les routes et endpoints de l'API pour les différents formats suppor
 **Classes internes** :
 - `LocalOllamaPullSupplier` : Gère le téléchargement de modèles au format Ollama
 
-### `openai_new.py` - API Compatible OpenAI
+### `openai.py` - API Compatible OpenAI
 **Fonctions principales** :
 - `list_models()` : `GET /v1/models` - Liste les modèles disponibles
 - `get_model()` : `GET /v1/models/{model_id}` - Récupère un modèle par ID
@@ -57,8 +57,8 @@ Implémente les routes et endpoints de l'API pour les différents formats suppor
 - `stream_completion_response()` : Stream les complétions en format SSE
 
 ### Fichiers legacy
-- `ollama.py` : Ancienne version de l'API Ollama (deprecated)
-- `rkllama_old.py` : Ancienne version de l'API RKLLama (deprecated)
+- `ollama.deprecated` : Ancienne version de l'API Ollama (deprecated)
+- `rkllama.deprecated` : Ancienne version de l'API RKLLama (deprecated)
 
 ## Dépendances
 - `fastapi` : Framework de routes

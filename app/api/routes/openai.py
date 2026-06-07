@@ -2,15 +2,19 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Optional, List
+from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
 from starlette.requests import Request
-from starlette.responses import Response, StreamingResponse, JSONResponse
+from starlette.responses import StreamingResponse, JSONResponse
 
 from core.api.parameters.commons import Usage
-from core.api.parameters.openai_commons import OpenAIFinishReason, OpenAIImageDetail, OpenAIModel
+from core.api.parameters.openai_commons import (
+    OpenAIFinishReason,
+    OpenAIImageDetail,
+    OpenAIModel,
+)
 from core.api.parameters.openai_requests import (
     ChatCompletionRequest,
     CompletionRequest,
@@ -19,7 +23,7 @@ from core.api.parameters.openai_requests import (
     ImageGenerationRequest,
     ImageEditRequest,
     ImageVariationRequest,
-    VisionRequest
+    VisionRequest,
 )
 from core.api.parameters.openai_responses import (
     ChatCompletionResponse,
@@ -34,7 +38,7 @@ from core.api.parameters.openai_responses import (
     ChatCompletionChoice,
     CompletionChoice,
     ModerationResult,
-    ImageData
+    ImageData,
 )
 from core.model.Model import Model
 from core.model.ModelPath import ModelDirException, ModelPath, ModelException
@@ -62,17 +66,17 @@ async def list_models(request: Request):
             status_code=500,
         )
 
+
 @router.get("/v1/models/{model_id}", response_model=OpenAIModel)
 def get_model(model_id: str):
     try:
-        model:Model = Model.load(model_path=ModelPath.from_model_id(model_id))
+        model: Model = Model.load(model_path=ModelPath.from_model_id(model_id))
         return OpenAIModel.from_model(model)
     except ModelException as me:
         return JSONResponse(
             jsonable_encoder({"error": f"{str(me)}."}),
             status_code=500,
         )
-
 
 
 @router.post("/v1/chat/completions", response_model=ChatCompletionResponse)
@@ -87,8 +91,7 @@ async def create_chat_completion(request: Request, chat_request: ChatCompletionR
 
         if stream:
             return StreamingResponse(
-                stream_chat_response(model, messages),
-                media_type="text/event-stream"
+                stream_chat_response(model, messages), media_type="text/event-stream"
             )
 
         # Create a mock response for demonstration
@@ -102,16 +105,12 @@ async def create_chat_completion(request: Request, chat_request: ChatCompletionR
                     index=0,
                     message={
                         "role": "assistant",
-                        "content": "This is a mock response from the OpenAI API implementation."
+                        "content": "This is a mock response from the OpenAI API implementation.",
                     },
-                    finish_reason=OpenAIFinishReason.STOP
+                    finish_reason=OpenAIFinishReason.STOP,
                 )
             ],
-            usage=Usage(
-                prompt_tokens=10,
-                completion_tokens=20,
-                tokens_per_second=1000
-            )
+            usage=Usage(prompt_tokens=10, completion_tokens=20, tokens_per_second=1000),
         )
         return response
 
@@ -131,11 +130,7 @@ async def stream_chat_response(model: str, messages: List):
         object="chat.completion.chunk",
         created=int(time.time()),
         model=model,
-        choices=[{
-            "index": 0,
-            "delta": {"role": "assistant"},
-            "finish_reason": None
-        }]
+        choices=[{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
     )
     yield f"data: {chunk.json(exclude_none=True)}\n\n"
 
@@ -147,11 +142,9 @@ async def stream_chat_response(model: str, messages: List):
             object="chat.completion.chunk",
             created=int(time.time()),
             model=model,
-            choices=[{
-                "index": 0,
-                "delta": {"content": word + " "},
-                "finish_reason": None
-            }]
+            choices=[
+                {"index": 0, "delta": {"content": word + " "}, "finish_reason": None}
+            ],
         )
         yield f"data: {chunk.json(exclude_none=True)}\n\n"
         await asyncio.sleep(0.1)  # Simulate processing time
@@ -162,11 +155,7 @@ async def stream_chat_response(model: str, messages: List):
         object="chat.completion.chunk",
         created=int(time.time()),
         model=model,
-        choices=[{
-            "index": 0,
-            "delta": {},
-            "finish_reason": "stop"
-        }]
+        choices=[{"index": 0, "delta": {}, "finish_reason": "stop"}],
     )
     yield f"data: {chunk.json(exclude_none=True)}\n\n"
     yield "data: [DONE]\n\n"
@@ -185,7 +174,7 @@ async def create_completion(request: Request, completion_request: CompletionRequ
         if stream:
             return StreamingResponse(
                 stream_completion_response(model, prompt),
-                media_type="text/event-stream"
+                media_type="text/event-stream",
             )
 
         # Create a mock response for demonstration
@@ -198,14 +187,10 @@ async def create_completion(request: Request, completion_request: CompletionRequ
                 CompletionChoice(
                     index=0,
                     text="This is a mock completion response.",
-                    finish_reason=OpenAIFinishReason.STOP
+                    finish_reason=OpenAIFinishReason.STOP,
                 )
             ],
-            usage=Usage(
-                prompt_tokens=10,
-                completion_tokens=20,
-                tokens_per_second=1000
-            )
+            usage=Usage(prompt_tokens=10, completion_tokens=20, tokens_per_second=1000),
         )
         return response
 
@@ -232,9 +217,9 @@ async def stream_completion_response(model: str, prompt):
                     "text": word + " ",
                     "index": 0,
                     "logprobs": None,
-                    "finish_reason": None
+                    "finish_reason": None,
                 }
-            ]
+            ],
         }
         yield f"data: {json.dumps(chunk)}\n\n"
         await asyncio.sleep(0.1)  # Simulate processing time
@@ -246,13 +231,8 @@ async def stream_completion_response(model: str, prompt):
         "created": int(time.time()),
         "model": model,
         "choices": [
-            {
-                "text": "",
-                "index": 0,
-                "logprobs": None,
-                "finish_reason": "stop"
-            }
-        ]
+            {"text": "", "index": 0, "logprobs": None, "finish_reason": "stop"}
+        ],
     }
     yield f"data: {json.dumps(chunk)}\n\n"
     yield "data: [DONE]\n\n"
@@ -273,31 +253,21 @@ async def create_embeddings(request: Request, embedding_request: EmbeddingReques
 
         # Set a few random values to make it look more realistic
         import random
+
         for i in range(10):
             idx = random.randint(0, embedding_dim - 1)
             mock_embedding[idx] = random.uniform(-1, 1)
 
         response = EmbeddingResponse(
             object="list",
-            data=[
-                {
-                    "object": "embedding",
-                    "embedding": mock_embedding,
-                    "index": 0
-                }
-            ],
+            data=[{"object": "embedding", "embedding": mock_embedding, "index": 0}],
             model=model,
-            usage=Usage(
-                prompt_tokens=10,
-                completion_tokens=0,
-                tokens_per_second=1000
-            )
+            usage=Usage(prompt_tokens=10, completion_tokens=0, tokens_per_second=1000),
         )
         return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 
 @router.post("/v1/moderations", response_model=ModerationResponse)
@@ -322,7 +292,7 @@ async def create_moderation(request: Request, moderation_request: ModerationRequ
                         "sexual": False,
                         "sexual_minors": False,
                         "violence": False,
-                        "violence_graphic": False
+                        "violence_graphic": False,
                     },
                     category_scores={
                         "hate": 0.0,
@@ -331,11 +301,11 @@ async def create_moderation(request: Request, moderation_request: ModerationRequ
                         "sexual": 0.0,
                         "sexual_minors": 0.0,
                         "violence": 0.0,
-                        "violence_graphic": 0.0
+                        "violence_graphic": 0.0,
                     },
-                    flagged=False
+                    flagged=False,
                 )
-            ]
+            ],
         )
         return response
 
@@ -356,11 +326,7 @@ async def create_image(request: Request, image_request: ImageGenerationRequest):
         mock_url = "https://example.com/generated-image.png"
 
         response = ImageGenerationResponse(
-            created=int(time.time()),
-            data=[
-                ImageData(url=mock_url)
-                for _ in range(n)
-            ]
+            created=int(time.time()), data=[ImageData(url=mock_url) for _ in range(n)]
         )
         return response
 
@@ -382,11 +348,7 @@ async def edit_image(request: Request, edit_request: ImageEditRequest):
         mock_url = "https://example.com/edited-image.png"
 
         response = ImageEditResponse(
-            created=int(time.time()),
-            data=[
-                ImageData(url=mock_url)
-                for _ in range(n)
-            ]
+            created=int(time.time()), data=[ImageData(url=mock_url) for _ in range(n)]
         )
         return response
 
@@ -395,7 +357,9 @@ async def edit_image(request: Request, edit_request: ImageEditRequest):
 
 
 @router.post("/v1/images/variations", response_model=ImageVariationResponse)
-async def create_image_variation(request: Request, variation_request: ImageVariationRequest):
+async def create_image_variation(
+    request: Request, variation_request: ImageVariationRequest
+):
     """
     Creates a variation of a given image.
     """
@@ -407,11 +371,7 @@ async def create_image_variation(request: Request, variation_request: ImageVaria
         mock_url = "https://example.com/variation-image.png"
 
         response = ImageVariationResponse(
-            created=int(time.time()),
-            data=[
-                ImageData(url=mock_url)
-                for _ in range(n)
-            ]
+            created=int(time.time()), data=[ImageData(url=mock_url) for _ in range(n)]
         )
         return response
 
@@ -424,9 +384,7 @@ async def create_transcription(request: Request):
     """
     Transcribes audio into the input language.
     """
-    return JSONResponse({
-        "text": "This is a mock transcription of the provided audio."
-    })
+    return JSONResponse({"text": "This is a mock transcription of the provided audio."})
 
 
 @router.post("/v1/audio/translations")
@@ -434,9 +392,9 @@ async def create_translation(request: Request):
     """
     Translates audio into English.
     """
-    return JSONResponse({
-        "text": "This is a mock translation of the provided audio into English."
-    })
+    return JSONResponse(
+        {"text": "This is a mock translation of the provided audio into English."}
+    )
 
 
 @router.post("/v1/vision/completions", response_model=VisionResponse)
@@ -459,16 +417,14 @@ async def vision_completion(request: Request, vision_request: VisionRequest):
                     index=0,
                     message={
                         "role": "assistant",
-                        "content": "I can see an image in your message. This is a mock vision analysis response."
+                        "content": "I can see an image in your message. This is a mock vision analysis response.",
                     },
-                    finish_reason=OpenAIFinishReason.STOP
+                    finish_reason=OpenAIFinishReason.STOP,
                 )
             ],
             usage=Usage(
-                prompt_tokens=100,
-                completion_tokens=30,
-                tokens_per_second=1000
-            )
+                prompt_tokens=100, completion_tokens=30, tokens_per_second=1000
+            ),
         )
         return response
 

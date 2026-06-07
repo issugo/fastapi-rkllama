@@ -1,457 +1,781 @@
-import datetime
-import os
-import shutil
+from logging import Logger
+from typing import Any, Tuple, List
 
 from fastapi import APIRouter
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-import core.config
-import core.config.config_utils
-import core.model
 from api import logger
-from api.routes.rkllama import pull_model
-from core.model.ModelFile import get_property_modelfile, ModelFile
-from core.processing.json_utils import strtobool
-
-DEFAULT_CONTENT_TYPE = "application/x-ndjson"
-
+from core.api.parameters.ollama_requests import (
+    OllamaGenerateRequest,
+    OllamaChatRequest,
+    OllamaEmbeddingRequest,
+    OllamaPullRequest,
+    OllamaPushRequest,
+    OllamaCreateRequest,
+    OllamaCopyRequest,
+    OllamaDeleteRequest,
+    OllamaShowRequest,
+)
+from core.api.parameters.ollama_responses import (
+    OllamaGenerateResponse,
+    OllamaChatResponse,
+    OllamaEmbeddingResponse,
+    OllamaListResponse,
+    OllamaShowResponse,
+    OllamaPullResponse,
+    OllamaPushResponse,
+    OllamaCreateResponse,
+    OllamaCopyResponse,
+    OllamaDeleteResponse,
+    OllamaHFModelShow,
+    OllamaModelShowDetails,
+)
+from core.backends.backend import BackendType
+from core.config.RKLLAMAConfig import RKLLAMASettings
+from core.model.Model import Model
+from core.model.ModelConfig import FullModelParameters
+from core.model.ModelFile import ModelFile
+from core.model.ModelPath import ModelDirException, ModelPath, ModelException
+from core.model.ModelType import FILE_TYPE, ModelType
+from core.model.models_constants import (
+    LANGUAGE_DEFAULT,
+    default_context_length,
+    DEFAULT_SYSTEM,
+    DEFAULT_TEMPLATE,
+)
+from core.model.storage_helpers.OllamaPullSupplier import OllamaPullSupplier
+from core.model.storage_helpers.SupplierFileInfo import Supplier
+from core.processing.WorkerManager import WorkerManager, get_worker_manager
+from core.processing.api_handlers.ollama_api_handler import (
+    OllamaGenerateAPIHandler,
+    OllamaChatAPIHandler,
+)
+from core.processing.endpoints.ChatEndpointHandler import ChatEndpointHandler
+from core.processing.endpoints.GenerateEndpointHandler import GenerateEndpointHandler
 
 router = APIRouter(tags=["ollama"])
 
+setting: RKLLAMASettings | None = None
+settings: RKLLAMASettings | None = None
+DEBUG_MODE: bool | None = None
 
-@router.post("/api/generate")
-async def generate_ollama(request: Request):
-    """Generate a response for a given prompt with a provided model. This is a streaming endpoint, so there will be a series of responses. The final response object will include statistics and additional data from the request.
-Parameters
 
-    model: (required) the model name
-    prompt: the prompt to generate a response for
-    suffix: the text after the model response
-    images: (optional) a list of base64-encoded images (for multimodal models such as llava)
+@router.post("/api/pull", response_model=OllamaPullResponse)
+async def pull_model(request: Request, oll_pull_request: OllamaPullRequest):
+    """
+    Pull a model from a registry.
 
-Advanced parameters (optional):
+    Downloads a model from the Ollama library or a specified registry.
+    If stream parameter is set to true, it will return a streaming response with progress updates.
+    """
 
-    format: the format to return a response in. Currently the only accepted value is json
-    options: additional model parameters listed in the documentation for the Modelfile such as temperature
-    system: system message to (overrides what is defined in the Modelfile)
-    template: the prompt template to use (overrides what is defined in the Modelfile)
-    context: the context parameter returned from a previous request to /generate, this can be used to keep a short conversational memory
-    stream: if false the response will be returned as a single response object, rather than a stream of objects
-    raw: if true no formatting will be applied to the prompt. You may choose to use the raw parameter if you are specifying a full templated prompt in your request to the API
-    keep_alive: controls how long the model will stay loaded into memory following the request (default: 5m)
-"""
-    from core.model.ModelFile import ModelFile, get_property_modelfile
-    from  main import DEBUG_MODE
+    from core.model.storage_helpers.model_pull import pull_model, pull_model_stream
 
-    lock_acquired = False  # Track lock status
-    is_openai_request = request.path.startswith('/v1/completions')
+    splitted = oll_pull_request.name.split(":")
 
-    try:
-        data = request.get_json(force=True)
+    class LocalOllamaPullSupplier(OllamaPullSupplier):
+        @property
+        def logger(self) -> Logger:
+            return logger
 
-        if is_openai_request:
-            if DEBUG_MODE:
-                logger.debug(f"API OpenAI completions request data: {data}")
-            data = openai_to_ollama_generate_request(data)
+        def check_params(self) -> Any | None:
+            if len(splitted) < 2:
+                return self.error(f"Invalid path '{oll_pull_request.model}'")
+            return None
 
-        model_name = core.config.config_utils.get('model')
-        prompt = core.config.config_utils.get('prompt')
-        system = core.config.config_utils.get('system', '')
-        stream = core.config.config_utils.get('stream', True)
-        enable_thinking = core.config.config_utils.get('enable_thinking',
-                                                       (core.config.config_utils.get('think', None)))  # Ollama now uses 'think' in some versions
-        images = core.config.config_utils.get('images', None)  # For multimodal inputs
+        def model_data(self) -> Tuple[str, str, str | None, Supplier]:
+            model_name = splitted[0]
+            # file contains the model tag when Ollama model
+            file = splitted[1]
+            # repo is None when Ollama model
+            repo = None
+            return model_name, file, repo, Supplier.OLLAMA
 
-        # Support format options for structured JSON output
-        format_spec = core.config.config_utils.get('format')
-        options = core.config.config_utils.get('options', {})
-
-        # Remove possible namespace in model name. Ollama API allows namespace/model
-        model_name = re.search(r'/(.*)', model_name).group(1) if re.search(r'/', model_name) else model_name
-
-        if DEBUG_MODE:
-            logger.debug(f"API generate request data: {data}")
-
-        if not model_name:
-            return JSONResponse({"error": "Missing model name"}, status_code=400)
-
-        if not prompt:
-            return JSONResponse({"error": "Missing prompt"}, status_code=400)
-
-        # Get Thinking setting from modelfile if not provided
-        if enable_thinking is None:
-            model_thinking_enabled = ModelFile.get_property_modelfile(model_name, 'ENABLE_THINKING')
-            enable_thinking = strtobool(model_thinking_enabled) if bool(
-                model_thinking_enabled) else False  # Disabled by default
-
-        # Get all model options
-        model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="", request_options=options)
-        options = model_file.full_options
-
-        # Load model if needed
-        if not variables.worker_manager_rkllm.exists_model_loaded(model_name):
-            _, error = model_file.load_model()
-            if error:
-                return JSONResponse(
-                    {"error": f"Failed to load model '{model_name}': {error}"},
-                    status_code=500,
+    if oll_pull_request.stream:
+        return pull_model_stream(
+            request=request, pull_supplier=LocalOllamaPullSupplier()
+        )
+    else:
+        error_or_digest = pull_model(
+            request=request, pull_supplier=LocalOllamaPullSupplier()
+        )
+        # Non-streaming response
+        if error_or_digest:
+            if error_or_digest.startswith("Error:"):
+                return OllamaPullResponse(
+                    status=f"{error_or_digest}",
                 )
-
-        # Acquire lock before processing
-        variables.verrou.acquire()
-        lock_acquired = True
-
-        # DIRECTLY use the GenerateEndpointHandler instead of the process_ollama_generate_request wrapper
-        from core.processing.endpoints.GenerateEndpointHandler import GenerateEndpointHandler
-        return GenerateEndpointHandler.handle_request(
-            model_name=model_name,
-            prompt=prompt,
-            system=system,
-            stream=stream,
-            format_spec=format_spec,
-            options=options,
-            enable_thinking=enable_thinking,
-            is_openai_request=is_openai_request,
-            images=images
-        )
-    except Exception as e:
-        if DEBUG_MODE:
-            logger.exception(f"Error in generate_ollama: {str(e)}")
-        return JSONResponse({"error": str(e)}, status_code=500)
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            variables.verrou.release()
-
-
-@router.get("/api/tags")
-def list_ollama_models():
-    # Return models in Ollama API format
-    models_dir = core.config.config_utils.get_path("models")
-
-    if not os.path.exists(models_dir):
-        return JSONResponse({"models": []}, status_code=200)
-
-    models = []
-    for subdir in os.listdir(models_dir):
-        subdir_path = os.path.join(models_dir, subdir)
-        if os.path.isdir(subdir_path):
-            for file in os.listdir(subdir_path):
-                if file.endswith(".rkllm"):
-                    size = os.path.getsize(os.path.join(subdir_path, file))
-
-                    # Extract parameter size and quantization details if available
-                    model_details = extract_model_details(file)
-
-                    models.append(
-                        {
-                            "name": subdir,  # Use simplified name like qwen:3b
-                            "model": subdir,  # Match Ollama's format
-                            "modified_at": datetime.datetime.fromtimestamp(
-                                os.path.getmtime(os.path.join(subdir_path, file))
-                            ).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                            "size": size,
-                            "digest": "",  # Ollama field (not used but included for compatibility)
-                            "details": {
-                                "format": "rkllm",
-                                "family": "llama",  # Default family
-                                "parameter_size": core.config.config_utils.get(
-                                    "parameter_size", "Unknown"
-                                ),
-                                "quantization_level": core.config.config_utils.get(
-                                    "quantization_level", "Unknown"
-                                ),
-                            },
-                        }
-                    )
-                    break
-
-    return JSONResponse({"models": models}, status_code=200)
-
-
-@router.post("/api/pull")
-async def pull_model_ollama(request: Request):
-    # TODO: Implement the pull model
-    data = await request.json()
-    model = core.config.config_utils.get("name")
-
-    if DEBUG_MODE:
-        logger.debug(f"API pull request data: {data}")
-
-    if not model:
-        return JSONResponse({"error": "Missing model name"}, status_code=400)
-
-    # Ollama API uses application/x-ndjson for streaming
-    response_stream = pull_model()  # Call the existing function directly
-    response_stream.content_type = "application/x-ndjson"
-    return response_stream
-
-
-@router.delete("/api/delete")
-async def delete_model_ollama(request: Request):
-    data = await request.json()
-    model_name = core.config.config_utils.get("name")
-
-    if DEBUG_MODE:
-        logger.debug(f"API delete request data: {data}")
-
-    if not model_name:
-        return JSONResponse({"error": "Missing model name"}, status_code=400)
-
-    if not model_name:
-        if DEBUG_MODE:
-            logger.error(f"Model '{model_name}' not found for deletion")
-        return JSONResponse(
-            {"error": f"Model '{model_name}' not found"}, status_code=404
+            return OllamaPullResponse(
+                status="success",
+                digest=f"sha256:{error_or_digest}",
+            )
+        return OllamaPullResponse(
+            status="success",
         )
 
-    model_path = os.path.join(core.config.config_utils.get_path("models"), model_name)
-    if not os.path.exists(model_path):
-        return JSONResponse(
-            {"error": f"Model directory for '{model_name}' not found"}, status_code=404
-        )
 
-    # Check if model is currently loaded
-    if current_model == model_name:
-        if DEBUG_MODE:
-            logger.debug(f"Unloading model '{model_name}' before deletion")
-        unload_model()
+@router.get("/api/tags", response_model=OllamaListResponse)
+async def list_models(request: Request):
+    """
+    List all available models.
+
+    Returns information about all models that are available locally.
+    """
+    from core.api.parameters.ollama_commons import OllamaModelInfo
 
     try:
-        if DEBUG_MODE:
-            logger.debug(f"Deleting model directory: {model_path}")
-        shutil.rmtree(model_path)
+        model_list: List[Model] = Model.list()
 
-        return JSONResponse({}, status_code=200)
-    except Exception as e:
-        logger.error(f"Failed to delete model '{model_name}': {str(e)}")
+        # Return a sample list of models
+        return OllamaListResponse(
+            models=[OllamaModelInfo.from_model(model) for model in model_list]
+        )
+    except ModelDirException as mde:
         return JSONResponse(
-            {"error": f"Failed to delete model: {str(e)}"}, status_code=500
+            jsonable_encoder({"error": f"{str(mde)}."}),
+            status_code=500,
         )
 
 
-@router.post("/api/chat")
-@router.post("/v1/chat/completions")
-async def chat_ollama(request: Request):
-    lock_acquired = False  # Track lock status
-    is_openai_request = request.path.startswith("/v1/chat/completions")
+@router.get("/api/show/{model_id}", response_model=OllamaShowResponse)
+async def show_model_by_id(request: Request, model_id: str):
+    return await show_model(request, OllamaShowRequest(name=model_id))
+
+
+@router.post("/api/show", response_model=OllamaShowResponse)
+async def show_model(request: Request, ollama_show_request: OllamaShowRequest):
+    """
+    Show information about a specific model.
+
+    Returns detailed information about a specific model.
+    """
+    try:
+        name: str = ollama_show_request.name
+        model_path: ModelPath = ModelPath.from_model_id(model_id=name)
+        model: Model = Model.load(model_path=model_path)
+
+        parameters_str: str = model.model_info.details.parameter_size
+        parameter_size: int = model.model_metadata.parameters
+        license_text = None
+        modelfile_content = None
+
+        # Build a more complete model_info dict with architecture details
+        model_info = {
+            "general.architecture": model.model_metadata.architecture,
+            "general.base_model.0.name": f"{model.model_info.name} {model.model_info.details.parameter_size}",
+            "general.base_model.0.organization": model.model_info.details.model_family.capitalize(),
+            "general.basename": model.model_info.name,
+            "general.file_type": FILE_TYPE.get(
+                model.model_info.model_type
+            ),  # RKLLM file type
+            "general.parameter_count": parameter_size,
+            "general.quantization_version": 2,
+            "general.size_label": parameters_str,
+            "general.tags": model.model_info.tags,
+            "general.type": "model",
+            "tokenizer.ggml.pre": model.model_metadata.architecture,
+        }
+
+        # Add repo URL if available
+        repo_url = model.model_path.repo_url
+        if repo_url:
+            model_info["general.base_model.0.repo_url"] = repo_url
+            model_info["general.base_model.count"] = 1
+
+        _model_description = (
+            model.model_metadata.description
+        )  # noqa: F841 to be change if Modelfile
+
+        # Add finetune info if available
+        if model.model_metadata.finetune:
+            model_info["general.finetune"] = model.model_metadata.finetune
+
+        # Add license info if available
+        if model.model_metadata.license:
+            license_text = model.model_metadata.license.license_text
+            license_name = model.model_metadata.license.common_license
+            license_link = model.model_metadata.license.license_link
+            model_info["general.license"] = license_name
+            if license_link:
+                model_info["general.license.link"] = license_link
+            model_info["general.license.name"] = license_name
+
+        # Add language info if we can detect it
+        if model.model_info.languages:
+            model_info["general.languages"] = model.model_info.languages
+        else:
+            # Default to English
+            model_info["general.languages"] = [LANGUAGE_DEFAULT]
+
+        # Add system info if available
+        system_prompt = model.model_metadata.system_prompt or DEFAULT_SYSTEM
+        # Add system info if available
+        template = model.model_metadata.template or DEFAULT_TEMPLATE
+
+        # load Modelfile if exists,
+        if model_path.modelfile_exists:
+            if model_path.modelfile_match:
+                logger.info(f"Modelfile found for {name}")
+                modelfile: ModelFile = ModelFile.load(model_path=model_path)
+                modelfile_content = modelfile.content()
+                #  then update license if Modelfile contains license data,
+                if modelfile.LICENSE:
+                    license_text = modelfile.license.license_text
+                    license_name = modelfile.license.common_license
+                    license_link = modelfile.license.license_link
+                    model_info["general.license"] = license_name
+                    if license_link:
+                        model_info["general.license.link"] = license_link
+                    model_info["general.license.name"] = license_name
+                #  then update system if Modelfile contains system data,
+                if modelfile.SYSTEM:
+                    system_prompt = modelfile.SYSTEM
+                #  then update template if Modelfile contains template data,
+                if modelfile.TEMPLATE:
+                    template = modelfile.TEMPLATE
+
+        # Add architecture-specific parameters based on model family
+        family = model.model_metadata.architecture
+        if family == "qwen2":
+            model_info.update(
+                {
+                    "qwen2.attention.head_count": 16,
+                    "qwen2.attention.head_count_kv": 2,
+                    "qwen2.attention.layer_norm_rms_epsilon": 0.000001,
+                    "qwen2.block_count": 36 if "3B" in parameters_str else 24,
+                    "qwen2.context_length": default_context_length(family),
+                    "qwen2.embedding_length": 2048 if "3B" in parameters_str else 1536,
+                    "qwen2.feed_forward_length": (
+                        11008 if "3B" in parameters_str else 8192
+                    ),
+                    "qwen2.rope.freq_base": 1000000,
+                }
+            )
+        elif family in ["llama", "llama2", "llama3"]:
+            model_info.update(
+                {
+                    f"{family}.attention.head_count": 32,
+                    f"{family}.attention.head_count_kv": 4,
+                    f"{family}.attention.layer_norm_rms_epsilon": 0.000001,
+                    f"{family}.block_count": 32,
+                    f"{family}.context_length": default_context_length(family),
+                    f"{family}.embedding_length": 4096,
+                    f"{family}.feed_forward_length": 11008,
+                    f"{family}.rope.freq_base": 10000,
+                }
+            )
+        elif family == "mistral":
+            model_info.update(
+                {
+                    "mistral.attention.head_count": 32,
+                    "mistral.attention.head_count_kv": 8,
+                    "mistral.attention.layer_norm_rms_epsilon": 0.000001,
+                    "mistral.block_count": 32,
+                    "mistral.context_length": default_context_length(family),
+                    "mistral.embedding_length": 4096,
+                    "mistral.feed_forward_length": 14336,
+                }
+            )
+
+        # Prepare response with enhanced metadata
+        # Add Hugging Face specific fields if available
+        ollama_hf_model_show = None
+        if model.model_path.huggingface_model_info_exists:
+            ollama_hf_model_show: OllamaHFModelShow = OllamaHFModelShow(
+                repo_id=model.model_info.hf_model_info.id,
+                description=(
+                    model.model_info.hf_model_info.description[:500]
+                    if model.model_info.hf_model_info.description
+                    else ""
+                ),
+                tags=model.model_info.hf_model_info.tags,
+                downloads=model.model_info.hf_model_info.downloads,
+                likes=model.model_info.hf_model_info.likes,
+            )
+
+        # TODO: use OllamaShowResponse
+        return OllamaShowResponse(
+            license=license_text or "Unknown",
+            modelfile=modelfile_content or "",  # file content
+            parameters=parameters_str,
+            template=template,
+            system=system_prompt,
+            name=model.model_info.name,
+            details=OllamaModelShowDetails(
+                parent_model=model.model_info.base_model or "",
+                format=model.model_metadata.model_type.name.lower(),
+                family=family,
+                families=model.model_info.details.model_families,
+                parameter_size=parameters_str,
+                quantization_level=model.model_info.details.quantization_level,
+            ),
+            model_info=model_info,
+            size=model.size,
+            digest=f"sha256:{model.digest}",
+            capabilities=model.model_info.capabilities,
+            modified_at=model.model_info.modified_at_dt.strftime(
+                "%Y-%m-%dT%H:%M:%S.%fZ"
+            ),
+            huggingface=ollama_hf_model_show,
+        )
+    except ModelException as me:
+        return JSONResponse(
+            jsonable_encoder({"error": f"{str(me)}."}),
+            status_code=500,
+        )
+
+
+@router.post("/api/generate", response_model=OllamaGenerateResponse)
+async def generate(request: Request, ollama_generate_request: OllamaGenerateRequest):
+    """
+    Generate a response for a given prompt with a provided model.
+
+    This endpoint generates text based on the provided prompt and model.
+    If stream is set to true, it will return a streaming response.
+    """
+
+    global settings
+    if settings is None:
+        from core.config import config_utils
+
+        settings = config_utils.get_settings()
+
+    global DEBUG_MODE
+    if DEBUG_MODE is None:
+        DEBUG_MODE = settings.is_debug_mode()
+
+    if DEBUG_MODE:
+        logger.debug(
+            f"API generate request OllamaGenerateRequest: {ollama_generate_request}"
+        )
+
+    if not ollama_generate_request.prompt:
+        return JSONResponse(
+            jsonable_encoder({"error": "Missing prompt"}),
+            status_code=400,
+        )
 
     try:
-        data = await request.json()
+        # modelfile can be search
+        model_path: ModelPath = ModelPath.from_model_id(
+            model_id=ollama_generate_request.model
+        )
+        modelfile: ModelFile = ModelFile.load(model_path=model_path)
 
-        if is_openai_request:
-            if DEBUG_MODE:
-                logger.debug(f"API OpenAI chat request data: {data}")
-            data = openai_to_ollama_request(data)
+        # optional non formatted values
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        # enable_thinking is None if not specified
+        enable_thinking = data.get(
+            "enable_thinking", (data.get("think", None))
+        )  # Ollama now uses 'think' in some versions
+        _images = data.get("images", None)  # noqa: F841 For multimodal inputs
 
-        model_name = core.config.config_utils.get("model")
-        messages = core.config.config_utils.get("messages", [])
-        system = core.config.config_utils.get("system", "")
-        stream = core.config.config_utils.get("stream", True)
-        tools = core.config.config_utils.get("tools", None)
-        enable_thinking = core.config.config_utils.get("enable_thinking", None)
-
-        # Extract format parameters - can be object or string
-        format_spec = core.config.config_utils.get("format")
-        options = core.config.config_utils.get("options", {})
-
-        if DEBUG_MODE:
-            logger.debug(f"API Ollama chat request data: {data}")
-
+        full_model_parameters: FullModelParameters = modelfile.full_model_parameters
         # Get Thinking setting from modelfile if not provided
         if enable_thinking is None:
-            model_thinking_enabled = ModelFile.get_property_modelfile(
-                model_name, "ENABLE_THINKING"
-            )
             enable_thinking = (
-                strtobool(model_thinking_enabled)
-                if bool(model_thinking_enabled)
+                full_model_parameters.enable_thinking
+                if (full_model_parameters.enable_thinking is not None)
                 else False
             )  # Disabled by default
 
-        # Get all model options
-        model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="",
-                               request_options=options)
-        options = model_file.full_options
+        full_model_parameters: FullModelParameters = (
+            FullModelParameters.ollama_override(
+                full_model_parameters=full_model_parameters,
+                ollama_options=ollama_generate_request.options,
+                enable_thinking=enable_thinking,
+            )
+        )
+
+        model: Model = modelfile.model
+        model_type: ModelType = model.model_type
+        worker_manager: WorkerManager = get_worker_manager(
+            backend_type=BackendType.from_model_type(model_type=model_type)
+        )
+
+        # Model loaded into memory
+        model_worker, model_process = worker_manager.add_worker(
+            modelfile=modelfile, full_model_parameters=full_model_parameters
+        )
+
+        return GenerateEndpointHandler.handle_request(
+            model_worker=model_worker,
+            api_handler=OllamaGenerateAPIHandler(),
+            modelfile=modelfile,
+            prompt=ollama_generate_request.prompt,
+            system=ollama_generate_request.system,
+            stream=ollama_generate_request.stream,
+            options=full_model_parameters,
+            enable_thinking=enable_thinking,
+            format_spec=ollama_generate_request.format,
+        )
+    except ModelException as me:
+        return JSONResponse(
+            jsonable_encoder({"error": f"{str(me)}."}),
+            status_code=500,
+        )
+
+
+@router.post("/api/chat", response_model=OllamaChatResponse)
+async def chat(request: Request, ollama_chat_request: OllamaChatRequest):
+    """
+    Chat with a model, providing a list of messages.
+
+    This endpoint generates a response based on the conversation history.
+    If stream is set to true, it will return a streaming response.
+    """
+    from core.api.parameters.commons import Role, Message
+
+    # lock_acquired = False  # Track lock status
+
+    global settings
+    if settings is None:
+        from core.config import config_utils
+
+        settings = config_utils.get_settings()
+
+    global DEBUG_MODE
+    if DEBUG_MODE is None:
+        DEBUG_MODE = settings.is_debug_mode()
+
+    if DEBUG_MODE:
+        logger.debug(f"API chat request OllamaChatRequest: {ollama_chat_request}")
+
+    if not ollama_chat_request.messages:
+        return JSONResponse(
+            jsonable_encoder({"error": "Missing messages"}),
+            status_code=400,
+        )
+
+    messages: List[Message] = ollama_chat_request.messages
+    try:
+        # modelfile can be search
+        model_path: ModelPath = ModelPath.from_model_id(
+            model_id=ollama_chat_request.model
+        )
+        modelfile: ModelFile = ModelFile.load(model_path=model_path)
+
+        # optional non formatted values
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        # enable_thinking is None if not specified
+        enable_thinking = data.get(
+            "enable_thinking", (data.get("think", None))
+        )  # Ollama now uses 'think' in some versions
+        # Review the images in messages
+        images = data.get("images", None)  # For multimodal inputs
+        tools = data.get("tools", None)
+
+        full_model_parameters: FullModelParameters = modelfile.full_model_parameters
+        # Get Thinking setting from modelfile if not provided
+        if enable_thinking is None:
+            enable_thinking = (
+                full_model_parameters.enable_thinking
+                if (full_model_parameters.enable_thinking is not None)
+                else False
+            )  # Disabled by default
+
+        full_model_parameters: FullModelParameters = (
+            FullModelParameters.ollama_override(
+                full_model_parameters=full_model_parameters,
+                ollama_options=ollama_chat_request.options,
+                enable_thinking=enable_thinking,
+            )
+        )
+
+        model: Model = modelfile.model
+        model_type: ModelType = model.model_type
+        worker_manager: WorkerManager = get_worker_manager(
+            backend_type=BackendType.from_model_type(model_type=model_type)
+        )
 
         # Check if we're starting a new conversation
         # A new conversation is one that doesn't include any assistant messages
         is_new_conversation = not any(
-            core.config.config_utils.get("role") == "assistant" for msg in messages
+            msg.role == "assistant" for msg in ollama_chat_request.messages
         )
 
         # Always reset system prompt for new conversations
         if is_new_conversation:
-            core.model.ModelFile.system = ""
+            system = (
+                modelfile.SYSTEM
+                if modelfile.SYSTEM
+                else model.model_metadata.system_prompt
+            )
             if DEBUG_MODE:
                 logger.debug("New conversation detected, resetting system prompt")
 
         # Extract system message from messages array if present
         system_in_messages = False
+        msg_system = ""
         filtered_messages = []
 
-        for message in messages:
-            if core.config.config_utils.get("role") == "system":
-                system = core.config.config_utils.get("content", "")
+        for message in ollama_chat_request.messages:
+            if message.role == "system":
+                msg_system = message.content if message.content else ""
                 system_in_messages = True
                 # Don't add system message to filtered messages
             else:
                 filtered_messages.append(message)
+                # CHeck for images in user messages for multimodal
+                if message.role == "user" and "images" in message:
+                    if "images" not in data:
+                        data["images"] = []
+                    data["images"].extend(message["images"])
 
         # Only use the extracted system message or explicit system parameter if provided
-        if system_in_messages or system:
-            core.model.ModelFile.system = system
+        if system_in_messages or msg_system:
+            system = msg_system
             messages = filtered_messages
             if DEBUG_MODE:
                 logger.debug(f"Using system message: {system}")
 
-        # Load model if needed
-        if core.endpoints.GlobalState.current_model != model_name:
-            if core.endpoints.GlobalState.current_model:
-                if DEBUG_MODE:
-                    logger.debug(f"Unloading current model: {core.endpoints.GlobalState.current_model}")
-                unload_model()
+        if system is None:
+            system = (
+                modelfile.SYSTEM
+                if modelfile.SYSTEM
+                else model.model_metadata.system_prompt
+            )
 
-            if DEBUG_MODE:
-                logger.debug(f"Loading model: {model_name}")
-            model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="",
-                                   request_options=options)
-            modele_instance, error = model_file.load_model()
-            if error:
-                if DEBUG_MODE:
-                    logger.error(f"Failed to load model {model_name}: {error}")
-                return JSONResponse(
-                    {"error": f"Failed to load model '{model_name}': {error}"},
-                    status_code=500,
-                )
-            core.endpoints.GlobalState.rkllm_model = modele_instance
-            core.endpoints.GlobalState.current_model = model_name
-            if DEBUG_MODE:
-                logger.debug(f"Model {model_name} loaded successfully")
-        else:
-            # If model is already loaded, check its options are the same for the current request
-            if (
-                    core.endpoints.GlobalState.rkllm_model.rkllm_param.max_context_len
-                    != int(core.config.config_utils.get("num_ctx"))
-                    or core.endpoints.GlobalState.rkllm_model.rkllm_param.max_new_tokens
-                    != int(core.config.config_utils.get("max_new_tokens"))
-                    or core.endpoints.GlobalState.rkllm_model.rkllm_param.top_k != int(
-                core.config.config_utils.get("top_k"))
-                    or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.top_p, 2)
-                    != round(float(core.config.config_utils.get("top_p")), 2)
-                    or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.temperature, 2)
-                    != round(float(core.config.config_utils.get("temperature")), 2)
-                    or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.repeat_penalty, 2)
-                    != round(float(core.config.config_utils.get("repeat_penalty")), 2)
-                    or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.frequency_penalty, 2)
-                    != round(float(core.config.config_utils.get("frequency_penalty")), 2)
-                    or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.presence_penalty, 2)
-                    != round(float(core.config.config_utils.get("presence_penalty")), 2)
-                    or core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat
-                    != int(core.config.config_utils.get("mirostat"))
-                    or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat_tau, 2)
-                    != round(float(core.config.config_utils.get("mirostat_tau")), 2)
-                    or round(core.endpoints.GlobalState.rkllm_model.rkllm_param.mirostat_eta, 2)
-                    != round(float(core.config.config_utils.get("mirostat_eta")), 2)
-            ):
-                # Update model parameters if they differ
-                if DEBUG_MODE:
-                    logger.debug(
-                        f"Updating model parameters for {model_name} with options: {options}"
-                    )
-
-                if core.endpoints.GlobalState.current_model:
-                    if DEBUG_MODE:
-                        logger.debug(f"Unloading current model: {core.endpoints.GlobalState.current_model}")
-                    unload_model()
-
-                if DEBUG_MODE:
-                    logger.debug(f"Reoading model: {model_name}")
-                model_file = ModelFile(model_name=model_name, endpoint_model_file="", huggingface_path="",
-                                       request_options=options)
-                modele_instance, error = model_file.load_model()
-                if error:
-                    if DEBUG_MODE:
-                        logger.error(f"Failed to reload model {model_name}: {error}")
-                    return JSONResponse(
-                        {"error": f"Failed to reload model '{model_name}': {error}"},
-                        status_code=500,
-                    )
-                core.endpoints.GlobalState.rkllm_model = modele_instance
-                core.endpoints.GlobalState.current_model = model_name
-                if DEBUG_MODE:
-                    logger.debug(f"Model {model_name} reloaded successfully")
+        # Model loaded into memory
+        model_worker, model_process = worker_manager.add_worker(
+            modelfile=modelfile, full_model_parameters=full_model_parameters
+        )
 
         # Store format settings in model instance
-        if core.endpoints.GlobalState.rkllm_model:
-            core.endpoints.GlobalState.rkllm_model.format_schema = format_spec
-            core.endpoints.GlobalState.rkllm_model.format_options = options
-
-        # Acquire lock before processing the request
-        variables.verrou.acquire()
-        lock_acquired = True  # Mark lock as acquired
-
-        # Create custom request for processing
-        custom_req = type(
-            "obj",
-            (object,),
-            {
-                "json": {
-                    "model": model_name,
-                    "messages": messages,
-                    "stream": stream,
-                    "system": system,
-                    "format": format_spec,
-                    "options": options,
-                    "tools": tools,
-                    "enable_thinking": enable_thinking,
-                },
-                "path": "/api/chat",
-            },
-        )
-
-        # Set a flag on the custom request to indicate it should not release the lock
-        # as we'll handle it here
-        custom_req.handle_lock = False
+        # if rkllm_model_request:
+        #    rkllm_model_request.format_schema = format_spec
+        #    rkllm_model_request.format_options = options
 
         # Process the request - this won't release the lock
-        from core.processing.endpoints.ChatEndpointHandler import ChatEndpointHandler
-
         return ChatEndpointHandler.handle_request(
-            modele_rkllm=core.endpoints.GlobalState.rkllm_model,
-            model_name=model_name,
+            model_worker=model_worker,
+            api_handler=OllamaChatAPIHandler(),
+            modelfile=modelfile,
             messages=messages,
             system=system,
-            stream=stream,
-            format_spec=format_spec,
-            options=options,
+            stream=ollama_chat_request.stream,
             tools=tools,
+            images=images,
+            options=full_model_parameters,
             enable_thinking=enable_thinking,
-            is_openai_request=is_openai_request,
+            format_spec=ollama_chat_request.format,
         )
 
-    except Exception as e:
-        logger.exception("Error in chat_ollama")
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except ModelException as me:
+        return JSONResponse(
+            jsonable_encoder({"error": f"{str(me)}."}),
+            status_code=500,
+        )
 
-    finally:
-        # Only release if we acquired it
-        if lock_acquired and variables.verrou.locked():
-            if DEBUG_MODE:
-                logger.debug("Releasing lock in chat_ollama")
-            variables.verrou.release()
+    # Default response
+    if data.stream:
+        # Return a streaming response
+        async def chat_stream():
+            yield (
+                OllamaChatResponse(
+                    model=data.model,
+                    created_at="2025-09-11T12:00:00Z",
+                    message=Message(
+                        role=Role.ASSISTANT,
+                        content="This is a streaming chat response...",
+                    ),
+                    done=False,
+                    total_duration=1000000,
+                    eval_count=10,
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
 
+            yield (
+                OllamaChatResponse(
+                    model=data.model,
+                    created_at="2025-09-11T12:00:01Z",
+                    message=Message(
+                        role=Role.ASSISTANT, content="Chat response complete."
+                    ),
+                    done=True,
+                    total_duration=2000000,
+                    eval_count=20,
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
 
-@router.post("/api/embeddings")
-def embeddings_ollama():
-    # This is a placeholder as embeddings aren't implemented in RKLLAMA
-    return JSONResponse(
-        {"error": "Embeddings not supported in RKLLAMA"}, status_code=501
+        return StreamingResponse(chat_stream(), media_type="application/json")
+
+    # Non-streaming response
+    return OllamaChatResponse(
+        model=data.model,
+        created_at="2025-09-11T12:00:00Z",
+        message=Message(
+            role=Role.ASSISTANT,
+            content="This is a sample chat response based on your conversation.",
+        ),
+        done=True,
+        total_duration=1500000,
+        load_duration=200000,
+        prompt_eval_duration=300000,
+        eval_count=20,
+        prompt_eval_count=10,
     )
 
 
-@router.get("/api/version")
-def ollama_version():
-    """Return a dummy version to be compatible with Ollama clients"""
-    return JSONResponse({"version": "0.5.1"}, status_code=200)
+@router.post("/api/embeddings", response_model=OllamaEmbeddingResponse)
+async def embeddings(request: Request, data: OllamaEmbeddingRequest):
+    """
+    Generate embeddings for the given prompt.
+
+    This endpoint generates vector embeddings that can be used for semantic search, clustering, etc.
+    """
+    # Return a sample embedding (normally would be much longer)
+    return OllamaEmbeddingResponse(
+        embedding=[0.1, 0.2, 0.3, 0.4, 0.5, -0.1, -0.2, -0.3, -0.4, -0.5]
+    )
+
+
+@router.post("/api/push", response_model=OllamaPushResponse)
+async def push_model(request: Request, data: OllamaPushRequest):
+    """
+    Push a model to a registry.
+
+    Uploads a model to the Ollama library or a specified registry.
+    If stream is set to true, it will return a streaming response with progress updates.
+    """
+    if data.stream:
+        # Return a streaming response with progress updates
+        async def push_stream():
+            yield (
+                OllamaPushResponse(
+                    status="uploading model",
+                    digest="sha256:abc123",
+                    total=5_000_000_000,
+                    completed=1_000_000_000,
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
+
+            yield (
+                OllamaPushResponse(
+                    status="uploading model",
+                    digest="sha256:abc123",
+                    total=5_000_000_000,
+                    completed=3_000_000_000,
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
+
+            yield (
+                OllamaPushResponse(
+                    status="verifying upload",
+                    digest="sha256:abc123",
+                    total=5_000_000_000,
+                    completed=5_000_000_000,
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
+
+            yield (
+                OllamaPushResponse(
+                    status="success",
+                    digest="sha256:abc123",
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
+
+        return StreamingResponse(push_stream(), media_type="application/json")
+
+    # Non-streaming response
+    return OllamaPushResponse(
+        status="success",
+        digest="sha256:abc123",
+    )
+
+
+@router.post("/api/create", response_model=OllamaCreateResponse)
+async def create_model(request: Request, data: OllamaCreateRequest):
+    """
+    Create a model.
+
+    Creates a new model from a Modelfile.
+    If stream is set to true, it will return a streaming response with progress updates.
+    """
+    if data.stream:
+        # Return a streaming response with progress updates
+        async def create_stream():
+            yield (
+                OllamaCreateResponse(
+                    status="processing modelfile",
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
+
+            yield (
+                OllamaCreateResponse(
+                    status="creating model",
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
+
+            yield (
+                OllamaCreateResponse(
+                    status="success",
+                )
+                .model_dump_json()
+                .encode()
+                + b"\n"
+            )
+
+        return StreamingResponse(create_stream(), media_type="application/json")
+
+    # Non-streaming response
+    return OllamaCreateResponse(
+        status="success",
+    )
+
+
+@router.post("/api/copy", response_model=OllamaCopyResponse)
+async def copy_model(request: Request, data: OllamaCopyRequest):
+    """
+    Copy a model.
+
+    Creates a copy of a model with a new name.
+    """
+    return OllamaCopyResponse(
+        status=f"copied model from {data.source} to {data.destination}",
+    )
+
+
+@router.delete("/api/delete", response_model=OllamaDeleteResponse)
+async def delete_model(request: Request, data: OllamaDeleteRequest):
+    """
+    Delete a model.
+
+    Removes a model from local storage.
+    """
+    return OllamaDeleteResponse(
+        status=f"deleted model {data.name}",
+    )

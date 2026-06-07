@@ -114,9 +114,9 @@ def show_model_info(request: Request):
 
         # Better determine model family based on HF tags or architecture field
         if (
-                hf_metadata.get("architecture") == "qwen"
-                or "qwen" in tags
-                or "qwen2" in tags
+            hf_metadata.get("architecture") == "qwen"
+            or "qwen" in tags
+            or "qwen2" in tags
         ):
             family = "qwen2"
             families = ["qwen2"]
@@ -136,12 +136,12 @@ def show_model_info(request: Request):
             family = "tinyllama"
             families = ["tinyllama", "llama"]
         elif any("llama-3" in tag for tag in tags) or any(
-                "llama3" in tag for tag in tags
+            "llama3" in tag for tag in tags
         ):
             family = "llama3"
             families = ["llama3", "llama"]
         elif any("llama-2" in tag for tag in tags) or any(
-                "llama2" in tag for tag in tags
+            "llama2" in tag for tag in tags
         ):
             family = "llama2"
             families = ["llama2", "llama"]
@@ -420,9 +420,9 @@ def show_model_info(request: Request):
     if hf_metadata:
         response["huggingface"] = {
             "repo_id": huggingface_path,
-            "description": model_description[:500]
-            if model_description
-            else "",  # Truncate if too long
+            "description": (
+                model_description[:500] if model_description else ""
+            ),  # Truncate if too long
             "tags": hf_metadata.get("tags", []),
             "downloads": hf_metadata.get("downloads", 0),
             "likes": hf_metadata.get("likes", 0),

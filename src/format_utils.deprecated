@@ -5,8 +5,8 @@ import time
 
 import core.config.config_utils
 
-#from flask import jsonify
-#import cv2
+# from flask import jsonify
+# import cv2
 
 ########################################################################
 #
@@ -58,12 +58,21 @@ def openai_to_ollama_chat_request(openai_payload: dict) -> dict:
 
     for openai_key, ollama_key in supported_option_mappings.items():
         if openai_key in openai_payload:
-            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[openai_key]
+            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[
+                openai_key
+            ]
 
     # Handle tool_choice, tools, functions
     # Ollama currently has no native tool/function support (like OpenAI tool-calling)
     # But we include them for forward compatibility if needed by custom handler
-    for passthrough_key in ["tools", "tool_choice", "functions", "function_call", "response_format", "n"]:
+    for passthrough_key in [
+        "tools",
+        "tool_choice",
+        "functions",
+        "function_call",
+        "response_format",
+        "n",
+    ]:
         if passthrough_key in openai_payload:
             ollama_payload[passthrough_key] = openai_payload[passthrough_key]
 
@@ -76,16 +85,28 @@ def openai_to_ollama_chat_request(openai_payload: dict) -> dict:
                 images = []
                 content_tmp = []
                 for item in content:
-                    if isinstance(item, dict) and item.get("type") == "image_url" and "image_url" in item:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("type") == "image_url"
+                        and "image_url" in item
+                    ):
                         image_url = item["image_url"]["url"]
                         images.append(image_url)
-                    elif isinstance(item, dict) and item.get("type") == "text" and "text" in item:
+                    elif (
+                        isinstance(item, dict)
+                        and item.get("type") == "text"
+                        and "text" in item
+                    ):
                         # Only keep non-image items in content
                         content_tmp.append(item["text"])
                 if images:
                     message["images"] = images
                     message["content"] = ". ".join(content_tmp) if content_tmp else ""
-            elif isinstance(content, dict) and content.get("type") == "image_url" and "image_url" in content:
+            elif (
+                isinstance(content, dict)
+                and content.get("type") == "image_url"
+                and "image_url" in content
+            ):
                 # Single image content
                 image_url = content["image_url"]["url"]
                 message["images"] = [image_url]
@@ -120,10 +141,7 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
     finish_reason = "stop" if ollama_response.get("done", True) else None
 
     # Build the choice message
-    choice_message = {
-        "role": role,
-        "content": content
-    }
+    choice_message = {"role": role, "content": content}
 
     if tool_calls:
         # OpenAI v1 supports `tool_calls`
@@ -133,11 +151,7 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
         choice_message["tool_calls"] = tool_calls
         finish_reason = ollama_response.get("done_reason")
 
-    choice = {
-        "index": 0,
-        "message": choice_message,
-        "finish_reason": finish_reason
-    }
+    choice = {"index": 0, "message": choice_message, "finish_reason": finish_reason}
 
     # Handle token usage if present
     usage = {}
@@ -146,7 +160,9 @@ def ollama_chat_to_openai_v1_chat_completion(ollama_response: dict) -> dict:
     if "eval_count" in ollama_response:
         usage["completion_tokens"] = ollama_response["eval_count"]
     if usage:
-        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get(
+            "completion_tokens", 0
+        )
 
     # Build full response
     openai_response = {
@@ -183,14 +199,16 @@ def ollama_generate_to_openai_v1_completion(ollama_response: dict) -> dict:
     content = ollama_response.get("response", "")
 
     # Finish reason
-    finish_reason = ollama_response.get("done_reason", "stop" if ollama_response.get("done", True) else None)
+    finish_reason = ollama_response.get(
+        "done_reason", "stop" if ollama_response.get("done", True) else None
+    )
 
     # Build choice
     choice = {
         "text": content,
         "index": 0,
         "logprobs": None,
-        "finish_reason": finish_reason
+        "finish_reason": finish_reason,
     }
 
     # Usage
@@ -200,7 +218,9 @@ def ollama_generate_to_openai_v1_completion(ollama_response: dict) -> dict:
     if "eval_count" in ollama_response:
         usage["completion_tokens"] = ollama_response["eval_count"]
     if usage:
-        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get(
+            "completion_tokens", 0
+        )
 
     # Assemble OpenAI-style response
     openai_completion_response = {
@@ -208,7 +228,7 @@ def ollama_generate_to_openai_v1_completion(ollama_response: dict) -> dict:
         "object": "text_completion",
         "created": created,
         "model": model,
-        "choices": [choice]
+        "choices": [choice],
     }
     if usage:
         openai_completion_response["usage"] = usage
@@ -237,7 +257,7 @@ def ollama_embedding_to_openai_v1_embeddingns(ollama_response: dict) -> dict:
     data = {
         "object": "embedding",
         "embedding": [item for embedding in embeddings for item in embedding],
-        "index": 0
+        "index": 0,
     }
 
     # Usage
@@ -245,14 +265,12 @@ def ollama_embedding_to_openai_v1_embeddingns(ollama_response: dict) -> dict:
     if "prompt_eval_count" in ollama_response:
         usage["prompt_tokens"] = ollama_response["prompt_eval_count"]
     if usage:
-        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get("completion_tokens", 0)
+        usage["total_tokens"] = usage.get("prompt_tokens", 0) + usage.get(
+            "completion_tokens", 0
+        )
 
     # Assemble OpenAI-style response
-    openai_completion_response = {
-        "object": "list",
-        "data": [data],
-        "model": model
-    }
+    openai_completion_response = {"object": "list", "data": [data], "model": model}
 
     if usage:
         openai_completion_response["usage"] = usage
@@ -298,7 +316,9 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
                 tool["id"] = f"call_{uuid.uuid4().hex}"
                 tool["type"] = "function"
                 tool["index"] = idx
-                tool["function"]["arguments"] = f"{str(tool["function"]["arguments"]).replace("'", '\"')}"
+                tool["function"][
+                    "arguments"
+                ] = f"{str(tool['function']['arguments']).replace("'", '"')}"
             delta["tool_calls"] = tool_calls
 
         chunk = {
@@ -306,11 +326,7 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
             "object": "chat.completion.chunk",
             "created": created,
             "model": model,
-            "choices": [{
-                "index": 0,
-                "delta": delta,
-                "finish_reason": finish_reason
-            }]
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}],
         }
 
         yield f"data: {json.dumps(chunk)}\n\n"
@@ -322,7 +338,7 @@ def ollama_chat_stream_to_openai_chat_completions_chunks(ollama_stream_lines):
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": model,
-                "choices": []
+                "choices": [],
             }
             yield f"data: {json.dumps(final_chunk)}\n\n"
             yield "data: [DONE]\n\n"
@@ -361,11 +377,9 @@ def ollama_generate_stream_to_openai_completions_chunks(ollama_stream_lines):
             "object": "chat.completion.chunk",
             "created": created,
             "model": model,
-            "choices": [{
-                "index": 0,
-                "text": content_piece,
-                "finish_reason": finish_reason
-            }]
+            "choices": [
+                {"index": 0, "text": content_piece, "finish_reason": finish_reason}
+            ],
         }
 
         yield f"data: {json.dumps(chunk)}\n\n"
@@ -377,7 +391,7 @@ def ollama_generate_stream_to_openai_completions_chunks(ollama_stream_lines):
                 "object": "chat.completion.chunk",
                 "created": created,
                 "model": model,
-                "choices": []
+                "choices": [],
             }
             yield f"data: {json.dumps(final_chunk)}\n\n"
             yield "data: [DONE]\n\n"
@@ -409,9 +423,13 @@ def handle_ollama_response(response, stream=False, is_chat=True):
                 if raw:
                     # CHeck if cht or generate response
                     if is_chat:
-                        yield from ollama_chat_stream_to_openai_chat_completions_chunks([raw])
+                        yield from ollama_chat_stream_to_openai_chat_completions_chunks(
+                            [raw]
+                        )
                     else:
-                        yield from ollama_generate_stream_to_openai_completions_chunks([raw])
+                        yield from ollama_generate_stream_to_openai_completions_chunks(
+                            [raw]
+                        )
 
         return stream_chunks()
     else:
@@ -440,7 +458,6 @@ def handle_ollama_embedding_response(response):
 
     # CHeck if cht or generate response
     return jsonify(ollama_embedding_to_openai_v1_embeddingns(ollama_response))
-
 
 
 def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
@@ -483,7 +500,9 @@ def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
 
     for openai_key, ollama_key in supported_option_mappings.items():
         if openai_key in openai_payload:
-            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[openai_key]
+            ollama_payload.setdefault("options", {})[ollama_key] = openai_payload[
+                openai_key
+            ]
 
     # Pass through extra non-standard fields for forward compatibility (optional)
     for passthrough_key in ["n", "best_of", "logprobs", "echo", "user"]:
@@ -496,12 +515,20 @@ def openai_to_ollama_generate_request(openai_payload: dict) -> dict:
             # If content is already a list, process each item
             images_tmp = []
             for item in images:
-                if isinstance(item, dict) and item.get("type") == "image_url" and "image_url" in item:
+                if (
+                    isinstance(item, dict)
+                    and item.get("type") == "image_url"
+                    and "image_url" in item
+                ):
                     image_url = item["image_url"]["url"]
                     images_tmp.append(image_url)
             if images_tmp:
                 ollama_payload["images"] = images_tmp
-        elif isinstance(images, dict) and images.get("type") == "image_url" and "image_url" in images:
+        elif (
+            isinstance(images, dict)
+            and images.get("type") == "image_url"
+            and "image_url" in images
+        ):
             # Single image content
             image_url = images["image_url"]["url"]
             ollama_payload["images"] = [image_url]

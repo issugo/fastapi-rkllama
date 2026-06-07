@@ -1,6 +1,6 @@
 import ctypes
 import os
-import config
+from core import config
 
 # Load RKNN runtime
 rknn_library_path = os.path.join(config.get_path("lib"), "librknnrt.so")
@@ -12,19 +12,27 @@ RKNN_QUERY_IN_OUT_NUM = 0  # query the number of input & output tensor.
 RKNN_QUERY_INPUT_ATTR = 1  # query the attribute of input tensor.
 RKNN_QUERY_OUTPUT_ATTR = 2  # query the attribute of output tensor.
 RKNN_QUERY_PERF_DETAIL = 3  # query the detail performance need set RKNN_FLAG_COLLECT_PERF_MASK when call rknn_init this query needs to be valid after rknn_outputs_get.
-RKNN_QUERY_PERF_RUN = 4  # query the time of run this query needs to be valid after rknn_outputs_get.
+RKNN_QUERY_PERF_RUN = (
+    4  # query the time of run this query needs to be valid after rknn_outputs_get.
+)
 RKNN_QUERY_SDK_VERSION = 5  # query the sdk & driver version
 RKNN_QUERY_MEM_SIZE = 6  # query the weight & internal memory size
 RKNN_QUERY_CUSTOM_STRING = 7  # query the custom string
 RKNN_QUERY_NATIVE_INPUT_ATTR = 8  # query the attribute of native input tensor.
 RKNN_QUERY_NATIVE_OUTPUT_ATTR = 9  # query the attribute of native output tensor.
 RKNN_QUERY_NATIVE_NC1HWC2_INPUT_ATTR = 8  # query the attribute of native input tensor.
-RKNN_QUERY_NATIVE_NC1HWC2_OUTPUT_ATTR = 9  # query the attribute of native output tensor.
+RKNN_QUERY_NATIVE_NC1HWC2_OUTPUT_ATTR = (
+    9  # query the attribute of native output tensor.
+)
 RKNN_QUERY_NATIVE_NHWC_INPUT_ATTR = 10  # query the attribute of native input tensor.
 RKNN_QUERY_NATIVE_NHWC_OUTPUT_ATTR = 11  # query the attribute of native output tensor.
 RKNN_QUERY_DEVICE_MEM_INFO = 12  # query the attribute of rknn memory information.
-RKNN_QUERY_INPUT_DYNAMIC_RANGE = 13  # query the dynamic shape range of rknn input tensor.
-RKNN_QUERY_CURRENT_INPUT_ATTR = 14  # query the current shape of rknn input tensor only valid for dynamic rknn model
+RKNN_QUERY_INPUT_DYNAMIC_RANGE = (
+    13  # query the dynamic shape range of rknn input tensor.
+)
+RKNN_QUERY_CURRENT_INPUT_ATTR = (
+    14  # query the current shape of rknn input tensor only valid for dynamic rknn model
+)
 RKNN_QUERY_CURRENT_OUTPUT_ATTR = 15  # query the current shape of rknn output tensor only valid for dynamic rknn model
 RKNN_QUERY_CURRENT_NATIVE_INPUT_ATTR = 16  # query the current native shape of rknn input tensor only valid for dynamic rknn model
 RKNN_QUERY_CURRENT_NATIVE_OUTPUT_ATTR = 17  # query the current native shape of rknn output tensor only valid for dynamic rknn model
@@ -34,8 +42,10 @@ RKNN_NPU_CORE_0 = 1  # run on NPU core 0.
 RKNN_NPU_CORE_1 = 2  # run on NPU core 1.
 RKNN_NPU_CORE_2 = 4  # run on NPU core 2.
 RKNN_NPU_CORE_0_1 = RKNN_NPU_CORE_0 + RKNN_NPU_CORE_1  # run on NPU core 0 and core 1.
-RKNN_NPU_CORE_0_1_2 = RKNN_NPU_CORE_0_1 + RKNN_NPU_CORE_2  # run on NPU core 0 and core 1 and core 2.
-RKNN_NPU_CORE_ALL = 0xffff  # auto choice, run on NPU cores depending on platform
+RKNN_NPU_CORE_0_1_2 = (
+    RKNN_NPU_CORE_0_1 + RKNN_NPU_CORE_2
+)  # run on NPU core 0 and core 1 and core 2.
+RKNN_NPU_CORE_ALL = 0xFFFF  # auto choice, run on NPU cores depending on platform
 
 # typedef RKNNContext (non-arm: uint64_t)
 RKNNContext = ctypes.c_uint64
@@ -48,7 +58,8 @@ class RKNNInitExtend(ctypes.Structure):
         ("real_model_size", ctypes.c_uint32),
         ("model_buffer_fd", ctypes.c_int32),
         ("model_buffer_flags", ctypes.c_uint32),
-        ("reserved", ctypes.c_uint8 * 112)]
+        ("reserved", ctypes.c_uint8 * 112),
+    ]
 
 
 class RKNNInputOutputNum(ctypes.Structure):

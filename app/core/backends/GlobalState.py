@@ -10,18 +10,19 @@ class GlobalState(BaseModel):
     rkllm_model: Optional[Model] = None  # Model instance
 
     @property
-    def current_model(self) -> Union[ModelPath|None]:
+    def current_model(self) -> Union[ModelPath | None]:
         """Global variable for storing the loaded model"""
         if self.rkllm_model:
             return self.rkllm_model.model_file
         return None
 
     @property
-    def loaded_model_hfpath(self) -> Union[str|None]:
+    def loaded_model_hfpath(self) -> Union[str | None]:
         """Global variable for storing the loaded model"""
         if self.rkllm_model:
             return self.rkllm_model.model_file.huggingface_path
         return None
+
 
 GLOBAL_STATE = GlobalState()
 

@@ -16,11 +16,14 @@ EMBED_SIZE = 1536
 
 
 class RKNNBackend(Backend):
-
-    def __init__(self, model_path: str, core_max: int = RKNN_NPU_CORE_ALL, base_domain_id=0):
+    def __init__(
+        self, model_path: str, core_max: int = RKNN_NPU_CORE_ALL, base_domain_id=0
+    ):
         super().__init__(BackendType.RKNN)
 
-        logger.debug(f"Initializing RKNN model from {model_path} with cores: {core_max}")
+        logger.debug(
+            f"Initializing RKNN model from {model_path} with cores: {core_max}"
+        )
 
         # Custom properties saved for reference
         self.model_path = model_path
@@ -34,10 +37,21 @@ class RKNNBackend(Backend):
         # Initialization of the RKNN model
         self.ctx = RknnAppContext(base_domain_id)
         self.rknn_init = rknn_lib.rknn_init
-        self.rknn_init.argtypes = [ctypes.POINTER(RKNNContext), ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
-                                   ctypes.c_void_p]
+        self.rknn_init.argtypes = [
+            ctypes.POINTER(RKNNContext),
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+        ]
         self.rknn_init.restype = ctypes.c_int
-        ret = self.rknn_init(ctypes.byref(self.ctx.rknn_ctx), ctypes.cast(buf, ctypes.c_void_p), model_len, 0, None)
+        ret = self.rknn_init(
+            ctypes.byref(self.ctx.rknn_ctx),
+            ctypes.cast(buf, ctypes.c_void_p),
+            model_len,
+            0,
+            None,
+        )
         if ret < 0:
             raise RuntimeError(f"Failed to initialize RKNN model: {ret}")
 
@@ -53,10 +67,19 @@ class RKNNBackend(Backend):
         # Inut output numbers query
         self.io_num = RKNNInputOutputNum()
         self.rknn_query = rknn_lib.rknn_query
-        self.rknn_query.argtypes = [RKNNContext, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32]
+        self.rknn_query.argtypes = [
+            RKNNContext,
+            ctypes.c_uint32,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        ]
         self.rknn_query.restype = ctypes.c_int
-        ret = self.rknn_query(self.ctx.rknn_ctx, RKNN_QUERY_IN_OUT_NUM, ctypes.byref(self.io_num),
-                              ctypes.sizeof(self.io_num))
+        ret = self.rknn_query(
+            self.ctx.rknn_ctx,
+            RKNN_QUERY_IN_OUT_NUM,
+            ctypes.byref(self.io_num),
+            ctypes.sizeof(self.io_num),
+        )
         if ret != RKNN_SUCC:
             raise RuntimeError(f"rknn_query(in/out num) failed: {ret}")
         self.ctx.io_num = self.io_num
@@ -66,7 +89,12 @@ class RKNNBackend(Backend):
         for i in range(self.io_num.n_input):
             a = RKNNTensorAttr()
             a.index = i
-            ret = self.rknn_query(self.ctx.rknn_ctx, RKNN_QUERY_INPUT_ATTR, ctypes.byref(a), ctypes.sizeof(a))
+            ret = self.rknn_query(
+                self.ctx.rknn_ctx,
+                RKNN_QUERY_INPUT_ATTR,
+                ctypes.byref(a),
+                ctypes.sizeof(a),
+            )
             if ret != RKNN_SUCC:
                 raise RuntimeError(f"rknn_query(input attr) failed: {ret}")
             self.input_attrs.append(a)
@@ -77,7 +105,12 @@ class RKNNBackend(Backend):
         for i in range(self.io_num.n_output):
             a = RKNNTensorAttr()
             a.index = i
-            ret = self.rknn_query(self.ctx.rknn_ctx, RKNN_QUERY_OUTPUT_ATTR, ctypes.byref(a), ctypes.sizeof(a))
+            ret = self.rknn_query(
+                self.ctx.rknn_ctx,
+                RKNN_QUERY_OUTPUT_ATTR,
+                ctypes.byref(a),
+                ctypes.sizeof(a),
+            )
             if ret != RKNN_SUCC:
                 raise RuntimeError(f"rknn_query(output attr) failed: {ret}")
             self.output_attrs.append(a)
@@ -105,7 +138,11 @@ class RKNNBackend(Backend):
         self.rknn_destroy.restype = ctypes.c_int
 
         self.rknn_inputs_set = rknn_lib.rknn_inputs_set
-        self.rknn_inputs_set.argtypes = [RKNNContext, ctypes.c_uint32, ctypes.POINTER(RKNNInput)]
+        self.rknn_inputs_set.argtypes = [
+            RKNNContext,
+            ctypes.c_uint32,
+            ctypes.POINTER(RKNNInput),
+        ]
         self.rknn_inputs_set.restype = ctypes.c_int
 
         self.rknn_run = rknn_lib.rknn_run
@@ -113,15 +150,23 @@ class RKNNBackend(Backend):
         self.rknn_run.restype = ctypes.c_int
 
         self.rknn_outputs_get = rknn_lib.rknn_outputs_get
-        self.rknn_outputs_get.argtypes = [RKNNContext, ctypes.c_uint32, ctypes.POINTER(RKNNOutput), ctypes.c_void_p]
+        self.rknn_outputs_get.argtypes = [
+            RKNNContext,
+            ctypes.c_uint32,
+            ctypes.POINTER(RKNNOutput),
+            ctypes.c_void_p,
+        ]
         self.rknn_outputs_get.restype = ctypes.c_int
 
         self.rknn_outputs_release = rknn_lib.rknn_outputs_release
-        self.rknn_outputs_release.argtypes = [RKNNContext, ctypes.c_uint32, ctypes.POINTER(RKNNOutput)]
+        self.rknn_outputs_release.argtypes = [
+            RKNNContext,
+            ctypes.c_uint32,
+            ctypes.POINTER(RKNNOutput),
+        ]
         self.rknn_outputs_release.restype = ctypes.c_int
 
     def run(self, image_path):
-
         logger.info(f"Running RKNN model on image: {image_path}")
 
         # Run the model
@@ -131,7 +176,7 @@ class RKNNBackend(Backend):
 
         if out.size < expected:
             pad = np.zeros((expected,), dtype=np.float32)
-            pad[:min(out.size, expected)] = out[:min(out.size, expected)]
+            pad[: min(out.size, expected)] = out[: min(out.size, expected)]
             return pad
 
         # Return the output
@@ -176,4 +221,3 @@ class RKNNBackend(Backend):
 
         self.rknn_outputs_release(self.ctx.rknn_ctx, 1, ctypes.byref(out))
         return result
-

@@ -2,7 +2,6 @@ import ctypes
 import os
 
 import core.config.config_utils
-from core import config
 
 PROMPT_TEXT_PREFIX = (
     "<|im_start|>system You are a helpful assistant. <|im_end|> <|im_start|>user"

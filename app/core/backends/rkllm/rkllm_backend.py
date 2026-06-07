@@ -1,13 +1,22 @@
 import ctypes
 
-import core.config.config_utils
 from core.backends.backend import Backend, BackendType
 from core.backends.rkllm.callback import callback_impl
 import logging
 import multiprocessing
 
-from core.backends.rkllm.classes import RKLLMResult, RKLLMParam, RKLLM_Handle_t, rkllm_lib, RKLLMInput, RKLLMInferParam, \
-    RKLLMLoraAdapter, RKLLMLoraParam, RKLLMInferMode, RKLLMInputType
+from core.backends.rkllm.classes import (
+    RKLLMResult,
+    RKLLMParam,
+    RKLLM_Handle_t,
+    rkllm_lib,
+    RKLLMInput,
+    RKLLMInferParam,
+    RKLLMLoraAdapter,
+    RKLLMLoraParam,
+    RKLLMInferMode,
+    RKLLMInputType,
+)
 from core.model.Model import Model
 from core.model.ModelConfig import FullModelParameters
 from core.model.ModelPath import ModelPath
@@ -30,7 +39,7 @@ class RKLLMBackend(Backend):
         options: FullModelParameters,
         base_domain_id: BaseDomainId,
         prompt_cache_path=None,
-        lora_model_path=None
+        lora_model_path=None,
     ):
         super().__init__(BackendType.RKLLM)
         model_path: ModelPath = model.model_path
@@ -46,7 +55,9 @@ class RKLLMBackend(Backend):
 
         # Configure RKLLM parameters
         self.rkllm_param = RKLLMParam()
-        self.rkllm_param.model_path = bytes(str(model_path.endpoint_model_file_path), "utf-8")
+        self.rkllm_param.model_path = bytes(
+            str(model_path.endpoint_model_file_path), "utf-8"
+        )
         self.rkllm_param.max_context_len = int(options.num_ctx)
         self.rkllm_param.max_new_tokens = int(options.max_new_tokens)
         self.rkllm_param.top_k = int(options.top_k)
@@ -128,7 +139,12 @@ class RKLLMBackend(Backend):
         self.rkllm_destroy.restype = ctypes.c_int
 
         self.rkllm_clear_kv_cache = rkllm_lib.rkllm_clear_kv_cache
-        self.rkllm_clear_kv_cache.argtypes = [RKLLM_Handle_t, ctypes.c_int , ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int) ]
+        self.rkllm_clear_kv_cache.argtypes = [
+            RKLLM_Handle_t,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_int),
+        ]
         self.rkllm_clear_kv_cache.restype = ctypes.c_int
 
         self.rkllm_abort = rkllm_lib.rkllm_abort

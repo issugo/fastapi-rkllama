@@ -3,13 +3,13 @@ from typing import List
 from core.api.parameters.ollama_requests import (
     OllamaChatRequest,
     OllamaGenerateRequest,
-    OllamaEmbeddingRequest
+    OllamaEmbeddingRequest,
 )
 from core.api.parameters.openai_requests import (
     ChatCompletionRequest,
     CompletionRequest,
     EmbeddingRequest,
-    VisionRequest
+    VisionRequest,
 )
 from core.api.parameters.openai_commons import OpenAIJSONResponseFormat
 from core.api.parameters.commons import Message, TextContent, ImageContent
@@ -60,9 +60,7 @@ class OllamaConversions:
             for msg in messages:
                 if msg.role == "user" and isinstance(msg.content, str):
                     # For the last user message, add image content
-                    content_items = [
-                        TextContent(type="text", text=msg.content)
-                    ]
+                    content_items = [TextContent(type="text", text=msg.content)]
 
                     # Add image content
                     for image_url in images:
@@ -72,9 +70,7 @@ class OllamaConversions:
 
                     # Create new message with multimodal content
                     new_msg = Message(
-                        role=msg.role,
-                        content=content_items,
-                        name=msg.name
+                        role=msg.role, content=content_items, name=msg.name
                     )
                     new_messages.append(new_msg)
                 else:
@@ -94,7 +90,7 @@ class OllamaConversions:
             presence_penalty=presence_penalty,
             stop=stop,
             stream=request.stream,
-            response_format=response_format
+            response_format=response_format,
         )
 
     @staticmethod
@@ -136,7 +132,7 @@ class OllamaConversions:
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             stop=stop,
-            stream=request.stream
+            stream=request.stream,
         )
 
     @staticmethod
@@ -151,15 +147,11 @@ class OllamaConversions:
             EmbeddingRequest: The converted OpenAI embedding request
         """
         # Simply map the prompt to input
-        return EmbeddingRequest(
-            model=request.model,
-            input=request.prompt
-        )
+        return EmbeddingRequest(model=request.model, input=request.prompt)
 
     @staticmethod
     def convert_generate_with_images_to_vision(
-        request: OllamaGenerateRequest, 
-        images: List[str]
+        request: OllamaGenerateRequest, images: List[str]
     ) -> VisionRequest:
         """
         Convert an Ollama GenerateRequest with images to an OpenAI VisionRequest.
@@ -184,23 +176,17 @@ class OllamaConversions:
 
         # Add image content items
         for image_url in images:
-            content_items.append(
-                ImageContent(type="image", image_url=image_url)
-            )
+            content_items.append(ImageContent(type="image", image_url=image_url))
 
         # Create messages array with system and user messages
         messages = []
 
         # Add system message if present
         if request.system:
-            messages.append(
-                Message(role="system", content=request.system)
-            )
+            messages.append(Message(role="system", content=request.system))
 
         # Add user message with content items
-        messages.append(
-            Message(role="user", content=content_items)
-        )
+        messages.append(Message(role="user", content=content_items))
 
         # Create OpenAI vision request
         return VisionRequest(
@@ -209,13 +195,12 @@ class OllamaConversions:
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
-            stream=request.stream
+            stream=request.stream,
         )
 
     @staticmethod
     def convert_chat_with_images_to_vision(
-        request: OllamaChatRequest, 
-        images: List[str]
+        request: OllamaChatRequest, images: List[str]
     ) -> VisionRequest:
         """
         Convert an Ollama ChatRequest with images to an OpenAI VisionRequest.
@@ -255,7 +240,7 @@ class OllamaConversions:
                     messages[i] = Message(
                         role=messages[i].role,
                         content=content_items,
-                        name=messages[i].name
+                        name=messages[i].name,
                     )
                 break
 
@@ -266,5 +251,5 @@ class OllamaConversions:
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
-            stream=request.stream
+            stream=request.stream,
         )

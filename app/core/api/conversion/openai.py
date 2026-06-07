@@ -4,12 +4,12 @@ from core.api.parameters.openai_requests import (
     ChatCompletionRequest,
     CompletionRequest,
     EmbeddingRequest,
-    VisionRequest
+    VisionRequest,
 )
 from core.api.parameters.ollama_requests import (
     OllamaChatRequest,
     OllamaGenerateRequest,
-    OllamaEmbeddingRequest
+    OllamaEmbeddingRequest,
 )
 from core.api.parameters.commons import Message, TextContent, ImageContent
 
@@ -20,7 +20,9 @@ class OpenAIConversions:
     """
 
     @staticmethod
-    def convert_chat_completion_request(request: ChatCompletionRequest) -> OllamaChatRequest:
+    def convert_chat_completion_request(
+        request: ChatCompletionRequest,
+    ) -> OllamaChatRequest:
         """
         Convert an OpenAI ChatCompletionRequest to an OllamaChatRequest.
 
@@ -49,11 +51,16 @@ class OpenAIConversions:
             options["presence_penalty"] = request.presence_penalty
 
         if request.stop:
-            options["stop"] = request.stop if isinstance(request.stop, list) else [request.stop]
+            options["stop"] = (
+                request.stop if isinstance(request.stop, list) else [request.stop]
+            )
 
         # Format handling for JSON output if specified
         format_option = None
-        if request.response_format and getattr(request.response_format, "type", None) == "json_object":
+        if (
+            request.response_format
+            and getattr(request.response_format, "type", None) == "json_object"
+        ):
             format_option = "json"
 
         # Create Ollama chat request
@@ -62,7 +69,7 @@ class OpenAIConversions:
             messages=request.messages,
             options=options or None,
             stream=request.stream,
-            format=format_option
+            format=format_option,
         )
 
     @staticmethod
@@ -95,7 +102,9 @@ class OpenAIConversions:
             options["presence_penalty"] = request.presence_penalty
 
         if request.stop:
-            options["stop"] = request.stop if isinstance(request.stop, list) else [request.stop]
+            options["stop"] = (
+                request.stop if isinstance(request.stop, list) else [request.stop]
+            )
 
         # Extract prompt
         prompt = request.prompt
@@ -112,7 +121,7 @@ class OpenAIConversions:
             prompt=prompt,
             options=options or None,
             system=system,
-            stream=request.stream
+            stream=request.stream,
         )
 
     @staticmethod
@@ -133,10 +142,7 @@ class OpenAIConversions:
             prompt = prompt[0] if prompt else ""
 
         # Create Ollama embedding request
-        return OllamaEmbeddingRequest(
-            model=request.model,
-            prompt=prompt
-        )
+        return OllamaEmbeddingRequest(model=request.model, prompt=prompt)
 
     @staticmethod
     def convert_vision_request(request: VisionRequest) -> OllamaChatRequest:
@@ -173,26 +179,36 @@ class OpenAIConversions:
                 text_parts = []
 
                 for item in content:
-                    if isinstance(item, TextContent) or (isinstance(item, dict) and item.get("type") == "text"):
+                    if isinstance(item, TextContent) or (
+                        isinstance(item, dict) and item.get("type") == "text"
+                    ):
                         # Extract text content
-                        text = item.text if isinstance(item, TextContent) else item.get("text", "")
+                        text = (
+                            item.text
+                            if isinstance(item, TextContent)
+                            else item.get("text", "")
+                        )
                         text_parts.append(text)
-                    elif isinstance(item, ImageContent) or (isinstance(item, dict) and item.get("type") == "image"):
+                    elif isinstance(item, ImageContent) or (
+                        isinstance(item, dict) and item.get("type") == "image"
+                    ):
                         # Extract image URL
                         if isinstance(item, ImageContent):
                             image_url = str(item.image_url)
                         else:
                             image_url_obj = item.get("image_url", {})
-                            image_url = image_url_obj.get("url", "") if isinstance(image_url_obj, dict) else str(image_url_obj)
+                            image_url = (
+                                image_url_obj.get("url", "")
+                                if isinstance(image_url_obj, dict)
+                                else str(image_url_obj)
+                            )
 
                         if image_url:
                             images.append(image_url)
 
                 # Create a new message with only text content
                 new_msg = Message(
-                    role=msg.role,
-                    content="".join(text_parts),
-                    name=msg.name
+                    role=msg.role, content="".join(text_parts), name=msg.name
                 )
                 messages.append(new_msg)
             else:
@@ -204,7 +220,7 @@ class OpenAIConversions:
             model=request.model,
             messages=messages,
             options=options or None,
-            stream=request.stream
+            stream=request.stream,
         )
 
         # Add images if any were found

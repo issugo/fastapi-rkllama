@@ -39,13 +39,13 @@ class EndpointHandler(ABC):
 
         ## TODO: tokenizer is downloaded when get model from internet
         ## so use modelfile
+        tokenizer_path = getattr(modelfile, "huggingface_path", "gpt2") or "gpt2"
         tokenizer = AutoTokenizer.from_pretrained(
-            ## TODO: get loaded model from parameter
-            GLOBAL_STATE.loaded_model_hfpath,
+            tokenizer_path,
             trust_remote_code=True,
         )
         supports_system_role = (
-            "raise_exception('System role not supported')"
+            tokenizer.chat_template is not None and "raise_exception('System role not supported')"
             not in tokenizer.chat_template
         )
 
@@ -76,13 +76,17 @@ class EndpointHandler(ABC):
         else:
             prompt_messages = flat_messages
 
-        prompt_tokens: Union[list[int], Dict] = tokenizer.apply_chat_template(
-            prompt_messages,
-            tools=tools,
-            tokenize=True,
-            add_generation_prompt=True,
-            enable_thinking=enable_thinking,
-        )
+        try:
+            prompt_tokens: Union[list[int], Dict] = tokenizer.apply_chat_template(
+                prompt_messages,
+                tools=tools,
+                tokenize=True,
+                add_generation_prompt=True,
+                enable_thinking=enable_thinking,
+            )
+        except ValueError:
+            prompt_str = "\n".join([f"{m['role']}: {m['content']}" for m in prompt_messages])
+            prompt_tokens = tokenizer(prompt_str)["input_ids"]
 
         return tokenizer, prompt_tokens, len(prompt_tokens)
 

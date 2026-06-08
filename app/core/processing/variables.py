@@ -6,20 +6,28 @@ from typing import List, Dict, Any
 # each times something is needed from this file, please consider refactoring to use equivalent variable (usualy defined as parameters)
 # remove unused variables to avoid confusion
 
+
 class MockWorkerManager:
     workers: Dict[str, Any] = {}
+
     def exists_model_loaded(self, model_name: str) -> bool:
         return False
+
     def get_result(self, model_name: str):
         return None
+
     def get_finished_inference_token(self):
         return ""
+
     def inference(self, model_name: str, prompt_tokens: Any):
         pass
+
     def multimodal(self, model_name: str, prompt_tokens: Any, images: Any):
         pass
+
     def clear_cache_worker(self, model_name: str):
         pass
+
 
 worker_manager_rkllm = MockWorkerManager()
 verrou = threading.Lock()

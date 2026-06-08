@@ -86,12 +86,12 @@ class ChatEndpointHandler(EndpointHandler):
                 else "tool_calls"
             ),
             "done": True,
-            "total_duration": metrics["total"],
-            "load_duration": metrics["load"],
-            "prompt_eval_count": core.config.config_utils.get("prompt_tokens", 0),
-            "prompt_eval_duration": metrics["prompt_eval"],
-            "eval_count": core.config.config_utils.get("token_count", 0),
-            "eval_duration": metrics["eval"],
+            "total_duration": metrics.total,
+            "load_duration": metrics.load,
+            "prompt_eval_count": metrics.prompt_tokens,
+            "prompt_eval_duration": metrics.prompt_eval,
+            "eval_count": metrics.token_count,
+            "eval_duration": metrics.eval,
         }
 
         if format_data and "tool_call" in format_data:
@@ -221,7 +221,7 @@ class ChatEndpointHandler(EndpointHandler):
 
             # Check if multimodal or text only
             if not images:
-                worker_manager.inference(model_id=model_id, prompt_tokens=prompt_tokens)
+                worker_manager.inference(model_id=model_id, model_input=prompt_tokens)
             else:
                 worker_manager.multimodal(
                     model_id=model_id, prompt_tokens=prompt_tokens, images=images
@@ -292,8 +292,8 @@ class ChatEndpointHandler(EndpointHandler):
                     yield (json.dumps(chunk) + "\n").encode("utf-8")
 
             metrics = cls.calculate_durations(start_time, prompt_eval_time)
-            metrics["prompt_tokens"] = prompt_token_count
-            metrics["token_count"] = count
+            metrics.prompt_tokens = prompt_token_count
+            metrics.token_count = count
 
             format_data = None
             if format_spec and complete_text:
@@ -352,7 +352,7 @@ class ChatEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            worker_manager.inference(model_id=model_id, prompt_tokens=prompt_tokens)
+            worker_manager.inference(model_id=model_id, model_input=prompt_tokens)
         else:
             # Send the task of multimodal inference to the model
             worker_manager.multimodal(
@@ -381,8 +381,8 @@ class ChatEndpointHandler(EndpointHandler):
             complete_text += token
 
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        metrics["prompt_tokens"] = prompt_token_count
-        metrics["token_count"] = count
+        metrics.prompt_tokens = prompt_token_count
+        metrics.token_count = count
 
         format_data = None
         tool_calls = get_tool_calls(complete_text) if tools else None

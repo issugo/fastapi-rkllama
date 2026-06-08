@@ -448,7 +448,8 @@ class WorkerManager:
         Returns:
             str: Token for finished inference.
         """
-        return WORKER_TASK_FINISHED
+        from core.processing.tasks.Tasks import Tasks
+        return Tasks.WORKER_TASK_FINISHED
 
 
 worker_managers: List[WorkerManager] = []

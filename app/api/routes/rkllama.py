@@ -283,9 +283,9 @@ async def Rm_model(request: Request):
 
 @router.get("/current_models")
 def get_current_models():
-    from core.model import Model, ModelMetadata
-    from core.model.ModelInfo import ModelInfo
-    from core.model.ModelPath import ModelType
+    from core.model import ModelMetadata
+    from core.model.ModelInfo import ModelInfo, ModelDetails
+    from core.model.ModelPath import ModelType, ModelPath
     from core.processing.WorkerManager import worker_managers
 
     # Get the models info from Modelfile and HF
@@ -303,8 +303,13 @@ def get_current_models():
                             )
 
                             # Extract parameter size and quantization details if available
-                            model_details = Model.extract_model_details(
-                                model_type=mtype, model_name=file
+                            model_path = ModelPath(
+                                model_name=subdir,
+                                endpoint_model_file=file,
+                                endpoint_model_file_size=size,
+                            )
+                            model_details = ModelDetails.from_model_path(
+                                model_path=model_path
                             )
 
                             dt = datetime.datetime.fromtimestamp(

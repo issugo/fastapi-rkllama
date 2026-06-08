@@ -67,12 +67,12 @@ class GenerateEndpointHandler(EndpointHandler):
             ),
             "done_reason": "stop",
             "done": True,
-            "total_duration": metrics["total"],
-            "load_duration": metrics["load"],
-            "prompt_eval_count": core.config.config_utils.get("prompt_tokens", 0),
-            "prompt_eval_duration": metrics["prompt_eval"],
-            "eval_count": core.config.config_utils.get("token_count", 0),
-            "eval_duration": metrics["eval"],
+            "total_duration": metrics.total,
+            "load_duration": metrics.load,
+            "prompt_eval_count": metrics.prompt_tokens,
+            "prompt_eval_duration": metrics.prompt_eval,
+            "eval_count": metrics.token_count,
+            "eval_duration": metrics.eval,
             "context": [],
         }
 
@@ -196,8 +196,8 @@ class GenerateEndpointHandler(EndpointHandler):
                 yield (json.dumps(chunk) + "\n").encode("utf-8")
 
             metrics = cls.calculate_durations(start_time, prompt_eval_time)
-            metrics["prompt_tokens"] = prompt_token_count
-            metrics["token_count"] = count
+            metrics.prompt_tokens = prompt_token_count
+            metrics.token_count = count
 
             format_data = None
             if format_spec and complete_text:
@@ -279,8 +279,8 @@ class GenerateEndpointHandler(EndpointHandler):
             complete_text += token
 
         metrics = cls.calculate_durations(start_time, prompt_eval_time)
-        metrics["prompt_tokens"] = prompt_token_count
-        metrics["token_count"] = count
+        metrics.prompt_tokens = prompt_token_count
+        metrics.token_count = count
 
         format_data = None
         if format_spec and complete_text:

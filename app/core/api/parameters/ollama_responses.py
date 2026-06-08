@@ -132,3 +132,16 @@ class OllamaDeleteResponse(BaseModel):
     """Response from a delete model request."""
 
     status: str = Field(..., description="Status message")
+
+
+class OllamaProcessModel(OllamaModelInfo):
+    """Model information for a running process."""
+
+    expires_at: str = Field(..., description="Expiration time")
+    size_vram: int = Field(..., description="Size in VRAM")
+
+
+class OllamaPsResponse(BaseModel):
+    """Response from a ps request."""
+
+    models: List[OllamaProcessModel] = Field(..., description="List of running models")

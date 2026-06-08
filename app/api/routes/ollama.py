@@ -32,6 +32,8 @@ from core.api.parameters.ollama_responses import (
     OllamaDeleteResponse,
     OllamaHFModelShow,
     OllamaModelShowDetails,
+    OllamaPsResponse,
+    OllamaProcessModel,
 )
 from core.backends.backend import BackendType
 from core.config.RKLLAMAConfig import RKLLAMASettings
@@ -138,6 +140,60 @@ async def list_models(request: Request):
             jsonable_encoder({"error": f"{str(mde)}."}),
             status_code=500,
         )
+
+
+@router.get("/api/ps", response_model=OllamaPsResponse)
+async def list_loaded_models(request: Request):
+    """
+    List loaded models.
+
+    Returns information about currently loaded models in memory.
+    """
+    from core.processing.WorkerManager import worker_managers
+    from core.api.parameters.ollama_commons import OllamaModelInfoDetails
+
+    models_running = []
+    try:
+        model_list: List[Model] = Model.list()
+        models_info = {m.model_info.name: m for m in model_list}
+
+        for wm in worker_managers:
+            for model_id, worker in wm.workers.items():
+                worker_model_info = worker.worker_model_info
+
+                info = models_info.get(model_id)
+                digest = info.digest if info else ""
+                format_val = info.model_info.details.model_format if info else "rkllm"
+                family_val = info.model_info.details.model_family if info else "qwen2"
+                parameter_size_val = (
+                    info.model_info.details.parameter_size if info else "unknown"
+                )
+                quantization_level_val = (
+                    info.model_info.details.quantization_level if info else "unknown"
+                )
+
+                models_running.append(
+                    OllamaProcessModel(
+                        name=model_id,
+                        model=model_id,
+                        size=worker_model_info.size,
+                        digest=digest,
+                        details=OllamaModelInfoDetails(
+                            format=format_val,
+                            family=family_val,
+                            parameter_size=parameter_size_val,
+                            quantization_level=quantization_level_val,
+                        ),
+                        expires_at=worker_model_info.expires_at.strftime(
+                            "%Y-%m-%dT%H:%M:%S.%fZ"
+                        ),
+                        size_vram=worker_model_info.size,
+                    )
+                )
+    except Exception as e:
+        logger.error(f"Error listing running models: {e}")
+
+    return OllamaPsResponse(models=models_running)
 
 
 @router.get("/api/show/{model_id}", response_model=OllamaShowResponse)

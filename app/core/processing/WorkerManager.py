@@ -345,13 +345,13 @@ class WorkerManager:
                 ),
             )
 
-    def multimodal(self, model_id: str, prompt_input, images):
+    def multimodal(self, model_id: str, model_input, images):
         """
         Send a inference task to the corresponding modelfile worker for multimodal input
 
         Args:
             model_id (str): Model name to invoke
-            prompt_input (str): Input of the modelfile
+            model_input (str): Input of the modelfile
             image_embed (np.ndarray): Image embedding
             n_image_tokens (int): Number of image tokens
             image_width (int): Width of the image
@@ -374,8 +374,8 @@ class WorkerManager:
                 )
 
             # Prepare all the inputs for the multimodal inference
-            model_input = (
-                prompt_input,
+            multimodal_input = (
+                model_input,
                 image_embed,
                 IMAGE_TOKEN_NUM,
                 IMAGE_WIDTH,
@@ -388,7 +388,7 @@ class WorkerManager:
                 InferenceTask(
                     RKLLMInferMode.RKLLM_INFER_GENERATE,
                     RKLLMInputType.RKLLM_INPUT_MULTIMODAL,
-                    model_input,
+                    multimodal_input,
                 ),
             )
 

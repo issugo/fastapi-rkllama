@@ -174,7 +174,7 @@ class GenerateEndpointHandler(EndpointHandler):
                 model_worker.backend_type
             )
 
-            worker_manager.inference(model_id=model_id, prompt_tokens=prompt_tokens)
+            worker_manager.inference(model_id=model_id, model_input=prompt_tokens)
 
             result_q = worker_manager.get_result(model_id=model_id)
             finished_inference_token = worker_manager.get_finished_inference_token()
@@ -250,11 +250,11 @@ class GenerateEndpointHandler(EndpointHandler):
         # Check if multimodal or text only
         if not images:
             # Send the task of inference to the model
-            worker_manager.inference(model_id=model_id, prompt_tokens=prompt_tokens)
+            worker_manager.inference(model_id=model_id, model_input=prompt_tokens)
         else:
             # Send the task of multimodal inference to the model
             worker_manager.multimodal(
-                model_id=model_id, prompt_tokens=prompt_tokens, images=images
+                model_id=model_id, model_input=prompt_tokens, images=images
             )
             # Clear the cache to prevent image embedding problems
             worker_manager.clear_cache_worker(model_id=model_id)

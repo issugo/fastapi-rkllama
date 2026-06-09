@@ -51,14 +51,14 @@ class ChatEndpointHandler(EndpointHandler):
             if metrics:
                 chunk.update(
                     {
-                        "total_duration": metrics["total"],
-                        "load_duration": metrics["load"],
+                        "total_duration": metrics.total,
+                        "load_duration": metrics.load,
                         "prompt_eval_count": core.config.config_utils.get(
                             "prompt_tokens", 0
                         ),
-                        "prompt_eval_duration": metrics["prompt_eval"],
+                        "prompt_eval_duration": metrics.prompt_eval,
                         "eval_count": core.config.config_utils.get("token_count", 0),
-                        "eval_duration": metrics["eval"],
+                        "eval_duration": metrics.eval,
                     }
                 )
 
@@ -224,7 +224,7 @@ class ChatEndpointHandler(EndpointHandler):
                 worker_manager.inference(model_id=model_id, model_input=prompt_tokens)
             else:
                 worker_manager.multimodal(
-                    model_id=model_id, prompt_tokens=prompt_tokens, images=images
+                    model_id=model_id, model_input=prompt_tokens, images=images
                 )
                 worker_manager.clear_cache_worker(model_id=model_id)
 
@@ -356,7 +356,7 @@ class ChatEndpointHandler(EndpointHandler):
         else:
             # Send the task of multimodal inference to the model
             worker_manager.multimodal(
-                model_id=model_id, prompt_tokens=prompt_tokens, images=images
+                model_id=model_id, model_input=prompt_tokens, images=images
             )
             # Clear the cache to prevent image embedding problems
             worker_manager.clear_cache_worker(model_id=model_id)

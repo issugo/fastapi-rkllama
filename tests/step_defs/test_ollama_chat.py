@@ -110,13 +110,13 @@ def mock_ollama_dependencies(base_full_params):
 
     with (
         patch(
-            "api.routes.ollama_new.ModelPath.from_model_id",
+            "api.routes.ollama.ModelPath.from_model_id",
             return_value=mock_model_path,
         ),
-        patch("api.routes.ollama_new.ModelFile.load", return_value=mock_file),
-        patch("api.routes.ollama_new.get_worker_manager", return_value=mock_wm),
+        patch("api.routes.ollama.ModelFile.load", return_value=mock_file),
+        patch("api.routes.ollama.get_worker_manager", return_value=mock_wm),
         patch(
-            "api.routes.ollama_new.ChatEndpointHandler.handle_request",
+            "api.routes.ollama.ChatEndpointHandler.handle_request",
             side_effect=mock_handle_request,
         ),
     ):

@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 import pytest
 from pytest_bdd import scenarios, given, when, then, parsers
 from deepeval.test_case import LLMTestCase
@@ -108,16 +109,7 @@ def default_dummy_model():
     yield model_id
     
     # Cleanup
-    try:
-        os.remove(file_path)
-        os.remove(modelfile_path)
-        os.remove(metadata_path)
-        os.remove(hf_file_info_path)
-        os.remove(hf_model_info_path)
-        os.remove(config_path)
-        os.removedirs(file_dir)
-    except OSError:
-        pass
+    shutil.rmtree(full_dir, ignore_errors=True)
 
 
 @given("the fastapi-rkllama application is running with the default dummy model", target_fixture="app_state")
@@ -156,7 +148,7 @@ def check_model_in_ps(app_state):
     assert response_json is not None
     models = response_json.get("models", [])
     model_id = app_state["model_id"]
-    assert any(m.get("model") == model_id for m in models), f"Model {model_id} not in loaded models: {models}"
+    assert any(m.get("name") == model_id for m in models), f"Model {model_id} not in loaded models: {models}"
 
 @when(parsers.parse('a chat completion request is sent to Ollama with prompt "{prompt}" not using stream'))
 def chat_request_no_stream(api_client, app_state, prompt):

@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
@@ -96,16 +97,7 @@ def dummy_model():
     yield model_id
 
     # Cleanup
-    try:
-        os.remove(file_path)
-        os.remove(modelfile_path)
-        os.remove(metadata_path)
-        os.remove(hf_file_info_path)
-        os.remove(hf_model_info_path)
-        os.remove(config_path)
-        os.rmdir(full_dir)
-    except OSError:
-        pass
+    shutil.rmtree(full_dir, ignore_errors=True)
 
 
 def test_model_loading_unloading_blackbox(dummy_model):

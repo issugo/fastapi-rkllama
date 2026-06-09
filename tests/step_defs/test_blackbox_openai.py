@@ -6,6 +6,7 @@ It covers model loading via RKLLAMA API, listing models, and testing chat/comple
 import os
 import json
 import logging
+import shutil
 import pytest
 from pytest_bdd import scenarios, given, when, then, parsers
 from deepeval.test_case import LLMTestCase
@@ -115,16 +116,7 @@ def default_dummy_model():
     yield model_id
 
     # Cleanup
-    try:
-        os.remove(file_path)
-        os.remove(modelfile_path)
-        os.remove(metadata_path)
-        os.remove(hf_file_info_path)
-        os.remove(hf_model_info_path)
-        os.remove(config_path)
-        os.removedirs(file_dir)
-    except OSError:
-        pass
+    shutil.rmtree(full_dir, ignore_errors=True)
 
 
 @given(

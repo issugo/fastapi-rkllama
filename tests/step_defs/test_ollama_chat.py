@@ -1,3 +1,11 @@
+"""
+Step definitions for Ollama chat feature.
+
+This module contains the BDD step definitions for testing the Ollama-compatible chat API.
+It includes mocks for various dependencies and tests for both streaming and non-streaming
+chat completions, as well as error handling.
+"""
+
 import json
 import pytest
 from unittest.mock import MagicMock, patch
@@ -14,6 +22,12 @@ scenarios("../features/ollama_chat.feature")
 
 @pytest.fixture
 def base_full_params():
+    """
+    Provides a base set of model parameters for testing.
+
+    Returns:
+        FullModelParameters: A set of default model parameters.
+    """
     return FullModelParameters(
         num_ctx=4096,
         repeat_last_n=64,
@@ -37,6 +51,18 @@ def base_full_params():
 
 @pytest.fixture(autouse=True)
 def mock_ollama_dependencies(base_full_params):
+    """
+    Mocks various dependencies of the Ollama API for testing.
+
+    This includes mocking:
+    - ModelPath.from_model_id
+    - ModelFile.load
+    - get_worker_manager
+    - ChatEndpointHandler.handle_request
+
+    Args:
+        base_full_params (FullModelParameters): The base model parameters.
+    """
     from core.model.ModelFile import ModelFile
     from core.model.ModelPath import ModelPath
     from core.model.Model import Model
@@ -75,6 +101,9 @@ def mock_ollama_dependencies(base_full_params):
         images=None,
         format_spec=None,
     ):
+        """
+        Mock implementation of the handle_request method.
+        """
         if stream:
 
             async def mock_stream():
@@ -125,6 +154,9 @@ def mock_ollama_dependencies(base_full_params):
 
 @given("the fastapi-rkllama application is running", target_fixture="app_state")
 def app_is_running():
+    """
+    Sets up the initial application state.
+    """
     # The application is already running in-process via FastAPITestClient
     return {}
 
@@ -136,6 +168,15 @@ def app_is_running():
     target_fixture="response_data",
 )
 def send_ollama_chat_completion(api_client, prompt, model, app_state):
+    """
+    Sends a non-streaming chat completion request to the Ollama API.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        prompt (str): The prompt to send.
+        model (str): The model name.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -155,11 +196,24 @@ def send_ollama_chat_completion(api_client, prompt, model, app_state):
 
 @then(parsers.parse("the Ollama API should return a status code of {status_code:d}"))
 def check_ollama_status_code(response_data, status_code):
+    """
+    Checks the status code returned by the Ollama API.
+
+    Args:
+        response_data (dict): The data from the response.
+        status_code (int): The expected status code.
+    """
     assert response_data["status_code"] == status_code
 
 
 @then("the response should contain the Ollama chat content")
 def check_ollama_response_content(response_data):
+    """
+    Checks that the response contains the expected chat content.
+
+    Args:
+        response_data (dict): The data from the response.
+    """
     assert "message" in response_data["response_json"]
     assert "content" in response_data["response_json"]["message"]
     assert response_data["response_json"]["message"]["role"] == "assistant"
@@ -168,6 +222,13 @@ def check_ollama_response_content(response_data):
 
 @then("the Ollama response relevancy should be evaluated as successful by DeepEval")
 def evaluate_ollama_relevancy(response_data, deepeval_model):
+    """
+    Evaluates the relevancy of the response using DeepEval.
+
+    Args:
+        response_data (dict): The data from the response.
+        deepeval_model (MockEvaluationLLM): The DeepEval model to use.
+    """
     user_input = response_data["prompt"]
     model_output = response_data["output"]
 
@@ -184,6 +245,15 @@ def evaluate_ollama_relevancy(response_data, deepeval_model):
     target_fixture="response_data",
 )
 def send_ollama_streaming_chat_completion(api_client, prompt, model, app_state):
+    """
+    Sends a streaming chat completion request to the Ollama API.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        prompt (str): The prompt to send.
+        model (str): The model name.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -200,6 +270,12 @@ def send_ollama_streaming_chat_completion(api_client, prompt, model, app_state):
     "the Ollama streaming chunks should be successfully parsed to build the final response"
 )
 def check_ollama_streaming_chunks(response_data):
+    """
+    Parses the streaming chunks and builds the final response.
+
+    Args:
+        response_data (dict): The data from the response.
+    """
     response = response_data["response"]
     content = ""
     chunks_count = 0
@@ -224,6 +300,13 @@ def check_ollama_streaming_chunks(response_data):
     "the Ollama streaming response relevancy should be evaluated as successful by DeepEval"
 )
 def evaluate_ollama_streaming_relevancy(response_data, deepeval_model):
+    """
+    Evaluates the relevancy of the streaming response using DeepEval.
+
+    Args:
+        response_data (dict): The data from the response.
+        deepeval_model (MockEvaluationLLM): The DeepEval model to use.
+    """
     user_input = response_data["prompt"]
     model_output = response_data["output"]
 
@@ -242,6 +325,16 @@ def evaluate_ollama_streaming_relevancy(response_data, deepeval_model):
 def send_ollama_chat_with_system_and_user(
     api_client, system_prompt, user_prompt, model, app_state
 ):
+    """
+    Sends a chat completion request with system and user prompts to the Ollama API.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        system_prompt (str): The system prompt.
+        user_prompt (str): The user prompt.
+        model (str): The model name.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": model,
         "messages": [
@@ -269,6 +362,14 @@ def send_ollama_chat_with_system_and_user(
     target_fixture="response_data",
 )
 def send_ollama_invalid_chat(api_client, temperature, app_state):
+    """
+    Sends an invalid chat completion request with an invalid temperature.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        temperature (float): The invalid temperature value.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": "mock-model",
         "messages": [{"role": "user", "content": "Hello"}],
@@ -278,3 +379,9 @@ def send_ollama_invalid_chat(api_client, temperature, app_state):
     response = api_client.post("/api/chat", json=payload)
     app_state["status_code"] = response.status_code
     return app_state
+
+
+# Modification Summary:
+# - Added module-level docstring.
+# - Added docstrings to all functions and fixtures for compliance with documentation guidelines.
+# - Ensured all code modifications are documented directly in the file.

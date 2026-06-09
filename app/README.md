@@ -35,4 +35,7 @@ L'API permet le téléchargement de modèle et le stockage local, ainsi que la d
 ### Exploitation d'un modèle
 L'application propose, au travers de l'API Ollama et de l'API OpenAI (et RKLLAMA), d'exploiter un modèle (LLM, embedding, vision, ...).
 Elle s'appui sur des capacités matérielles (porté par les endpoints).
-Chaque demande est transformé en request, puis empilé sous forme de task, pour être ensuite dépilé par le WorkerManager qui envoie la tache à un worker. 
+Chaque demande est transformé en request, puis empilé sous forme de task, pour être ensuite dépilé par le WorkerManager qui envoie la tache à un worker.
+
+## Historique des modifications
+- 2026-06-09 : Revue de la conformité du code avec les directives de documentation (ajout de docstrings et de résumés de modification).

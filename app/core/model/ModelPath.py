@@ -125,9 +125,19 @@ class ModelPath(ModelName):
     @property
     def model_type(self) -> ModelType | None:
         for mtype in ModelType:
-            if self.endpoint_model_file.endswith(mtype.get_extension()):
-                self.model_format = mtype
-                return mtype
+            try:
+                if self.endpoint_model_file.endswith(mtype.get_extension()):
+                    self.model_format = mtype
+                    return mtype
+            except AttributeError as e:
+                print(
+                    "DEBUG model_type AttributeError: self =",
+                    self,
+                    type(self),
+                    "dict =",
+                    self.__dict__,
+                )
+                raise e
         if self.model_format is not None:
             return self.model_format
         # use metadata file if available

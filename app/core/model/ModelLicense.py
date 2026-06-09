@@ -33,7 +33,9 @@ class ModelLicense(BaseModel):
         return None
 
     @staticmethod
-    def from_content(content: str):
+    def from_content(content: str | bytes):
+        if isinstance(content, bytes):
+            content = content.decode("utf-8", errors="ignore")
         return ModelLicense(
             license_name=ModelLicense.common_license_from_text(content),
             license_text=content,
@@ -44,7 +46,7 @@ class ModelLicense(BaseModel):
         if license_name:
             if license_name != DEFAULT_MODEL_LICENSE_NAME:
                 return license_name
-        for lic_name, lic_content_match in COMMON_LICENSE:
+        for lic_name, lic_content_match in COMMON_LICENSE.items():
             if lic_content_match in license_text:
                 return lic_name
         if license_text:

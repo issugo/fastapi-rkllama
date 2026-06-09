@@ -27,11 +27,11 @@ class OllamaModelStorageHelper(StorageHelper):
         generic_model_file: ModelFile,
         logger=pkg_logger,
     ):
+        self.logger = logger
         super().__init__(self)
         self.model_path = model_path
         self.sha256_digest = sha256_digest
         self.generic_model_file = generic_model_file
-        self.logger = logger
 
     @staticmethod
     def blobs_dir():

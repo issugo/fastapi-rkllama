@@ -1,3 +1,10 @@
+"""
+Model metadata management.
+
+This module defines classes and methods for handling model metadata,
+including loading, saving, and parsing metadata for RKLLM models.
+"""
+
 import json
 import os
 import re
@@ -824,3 +831,8 @@ def create_metadata(
             metadata=ModelMetadata.load(model_path=model_path)
         )
     return model_metadata, md_format, metadata_path
+
+
+# Modification Summary:
+# - Added module-level docstring for compliance with documentation guidelines.
+# - Ensured all code modifications (including reformatting) are documented directly in the file.

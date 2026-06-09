@@ -1,3 +1,9 @@
+"""
+Step definitions for OpenAI chat feature.
+
+This module contains the BDD step definitions for testing the OpenAI-compatible chat API.
+"""
+
 import json
 from pytest_bdd import scenarios, given, when, then, parsers
 from deepeval.test_case import LLMTestCase
@@ -10,6 +16,9 @@ scenarios("../features/openai_chat.feature")
 
 @given("the fastapi-rkllama application is running", target_fixture="app_state")
 def app_is_running():
+    """
+    Sets up the initial application state.
+    """
     # The application is already running in-process via FastAPITestClient
     return {}
 
@@ -21,6 +30,15 @@ def app_is_running():
     target_fixture="response_data",
 )
 def send_chat_completion(api_client, prompt, model, app_state):
+    """
+    Sends a non-streaming chat completion request to the OpenAI API.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        prompt (str): The prompt to send.
+        model (str): The model name.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -45,6 +63,15 @@ def send_chat_completion(api_client, prompt, model, app_state):
     target_fixture="response_data",
 )
 def send_streaming_chat_completion(api_client, prompt, model, app_state):
+    """
+    Sends a streaming chat completion request to the OpenAI API.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        prompt (str): The prompt to send.
+        model (str): The model name.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -80,6 +107,16 @@ def send_streaming_chat_completion(api_client, prompt, model, app_state):
 def send_chat_completion_with_system(
     api_client, system_prompt, user_prompt, model, app_state
 ):
+    """
+    Sends a chat completion request with system and user prompts to the OpenAI API.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        system_prompt (str): The system prompt.
+        user_prompt (str): The user prompt.
+        model (str): The model name.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": model,
         "messages": [
@@ -107,6 +144,14 @@ def send_chat_completion_with_system(
     target_fixture="response_data",
 )
 def send_invalid_chat_completion(api_client, temperature, app_state):
+    """
+    Sends an invalid chat completion request with an invalid temperature.
+
+    Args:
+        api_client (TestClient): The test client to use.
+        temperature (float): The invalid temperature value.
+        app_state (dict): The current application state.
+    """
     payload = {
         "model": "mock-model",
         "messages": [{"role": "user", "content": "Hello"}],
@@ -120,11 +165,24 @@ def send_invalid_chat_completion(api_client, temperature, app_state):
 
 @then(parsers.parse("the API should return a status code of {status_code:d}"))
 def check_status_code(response_data, status_code):
+    """
+    Checks the status code returned by the API.
+
+    Args:
+        response_data (dict): The data from the response.
+        status_code (int): The expected status code.
+    """
     assert response_data["status_code"] == status_code
 
 
 @then("the response should contain the chat completion content")
 def check_response_content(response_data):
+    """
+    Checks that the response contains the expected chat content.
+
+    Args:
+        response_data (dict): The data from the response.
+    """
     assert "choices" in response_data["response_json"]
     assert len(response_data["response_json"]["choices"]) > 0
     assert "message" in response_data["response_json"]["choices"][0]
@@ -134,6 +192,12 @@ def check_response_content(response_data):
 
 @then("the streaming chunks should be successfully parsed to build the final response")
 def parse_streaming_chunks(response_data):
+    """
+    Parses the streaming chunks and builds the final response.
+
+    Args:
+        response_data (dict): The data from the response.
+    """
     chunks = response_data.get("streaming_chunks", [])
     assert len(chunks) > 0, "No streaming chunks received"
 
@@ -155,6 +219,13 @@ def parse_streaming_chunks(response_data):
 
 @then("the response relevancy should be evaluated as successful by DeepEval")
 def evaluate_relevancy(response_data, deepeval_model):
+    """
+    Evaluates the relevancy of the response using DeepEval.
+
+    Args:
+        response_data (dict): The data from the response.
+        deepeval_model (MockEvaluationLLM): The DeepEval model to use.
+    """
     user_input = response_data["prompt"]
     model_output = response_data["output"]
 
@@ -166,7 +237,16 @@ def evaluate_relevancy(response_data, deepeval_model):
 
 @then("the streaming response relevancy should be evaluated as successful by DeepEval")
 def evaluate_streaming_relevancy(response_data, deepeval_model):
+    """
+    Evaluates the relevancy of the streaming response using DeepEval.
+    """
     evaluate_relevancy(response_data, deepeval_model)
+
+
+# Modification Summary:
+# - Added module-level docstring.
+# - Added docstrings to all functions for compliance with documentation guidelines.
+# - Ensured all code modifications are documented directly in the file.
 
 
 UnitTests = True

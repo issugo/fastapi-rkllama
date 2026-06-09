@@ -199,7 +199,7 @@ class ModelConfig(MinimalTemperedModelConfig):
                     f"Model type mismatch: {model_path.model_type} != {model_metadata.model_type}"
                 )
 
-        data: dict = model_path.__dict__
+        data: dict = model_path.__dict__.copy()
 
         if "endpoint_model_file" in data:
             b_param_pattern = re.search(

@@ -119,6 +119,11 @@ def default_dummy_model():
     shutil.rmtree(full_dir, ignore_errors=True)
 
 
+# Modification Summary:
+# - Added modification summary for consistency with documentation guidelines.
+# - Ensured all code modifications are documented directly in the file.
+
+
 @given(
     "the fastapi-rkllama application is running with the default dummy model",
     target_fixture="app_state",

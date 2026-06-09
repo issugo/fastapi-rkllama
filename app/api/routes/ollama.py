@@ -1,3 +1,10 @@
+"""
+Ollama-compatible API routes.
+
+This module implements the Ollama API specification, allowing users to interact
+with the RKLLM models using Ollama-compatible requests and responses.
+"""
+
 import datetime
 from logging import Logger
 from typing import Any, Tuple, List
@@ -178,9 +185,13 @@ async def list_loaded_models(request: Request):
                         name=model_id,
                         model=model_id,
                         modified_at=(
-                            info.model_info.modified_at_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                            info.model_info.modified_at_dt.strftime(
+                                "%Y-%m-%dT%H:%M:%S.%fZ"
+                            )
                             if info
-                            else datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                            else datetime.datetime.now().strftime(
+                                "%Y-%m-%dT%H:%M:%S.%fZ"
+                            )
                         ),
                         size=worker_model_info.size,
                         digest=digest,
@@ -190,15 +201,16 @@ async def list_loaded_models(request: Request):
                             parameter_size=parameter_size_val,
                             quantization_level=quantization_level_val,
                         ),
-                        expires_at=worker_model_info.expires_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        expires_at=worker_model_info.expires_at.strftime(
+                            "%Y-%m-%dT%H:%M:%S.%fZ"
+                        ),
                         size_vram=worker_model_info.size,
                     )
                 )
     except Exception as e:
         logger.exception("Error listing running models")
         raise HTTPException(
-            status_code=500,
-            detail=f"Error listing running models: {str(e)}"
+            status_code=500, detail=f"Error listing running models: {str(e)}"
         )
 
     return OllamaPsResponse(models=models_running)
@@ -206,6 +218,13 @@ async def list_loaded_models(request: Request):
 
 @router.get("/api/show/{model_id}", response_model=OllamaShowResponse)
 async def show_model_by_id(request: Request, model_id: str):
+    """
+    Show information about a specific model by its ID.
+
+    Args:
+        request (Request): The incoming HTTP request.
+        model_id (str): The ID of the model to show.
+    """
     return await show_model(request, OllamaShowRequest(name=model_id))
 
 
@@ -843,3 +862,9 @@ async def delete_model(request: Request, data: OllamaDeleteRequest):
     return OllamaDeleteResponse(
         status=f"deleted model {data.name}",
     )
+
+
+# Modification Summary:
+# - Added module-level docstring.
+# - Added missing function docstrings for compliance with documentation guidelines.
+# - Ensured all app code modifications are documented directly in the file.

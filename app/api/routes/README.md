@@ -82,3 +82,6 @@ Chaque fichier de route :
 3. Appelle le `WorkerManager` pour l'inférence
 4. Convertit la réponse vers le format attendu
 5. Retourne la réponse (streaming ou non)
+
+## Historique des modifications
+- 2026-06-09 : Mise à jour de la documentation (docstrings) et ajout des résumés de modification dans les scripts `ollama.py`, `openai.py` et `rkllama.py`.

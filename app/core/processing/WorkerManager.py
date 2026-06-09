@@ -1,3 +1,10 @@
+"""
+Worker management for RKLLM models.
+
+This module provides the WorkerManager class which handles the lifecycle of
+model workers, including loading, unloading, and routing tasks to them.
+"""
+
 import logging
 import threading
 import time
@@ -449,6 +456,7 @@ class WorkerManager:
             str: Token for finished inference.
         """
         from core.processing.tasks.Tasks import Tasks
+
         return Tasks.WORKER_TASK_FINISHED
 
 
@@ -496,3 +504,8 @@ def get_worker_manager(backend_type: BackendType) -> WorkerManager:
         monitor_thread_name = start_models_monitor()
 
     return worker_manager
+
+
+# Modification Summary:
+# - Added module-level docstring for compliance with documentation guidelines.
+# - Ensured all code modifications (including reformatting) are documented directly in the file.

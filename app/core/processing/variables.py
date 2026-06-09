@@ -19,13 +19,13 @@ class MockWorkerManager:
     def get_finished_inference_token(self):
         return ""
 
-    def inference(self, model_name: str, prompt_tokens: Any):
+    def inference(self, model_id: str, model_input: Any):
         pass
 
-    def multimodal(self, model_name: str, prompt_tokens: Any, images: Any):
+    def multimodal(self, model_id: str, model_input: Any, images: Any):
         pass
 
-    def clear_cache_worker(self, model_name: str):
+    def clear_cache_worker(self, model_id: str):
         pass
 
 

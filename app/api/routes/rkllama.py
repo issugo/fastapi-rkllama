@@ -365,7 +365,7 @@ def get_current_models():
                 "base_domain_id": (
                     worker_model_info.base_domain_id.value
                     if hasattr(worker_model_info.base_domain_id, "value")
-                    else int(worker_model_info.base_domain_id)
+                    else (int(worker_model_info.base_domain_id) if worker_model_info.base_domain_id is not None else None)
                 ),
                 "last_call": worker_model_info.last_call.strftime(
                     "%Y-%m-%d %H:%M:%S.%f"

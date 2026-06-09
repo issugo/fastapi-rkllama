@@ -1,7 +1,8 @@
+import datetime
 from logging import Logger
 from typing import Any, Tuple, List
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from starlette.requests import Request
@@ -155,7 +156,7 @@ async def list_loaded_models(request: Request):
     models_running = []
     try:
         model_list: List[Model] = Model.list()
-        models_info = {m.model_info.name: m for m in model_list}
+        models_info = {m.id: m for m in model_list}
 
         for wm in worker_managers:
             for model_id, worker in wm.workers.items():
@@ -176,6 +177,11 @@ async def list_loaded_models(request: Request):
                     OllamaProcessModel(
                         name=model_id,
                         model=model_id,
+                        modified_at=(
+                            info.model_info.modified_at_dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                            if info
+                            else datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                        ),
                         size=worker_model_info.size,
                         digest=digest,
                         details=OllamaModelInfoDetails(
@@ -184,14 +190,16 @@ async def list_loaded_models(request: Request):
                             parameter_size=parameter_size_val,
                             quantization_level=quantization_level_val,
                         ),
-                        expires_at=worker_model_info.expires_at.strftime(
-                            "%Y-%m-%dT%H:%M:%S.%fZ"
-                        ),
+                        expires_at=worker_model_info.expires_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                         size_vram=worker_model_info.size,
                     )
                 )
     except Exception as e:
-        logger.error(f"Error listing running models: {e}")
+        logger.exception("Error listing running models")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error listing running models: {str(e)}"
+        )
 
     return OllamaPsResponse(models=models_running)
 
